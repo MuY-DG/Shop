@@ -42,6 +42,9 @@ class ApplicationYamlSafetyTest {
                 .containsEntry("shop.pay.timeout-zset.batch-size", 50)
                 .containsEntry("shop.pay.timeout-zset.retry-delay", "30s")
                 .containsEntry("shop.pay.expire-minutes", 15)
+                .containsEntry("shop.admin-system-log.slow-request-threshold", "1s")
+                .containsEntry("shop.admin-system-log.request-retention-days", 14)
+                .containsEntry("shop.runtime-logging.directory", "logs")
                 .doesNotContainKeys(
                         "shop.storage.direct-upload.session-retention",
                         "shop.storage.direct-upload.cleanup-initial-delay",
@@ -101,6 +104,7 @@ class ApplicationYamlSafetyTest {
                 .containsEntry("spring.data.redis.host", "redis")
                 .containsEntry("spring.data.redis.password", "${SHOP_REDIS_PASSWORD}")
                 .containsEntry("shop.security.client-ip.max-forwarded-hops", 1)
+                .containsEntry("shop.runtime-logging.directory", "/var/log/shop-server")
                 .containsEntry(
                         "shop.security.client-ip.trusted-proxy-cidrs",
                         "127.0.0.0/8,::1/128,172.23.0.1/32"
@@ -163,9 +167,26 @@ class ApplicationYamlSafetyTest {
                 .contains("REDIS_PASSWORD: ${SHOP_REDIS_PASSWORD:")
                 .contains("SHOP_SECRET_ENCRYPTION_KEY_RING: ${SHOP_SECRET_ENCRYPTION_KEY_RING:")
                 .contains("gateway: 172.23.0.1")
+                .contains("shop-server-logs:/var/log/shop-server")
+                .contains("driver: local")
+                .contains("compress: \"true\"")
                 .doesNotContain("env_file:")
                 .doesNotContain(".env.prod.local")
                 .doesNotContain(".env.infrastructure.local");
+    }
+
+    @Test
+    void logbackKeepsConsoleOutputAndDailyCompressedArchives() throws IOException {
+        String logback = Files.readString(Path.of("src/main/resources/logback-spring.xml"));
+
+        assertThat(logback)
+                .contains("<appender name=\"CONSOLE\"")
+                .contains("<appender name=\"ROLLING_FILE\"")
+                .contains("shop-server.%d{yyyy-MM-dd}.%i.log.gz")
+                .contains("<maxFileSize>100MB</maxFileSize>")
+                .contains("<maxHistory>30</maxHistory>")
+                .contains("<totalSizeCap>2GB</totalSizeCap>")
+                .contains("requestId=%X{requestId:-}");
     }
 
     @Test

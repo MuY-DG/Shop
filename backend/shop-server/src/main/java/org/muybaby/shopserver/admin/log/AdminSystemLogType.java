@@ -1,8 +1,8 @@
 package org.muybaby.shopserver.admin.log;
 
 public enum AdminSystemLogType {
-    LOGIN,
+    SECURITY,
     OPERATION,
-    ACCESS,
+    REQUEST,
     EXCEPTION
 }

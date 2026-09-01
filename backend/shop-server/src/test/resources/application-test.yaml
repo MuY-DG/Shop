@@ -20,6 +20,9 @@ spring:
       max-request-size: 51MB
 
 shop:
+  admin-system-log:
+    slow-request-threshold: 500ms
+    request-retention-days: 14
   secret-encryption:
     active-key-id: test-main
     key-ring: test-main=base64:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=

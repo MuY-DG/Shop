@@ -85,8 +85,14 @@ class SecurityConfigTest {
                         .header("Authorization", "Bearer " + token)
                         .header("X-Request-Id", authenticatedRequestId))
                 .andExpect(status().isOk());
+        assertThat(logCount(authenticatedRequestId)).isZero();
 
-        assertThat(logCount(authenticatedRequestId)).isEqualTo(1);
+        String failedWriteRequestId = "security-log-failed-write";
+        mockMvc.perform(post("/admin/probe")
+                        .header("Authorization", "Bearer " + token)
+                        .header("X-Request-Id", failedWriteRequestId))
+                .andExpect(status().isMethodNotAllowed());
+        assertThat(logCount(failedWriteRequestId)).isEqualTo(1);
     }
 
     @Test

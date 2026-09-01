@@ -37,3 +37,15 @@ test('customer service workspace explicitly owns realtime presence', () => {
   assert.match(realtimeSource, /CUSTOMER_SERVICE_PRESENCE_STOP/)
   assert.match(realtimeSource, /this\.startHeartbeat\(socket\)/)
 })
+
+test('keep-alive deactivation releases presence and stops fallback polling', () => {
+  const workspaceSource = readView('index.vue')
+  const conversationsSource = readView('conversations/index.vue')
+
+  assert.match(workspaceSource, /onDeactivated\(deactivateWorkspace\)/)
+  assert.match(workspaceSource, /if \(stateTimer\) clearInterval\(stateTimer\)/)
+  assert.match(workspaceSource, /unsubscribeRealtime\?\.\(\)/)
+  assert.match(conversationsSource, /onDeactivated\(deactivateConversationPage\)/)
+  assert.match(conversationsSource, /stopFallbackPolling\(\)/)
+  assert.match(conversationsSource, /if \(pageActive && !document\.hidden\) void refreshAll\(\)/)
+})

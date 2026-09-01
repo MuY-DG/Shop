@@ -1,6 +1,6 @@
 declare namespace Api {
   namespace SystemLog {
-    type LogType = 'LOGIN' | 'OPERATION' | 'ACCESS' | 'EXCEPTION'
+    type LogType = 'SECURITY' | 'OPERATION' | 'REQUEST' | 'EXCEPTION'
     type LogLevel = 'INFO' | 'WARN' | 'ERROR'
     type LogResult = 'SUCCESS' | 'FAILURE'
 
@@ -9,6 +9,10 @@ declare namespace Api {
       type: LogType
       level: LogLevel
       result: LogResult
+      eventCode: string
+      summary: string
+      targetType: string
+      targetId: string
       module: string
       action: string
       operatorUserId?: string
@@ -32,6 +36,7 @@ declare namespace Api {
       Api.Common.CommonSearchParams & {
         type: LogType
         result: LogResult
+        keyword: string
         module: string
         operator: string
         clientIp: string

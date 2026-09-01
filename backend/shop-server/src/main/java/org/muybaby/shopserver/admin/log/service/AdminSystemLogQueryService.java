@@ -48,7 +48,8 @@ public class AdminSystemLogQueryService {
                 .single();
 
         List<AdminSystemLogResponse> records = bindFilters(jdbcClient.sql("""
-                        select id, log_type, result, level, operator_id, operator_name,
+                        select id, log_type, result, level, event_code, summary, target_type, target_id,
+                               operator_id, operator_name,
                                module, action, request_method, request_path, route_pattern,
                                http_status, duration_ms, client_ip, user_agent, request_id,
                                error_code, error_message, occurred_at
@@ -69,6 +70,10 @@ public class AdminSystemLogQueryService {
         StringBuilder where = new StringBuilder("""
                         where (:type = '' or log.log_type = :type)
                           and (:result = '' or log.result = :result)
+                          and (:keyword = ''
+                               or lower(log.summary) like lower(:keywordPattern) escape '!'
+                               or lower(log.event_code) like lower(:keywordPattern) escape '!'
+                               or log.target_id = :keyword)
                           and (:module = '' or log.module = :module)
                           and (:operator = ''
                                or lower(log.operator_name) like lower(:operatorPattern) escape '!'
@@ -89,6 +94,8 @@ public class AdminSystemLogQueryService {
         JdbcClient.StatementSpec bound = statement
                 .param("type", filters.type())
                 .param("result", filters.result())
+                .param("keyword", filters.keyword())
+                .param("keywordPattern", "%" + escapeLike(filters.keyword()) + "%")
                 .param("module", filters.module())
                 .param("operator", filters.operator())
                 .param("operatorPattern", "%" + escapeLike(filters.operator()) + "%")
@@ -107,7 +114,7 @@ public class AdminSystemLogQueryService {
 
     private Filters filters(AdminSystemLogQuery query) {
         AdminSystemLogQuery normalized = query == null
-                ? new AdminSystemLogQuery(null, null, null, null, null, null, null, null, null, null)
+                ? new AdminSystemLogQuery(null, null, null, null, null, null, null, null, null, null, null)
                 : query;
         String type = enumName(normalized.type(), AdminSystemLogType.class);
         String result = enumName(normalized.result(), AdminSystemLogResult.class);
@@ -124,6 +131,7 @@ public class AdminSystemLogQueryService {
         return new Filters(
                 type,
                 result,
+                normalize(normalized.keyword()),
                 normalize(normalized.module()).toLowerCase(Locale.ROOT),
                 operator,
                 operatorId,
@@ -198,6 +206,10 @@ public class AdminSystemLogQueryService {
                 rs.getString("log_type"),
                 rs.getString("level"),
                 rs.getString("result"),
+                rs.getString("event_code"),
+                rs.getString("summary"),
+                rs.getString("target_type"),
+                rs.getString("target_id"),
                 rs.getString("module"),
                 rs.getString("action"),
                 rs.getObject("operator_id", Long.class),
@@ -219,6 +231,7 @@ public class AdminSystemLogQueryService {
     private record Filters(
             String type,
             String result,
+            String keyword,
             String module,
             String operator,
             Long operatorId,

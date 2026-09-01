@@ -29,6 +29,18 @@ Git 与 Docker 构建上下文排除。
 `init-runtime-env.sh` 只在文件不存在时运行，不会覆盖已有密钥。本机 MySQL 和 Redis
 密码必须与 `config/runtime/local.env` 一致。
 
+## 运行日志
+
+- `local` Profile 同时输出到控制台和 `logs/shop-server.log`。
+- `server` Profile 同时输出到容器标准输出和 `/var/log/shop-server/shop-server.log`；
+  该目录挂载到 `shop-server-logs` 命名卷，重建容器不会删除日志。
+- 文件按自然日和单文件 100 MB 双重轮转，归档到 `archive/*.log.gz`，最多保留
+  30 天且总量不超过 2 GB。
+- 容器标准输出使用 Docker `local` 驱动，单文件 20 MB、最多 5 份并压缩，便于
+  在 1Panel 中直接查看近期输出。
+- 后台“异常与告警”“请求追踪”中的 Request ID 会写入运行日志，可用它关联同一次
+  请求；审计表不会保存请求体、响应体、令牌或密钥。
+
 ## 测试
 
 ```bash

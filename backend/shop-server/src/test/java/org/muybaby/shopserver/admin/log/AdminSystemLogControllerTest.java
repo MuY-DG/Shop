@@ -82,9 +82,11 @@ class AdminSystemLogControllerTest {
         String accessToken = objectMapper.readTree(loginResponse).path("data").path("token").asText();
 
         LogRow success = log(successRequestId);
-        assertThat(success.type()).isEqualTo("LOGIN");
+        assertThat(success.type()).isEqualTo("SECURITY");
         assertThat(success.result()).isEqualTo("SUCCESS");
         assertThat(success.level()).isEqualTo("INFO");
+        assertThat(success.eventCode()).isEqualTo("ADMIN_LOGIN_SUCCESS");
+        assertThat(success.summary()).isEqualTo("管理员登录成功");
         assertThat(success.operatorId()).isEqualTo(1L);
         assertThat(success.operatorName()).isEqualTo("Super");
         assertThat(success.module()).isEqualTo("auth");
@@ -109,9 +111,11 @@ class AdminSystemLogControllerTest {
                 .andExpect(jsonPath("$.code").value(100002));
 
         LogRow failure = log(failureRequestId);
-        assertThat(failure.type()).isEqualTo("LOGIN");
+        assertThat(failure.type()).isEqualTo("SECURITY");
         assertThat(failure.result()).isEqualTo("FAILURE");
         assertThat(failure.level()).isEqualTo("WARN");
+        assertThat(failure.eventCode()).isEqualTo("ADMIN_LOGIN_FAILURE");
+        assertThat(failure.summary()).startsWith("管理员登录失败");
         assertThat(failure.operatorId()).isNull();
         assertThat(failure.operatorName()).isEqualTo("Super");
         assertThat(failure.errorCode()).isEqualTo("100002");
@@ -123,8 +127,19 @@ class AdminSystemLogControllerTest {
     void authenticatedRequestsAreClassifiedAndSensitiveInputsAreNotPersisted() throws Exception {
         String token = login();
 
-        String accessRequestId = requestId("access");
+        String fastAccessRequestId = requestId("fast-access");
         mockMvc.perform(get("/admin/log-test/access/{id}", 42)
+                        .header("Authorization", "Bearer " + token)
+                        .header("X-Request-Id", fastAccessRequestId)
+                        .header("X-Private", "private-header-secret")
+                        .header("User-Agent", "system-log\u202Etest-agent")
+                        .cookie(new Cookie("session", "private-cookie-secret"))
+                        .queryParam("secret", "private-query-secret"))
+                .andExpect(status().isOk());
+        assertThat(logCount(fastAccessRequestId)).isZero();
+
+        String accessRequestId = requestId("slow-access");
+        mockMvc.perform(get("/admin/log-test/slow-access/{id}", 42)
                         .header("Authorization", "Bearer " + token)
                         .header("X-Request-Id", accessRequestId)
                         .header("X-Private", "private-header-secret")
@@ -133,11 +148,14 @@ class AdminSystemLogControllerTest {
                         .queryParam("secret", "private-query-secret"))
                 .andExpect(status().isOk());
         LogRow access = log(accessRequestId);
-        assertThat(access.type()).isEqualTo("ACCESS");
+        assertThat(access.type()).isEqualTo("REQUEST");
         assertThat(access.result()).isEqualTo("SUCCESS");
         assertThat(access.level()).isEqualTo("INFO");
-        assertThat(access.path()).isEqualTo("/admin/log-test/access/42");
-        assertThat(access.pattern()).isEqualTo("/admin/log-test/access/{id}");
+        assertThat(access.summary()).contains("慢请求");
+        assertThat(access.targetType()).isEqualTo("id");
+        assertThat(access.targetId()).isEqualTo("42");
+        assertThat(access.path()).isEqualTo("/admin/log-test/slow-access/42");
+        assertThat(access.pattern()).isEqualTo("/admin/log-test/slow-access/{id}");
         assertThat(access.userAgent()).isEqualTo("system-log test-agent");
         assertThat(access.joined())
                 .doesNotContain("private-header-secret")
@@ -157,6 +175,7 @@ class AdminSystemLogControllerTest {
         LogRow operation = log(operationRequestId);
         assertThat(operation.type()).isEqualTo("OPERATION");
         assertThat(operation.result()).isEqualTo("SUCCESS");
+        assertThat(operation.summary()).isEqualTo("提交log-test成功");
         assertThat(operation.joined()).doesNotContain("private-body-secret");
 
         String forbiddenRequestId = requestId("forbidden");
@@ -165,7 +184,7 @@ class AdminSystemLogControllerTest {
                         .header("X-Request-Id", forbiddenRequestId))
                 .andExpect(status().isForbidden());
         LogRow forbidden = log(forbiddenRequestId);
-        assertThat(forbidden.type()).isEqualTo("OPERATION");
+        assertThat(forbidden.type()).isEqualTo("SECURITY");
         assertThat(forbidden.result()).isEqualTo("FAILURE");
         assertThat(forbidden.level()).isEqualTo("WARN");
         assertThat(forbidden.status()).isEqualTo(403);
@@ -208,7 +227,7 @@ class AdminSystemLogControllerTest {
     }
 
     @Test
-    void rateLimitedUnavailableAndMalformedLoginsDoNotAmplifyIntoDatabaseLogs() throws Exception {
+    void securityRelevantLoginFailuresAreRecordedWithoutLoggingMalformedBodies() throws Exception {
         when(adminLoginGuard.start(eq("RateLimited"), anyString()))
                 .thenThrow(new RateLimitException(ErrorCode.ADMIN_LOGIN_RATE_LIMITED, 900L));
         when(adminLoginGuard.start(eq("Unavailable"), anyString()))
@@ -223,7 +242,12 @@ class AdminSystemLogControllerTest {
                                 """))
                 .andExpect(status().isTooManyRequests())
                 .andExpect(jsonPath("$.code").value(100005));
-        assertThat(logCount(rateLimitedRequestId)).isZero();
+        LogRow rateLimited = log(rateLimitedRequestId);
+        assertThat(rateLimited.type()).isEqualTo("SECURITY");
+        assertThat(rateLimited.result()).isEqualTo("FAILURE");
+        assertThat(rateLimited.status()).isEqualTo(429);
+        assertThat(rateLimited.operatorName()).isEqualTo("RateLimited");
+        assertThat(rateLimited.joined()).doesNotContain("private-password");
 
         String unavailableRequestId = requestId("login-unavailable");
         mockMvc.perform(post("/admin/auth/login")
@@ -234,7 +258,12 @@ class AdminSystemLogControllerTest {
                                 """))
                 .andExpect(status().isServiceUnavailable())
                 .andExpect(jsonPath("$.code").value(100503));
-        assertThat(logCount(unavailableRequestId)).isZero();
+        LogRow unavailable = log(unavailableRequestId);
+        assertThat(unavailable.type()).isEqualTo("SECURITY");
+        assertThat(unavailable.result()).isEqualTo("FAILURE");
+        assertThat(unavailable.status()).isEqualTo(503);
+        assertThat(unavailable.operatorName()).isEqualTo("Unavailable");
+        assertThat(unavailable.joined()).doesNotContain("private-password");
 
         String malformedRequestId = requestId("login-malformed");
         mockMvc.perform(post("/admin/auth/login")
@@ -262,13 +291,13 @@ class AdminSystemLogControllerTest {
                         .header("Authorization", "Bearer " + limitedAdminToken()))
                 .andExpect(status().isForbidden());
         LogRow forbiddenQuery = log(forbiddenQueryRequestId);
-        assertThat(forbiddenQuery.type()).isEqualTo("ACCESS");
+        assertThat(forbiddenQuery.type()).isEqualTo("SECURITY");
         assertThat(forbiddenQuery.result()).isEqualTo("FAILURE");
         assertThat(forbiddenQuery.status()).isEqualTo(403);
 
         String token = login();
         String accessRequestId = requestId("query-source");
-        mockMvc.perform(get("/admin/log-test/access/7")
+        mockMvc.perform(get("/admin/log-test/slow-access/7")
                         .header("Authorization", "Bearer " + token)
                         .header("X-Request-Id", accessRequestId))
                 .andExpect(status().isOk());
@@ -279,8 +308,9 @@ class AdminSystemLogControllerTest {
                         .header("X-Request-Id", queryRequestId)
                         .queryParam("current", "1")
                         .queryParam("size", "999")
-                        .queryParam("type", "access")
+                        .queryParam("type", "request")
                         .queryParam("result", "success")
+                        .queryParam("keyword", "7")
                         .queryParam("module", "log-test")
                         .queryParam("operator", "Super")
                         .queryParam("clientIp", "127.0.0.1")
@@ -313,7 +343,7 @@ class AdminSystemLogControllerTest {
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.code").value(100400));
         LogRow invalidQuery = log(invalidQueryRequestId);
-        assertThat(invalidQuery.type()).isEqualTo("ACCESS");
+        assertThat(invalidQuery.type()).isEqualTo("REQUEST");
         assertThat(invalidQuery.result()).isEqualTo("FAILURE");
         assertThat(invalidQuery.status()).isEqualTo(400);
 
@@ -392,7 +422,8 @@ class AdminSystemLogControllerTest {
 
     private LogRow log(String requestId) {
         return jdbcClient.sql("""
-                        select log_type, result, level, operator_id, operator_name,
+                        select log_type, result, level, event_code, summary, target_type, target_id,
+                               operator_id, operator_name,
                                module, action, request_method, request_path, route_pattern,
                                http_status, client_ip, user_agent, error_code, error_message
                         from admin_system_log
@@ -403,6 +434,10 @@ class AdminSystemLogControllerTest {
                         rs.getString("log_type"),
                         rs.getString("result"),
                         rs.getString("level"),
+                        rs.getString("event_code"),
+                        rs.getString("summary"),
+                        rs.getString("target_type"),
+                        rs.getString("target_id"),
                         rs.getObject("operator_id", Long.class),
                         rs.getString("operator_name"),
                         rs.getString("module"),
@@ -438,7 +473,7 @@ class AdminSystemLogControllerTest {
                             duration_ms, client_ip, user_agent, request_id
                         )
                         values (
-                            'ACCESS', 'SUCCESS', 'INFO', :operatorName, 'like-test', 'search',
+                            'REQUEST', 'SUCCESS', 'INFO', :operatorName, 'like-test', 'search',
                             'GET', '/admin/log-test/search', '/admin/log-test/search', 200,
                             1, '127.0.0.1', '', :requestId
                         )
@@ -456,6 +491,10 @@ class AdminSystemLogControllerTest {
             String type,
             String result,
             String level,
+            String eventCode,
+            String summary,
+            String targetType,
+            String targetId,
             Long operatorId,
             String operatorName,
             String module,
@@ -474,6 +513,10 @@ class AdminSystemLogControllerTest {
                     type,
                     result,
                     level,
+                    eventCode,
+                    summary,
+                    targetType,
+                    targetId,
                     operatorName,
                     module,
                     action,
@@ -508,6 +551,12 @@ class AdminSystemLogControllerTest {
 
         @GetMapping("/access/{id}")
         ApiResponse<String> access(@PathVariable long id) {
+            return ApiResponse.success(Long.toString(id));
+        }
+
+        @GetMapping("/slow-access/{id}")
+        ApiResponse<String> slowAccess(@PathVariable long id) throws InterruptedException {
+            Thread.sleep(650L);
             return ApiResponse.success(Long.toString(id));
         }
 

@@ -48,6 +48,11 @@ springdoc: # Springdoc OpenAPI 文档功能配置入口。
     enabled: false # 公共配置关闭接口浏览页面，开发 Profile 单独开启。
 
 shop: # 商城项目自定义业务配置的统一入口。
+  admin-system-log:
+    slow-request-threshold: 1s # 成功 GET 仅在达到慢请求阈值时写入请求追踪；失败请求仍完整保留。
+    request-retention-days: 14 # 请求追踪只保留短周期，操作审计、登录安全和异常按数据清理配置保留。
+  runtime-logging:
+    directory: logs # local Profile 写入 ignored 的 logs 目录；server Profile 覆盖为持久化挂载目录。
   compliance: # 商家资质、法律文档与用户同意留痕。
     privacy-consent-required: false # 登录使用微信小程序平台隐私保护指引，不依赖后台环境变量。
   secret-encryption: # 后台持久化敏感配置共用的信封加密与轮换配置。

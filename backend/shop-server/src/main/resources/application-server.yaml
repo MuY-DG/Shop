@@ -23,6 +23,8 @@ management:
       enabled: false # 不通过 info.* 环境属性扩大公开信息面。
 
 shop:
+  runtime-logging:
+    directory: /var/log/shop-server # 命名卷中的持久化日志目录，供每日压缩归档使用。
   security:
     client-ip:
       trusted-proxy-cidrs: 127.0.0.0/8,::1/128,172.23.0.1/32 # 与 Compose 固定 edge IPAM 一致，只信任精确网关。

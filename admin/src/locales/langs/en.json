@@ -210,6 +210,14 @@
     "500": "Sorry, there was an error on the server"
   },
   "menus": {
+    "auditLog": {
+      "title": "Audit & Logs",
+      "operation": "Operation Audit",
+      "security": "Login & Security",
+      "exception": "Exceptions & Alerts",
+      "request": "Request Tracing",
+      "task": "Task Runs"
+    },
     "login": {
       "title": "Login"
     },

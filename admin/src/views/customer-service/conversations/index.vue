@@ -674,7 +674,9 @@
   import {
     computed,
     nextTick,
+    onActivated,
     onBeforeUnmount,
+    onDeactivated,
     onMounted,
     ref,
     type ComponentPublicInstance
@@ -838,6 +840,7 @@
   let realtimeState: RealtimeConnectionState = 'DISCONNECTED'
   let initialLoadComplete = false
   let pageMounted = false
+  let pageActive = false
   let historyAutoLoadArmed = true
   let previewRequestSequence = 0
   let quickReplyLoadSequence = 0
@@ -2157,9 +2160,9 @@
   }
 
   const startFallbackPolling = () => {
-    if (pollTimer || !initialLoadComplete) return
+    if (pollTimer || !initialLoadComplete || !pageActive) return
     pollTimer = setInterval(() => {
-      if (!document.hidden) void refreshAll()
+      if (pageActive && !document.hidden) void refreshAll()
     }, 15000)
   }
 
@@ -2344,31 +2347,55 @@
     }, delay)
   }
 
-  onMounted(async () => {
-    pageMounted = true
+  const activateConversationPage = () => {
+    if (pageActive) return
+    pageActive = true
     incomingMessageNotifier.start()
     displayClockTimer = setInterval(() => {
       displayNow.value = Date.now()
     }, 30 * 1000)
     unsubscribeRealtimeState = realtimeClient.subscribeConnectionState(handleRealtimeState)
     unsubscribeRealtime = realtimeClient.subscribe(handleRealtimeEvent)
+    document.addEventListener('visibilitychange', handleVisibilityChange)
+    if (initialLoadComplete) {
+      void refreshAll()
+      if (realtimeState !== 'CONNECTED') startFallbackPolling()
+    }
+  }
+
+  const deactivateConversationPage = () => {
+    if (!pageActive) return
+    pageActive = false
+    unsubscribeRealtimeState?.()
+    unsubscribeRealtimeState = null
+    unsubscribeRealtime?.()
+    unsubscribeRealtime = null
+    stopFallbackPolling()
+    if (displayClockTimer) clearInterval(displayClockTimer)
+    displayClockTimer = null
+    if (realtimeRefreshTimer) clearTimeout(realtimeRefreshTimer)
+    realtimeRefreshTimer = null
+    document.removeEventListener('visibilitychange', handleVisibilityChange)
+    incomingMessageNotifier.stop()
+  }
+
+  onMounted(async () => {
+    pageMounted = true
+    activateConversationPage()
     await Promise.all([loadConversations(true), loadAgentState(), loadPendingTransfers()])
     if (!pageMounted) return
     initialLoadComplete = true
-    if (realtimeState !== 'CONNECTED') startFallbackPolling()
-    document.addEventListener('visibilitychange', handleVisibilityChange)
+    if (pageActive && realtimeState !== 'CONNECTED') startFallbackPolling()
   })
+
+  onActivated(activateConversationPage)
+  onDeactivated(deactivateConversationPage)
 
   onBeforeUnmount(() => {
     detailRequestSequence += 1
     pageMounted = false
     initialLoadComplete = false
-    unsubscribeRealtimeState?.()
-    unsubscribeRealtime?.()
-    stopFallbackPolling()
-    if (displayClockTimer) clearInterval(displayClockTimer)
-    displayClockTimer = null
-    if (realtimeRefreshTimer) clearTimeout(realtimeRefreshTimer)
+    deactivateConversationPage()
     pendingRealtimeMessages.clear()
     pendingRealtimeFullRefresh.clear()
     locallyHandledMessageIds.clear()
@@ -2377,7 +2404,6 @@
     inAppNotificationTimers.forEach(clearTimeout)
     inAppNotificationTimers.clear()
     inAppNotifications.value = []
-    incomingMessageNotifier.stop()
     imageUploadAbortController?.abort()
     imageUploadAbortController = null
     pendingImageUploads.forEach((pending) => URL.revokeObjectURL(pending.previewUrl))
@@ -2385,7 +2411,6 @@
     pendingTextSends.clear()
     pendingTextRequests.clear()
     detailCache.clear()
-    document.removeEventListener('visibilitychange', handleVisibilityChange)
     imageObserver?.disconnect()
     imageObserver = null
     imageTargets.clear()

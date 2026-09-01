@@ -24,13 +24,15 @@ public class AdminSystemLogRecorder {
         Objects.requireNonNull(record, "record");
         jdbcClient.sql("""
                         insert into admin_system_log (
-                            log_type, result, level, operator_id, operator_name,
+                            log_type, result, level, event_code, summary, target_type, target_id,
+                            operator_id, operator_name,
                             module, action, request_method, request_path, route_pattern,
                             http_status, duration_ms, client_ip, user_agent, request_id,
                             error_code, error_message, occurred_at
                         )
                         values (
-                            :logType, :result, :level, :operatorId, :operatorName,
+                            :logType, :result, :level, :eventCode, :summary, :targetType, :targetId,
+                            :operatorId, :operatorName,
                             :module, :action, :requestMethod, :requestPath, :routePattern,
                             :httpStatus, :durationMs, :clientIp, :userAgent, :requestId,
                             :errorCode, :errorMessage, :occurredAt
@@ -39,6 +41,10 @@ public class AdminSystemLogRecorder {
                 .param("logType", Objects.requireNonNull(record.type(), "type").name())
                 .param("result", Objects.requireNonNull(record.result(), "result").name())
                 .param("level", Objects.requireNonNull(record.level(), "level").name())
+                .param("eventCode", truncate(record.eventCode(), 128))
+                .param("summary", truncate(record.summary(), 255))
+                .param("targetType", truncate(record.targetType(), 64))
+                .param("targetId", truncate(record.targetId(), 128))
                 .param("operatorId", record.operatorUserId(), Types.BIGINT)
                 .param("operatorName", truncate(record.operatorUsername(), 64))
                 .param("module", truncate(record.module(), 64))

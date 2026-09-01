@@ -11,6 +11,7 @@ public record AdminSystemLogQuery(
         Long size,
         String type,
         String result,
+        String keyword,
         String module,
         String operator,
         String clientIp,

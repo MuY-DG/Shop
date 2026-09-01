@@ -5,6 +5,7 @@ export type LogTagTone = 'primary' | 'success' | 'info' | 'warning' | 'danger'
 export interface SystemLogSearchForm {
   type?: Api.SystemLog.LogType | 'ALL'
   result?: Api.SystemLog.LogResult
+  keyword?: string
   module?: string
   operator?: string
   clientIp?: string
@@ -13,16 +14,16 @@ export interface SystemLogSearchForm {
 }
 
 const TYPE_LABELS: Record<Api.SystemLog.LogType, string> = {
-  LOGIN: '登录日志',
+  SECURITY: '安全日志',
   OPERATION: '操作日志',
-  ACCESS: '访问日志',
+  REQUEST: '请求追踪',
   EXCEPTION: '异常日志'
 }
 
 const TYPE_TONES: Record<Api.SystemLog.LogType, LogTagTone> = {
-  LOGIN: 'primary',
+  SECURITY: 'primary',
   OPERATION: 'success',
-  ACCESS: 'info',
+  REQUEST: 'info',
   EXCEPTION: 'danger'
 }
 
@@ -59,11 +60,13 @@ export function normalizeLogSearchParams(form: SystemLogSearchForm): Api.SystemL
   if (form.type && form.type !== 'ALL') params.type = form.type
   if (form.result) params.result = form.result
 
+  const keyword = normalizedText(form.keyword)
   const module = normalizedText(form.module)
   const operator = normalizedText(form.operator)
   const clientIp = normalizedText(form.clientIp)
   const requestId = normalizedText(form.requestId)
 
+  if (keyword) params.keyword = keyword
   if (module) params.module = module
   if (operator) params.operator = operator
   if (clientIp) params.clientIp = clientIp
@@ -107,3 +110,42 @@ export const formatLogOperator = (
 export const formatLogRequest = (
   log: Pick<Api.SystemLog.LogListItem, 'requestMethod' | 'requestPath'>
 ) => `${formatLogText(log.requestMethod)} ${formatLogText(log.requestPath)}`
+
+export const formatLogSummary = (log: Pick<Api.SystemLog.LogListItem, 'summary' | 'action'>) =>
+  normalizedText(log.summary) || normalizedText(log.action) || '未提供摘要'
+
+export const formatLogTarget = (
+  log: Pick<Api.SystemLog.LogListItem, 'targetType' | 'targetId'>
+) => {
+  const targetId = normalizedText(log.targetId)
+  if (!targetId) return '-'
+  return `${normalizedText(log.targetType) || '对象'}：${targetId}`
+}
+
+export const formatLogDevice = (userAgent?: string | null) => {
+  const source = normalizedText(userAgent || undefined)
+  if (!source) return '未知设备'
+
+  const browser = source.match(/Edg\/(\d+)/)
+    ? `Edge ${source.match(/Edg\/(\d+)/)?.[1]}`
+    : source.match(/Chrome\/(\d+)/)
+      ? `Chrome ${source.match(/Chrome\/(\d+)/)?.[1]}`
+      : source.match(/Firefox\/(\d+)/)
+        ? `Firefox ${source.match(/Firefox\/(\d+)/)?.[1]}`
+        : source.match(/Version\/(\d+).+Safari/)
+          ? `Safari ${source.match(/Version\/(\d+).+Safari/)?.[1]}`
+          : ''
+  const system = /Android/.test(source)
+    ? 'Android'
+    : /iPhone|iPad/.test(source)
+      ? 'iOS'
+      : /Mac OS X/.test(source)
+        ? 'macOS'
+        : /Windows/.test(source)
+          ? 'Windows'
+          : /Linux/.test(source)
+            ? 'Linux'
+            : ''
+
+  return [browser, system].filter(Boolean).join(' · ') || '其他设备'
+}

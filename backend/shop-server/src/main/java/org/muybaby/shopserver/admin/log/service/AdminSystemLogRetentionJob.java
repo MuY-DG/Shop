@@ -3,6 +3,7 @@ package org.muybaby.shopserver.admin.log.service;
 import org.muybaby.shopserver.maintenance.cleanup.DataCleanupExecutor;
 import org.muybaby.shopserver.maintenance.cleanup.DataCleanupTaskCode;
 import org.muybaby.shopserver.maintenance.cleanup.DataCleanupTaskSetting;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
 import java.time.Instant;
@@ -13,9 +14,17 @@ import java.time.ZoneOffset;
 public class AdminSystemLogRetentionJob implements DataCleanupExecutor {
 
     private final AdminSystemLogRetentionService retentionService;
+    private final int requestRetentionDays;
 
-    public AdminSystemLogRetentionJob(AdminSystemLogRetentionService retentionService) {
+    public AdminSystemLogRetentionJob(
+            AdminSystemLogRetentionService retentionService,
+            @Value("${shop.admin-system-log.request-retention-days:14}") int requestRetentionDays
+    ) {
+        if (requestRetentionDays < 1) {
+            throw new IllegalArgumentException("Request log retention days must be positive");
+        }
         this.retentionService = retentionService;
+        this.requestRetentionDays = requestRetentionDays;
     }
 
     @Override
@@ -25,8 +34,14 @@ public class AdminSystemLogRetentionJob implements DataCleanupExecutor {
 
     @Override
     public int execute(DataCleanupTaskSetting setting) {
-        LocalDateTime cutoff = cutoffAt(currentInstant(), setting.retentionDays());
-        return retentionService.deleteBatchBefore(cutoff, setting.batchSize());
+        Instant now = currentInstant();
+        LocalDateTime auditCutoff = cutoffAt(now, setting.retentionDays());
+        LocalDateTime requestCutoff = cutoffAt(now, requestRetentionDays);
+        return retentionService.deleteExpiredBatch(
+                auditCutoff,
+                requestCutoff,
+                setting.batchSize()
+        );
     }
 
     Instant currentInstant() {

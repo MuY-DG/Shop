@@ -26,9 +26,9 @@ export const DATA_CLEANUP_TASK_PRESENTATION: Record<
     batchLabel: '单批记录上限'
   },
   ADMIN_SYSTEM_LOG: {
-    title: '系统日志',
-    description: '删除超过保留期限的后台操作与系统日志。',
-    retentionLabel: '日志保留天数',
+    title: '审计与日志',
+    description: '操作审计、登录安全和异常按此期限保留；请求追踪固定只保留 14 天。',
+    retentionLabel: '审计日志保留天数',
     batchLabel: '单批记录上限'
   },
   CUSTOMER_SERVICE_MESSAGE: {

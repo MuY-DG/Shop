@@ -19,18 +19,27 @@ public class AdminSystemLogRetentionService {
     }
 
     @Transactional
-    public int deleteBatchBefore(LocalDateTime cutoff, int batchSize) {
-        if (cutoff == null || batchSize < 1 || batchSize > MAX_BATCH_SIZE) {
+    public int deleteExpiredBatch(
+            LocalDateTime auditCutoff,
+            LocalDateTime requestCutoff,
+            int batchSize
+    ) {
+        if (auditCutoff == null
+                || requestCutoff == null
+                || batchSize < 1
+                || batchSize > MAX_BATCH_SIZE) {
             throw new IllegalArgumentException("Invalid admin system log retention batch");
         }
         List<Long> ids = jdbcClient.sql("""
                         select id
                         from admin_system_log
-                        where occurred_at < :cutoff
+                        where (log_type = 'REQUEST' and occurred_at < :requestCutoff)
+                           or (log_type <> 'REQUEST' and occurred_at < :auditCutoff)
                         order by occurred_at asc, id asc
                         limit :batchSize
                         """)
-                .param("cutoff", cutoff)
+                .param("auditCutoff", auditCutoff)
+                .param("requestCutoff", requestCutoff)
                 .param("batchSize", batchSize)
                 .query(Long.class)
                 .list();

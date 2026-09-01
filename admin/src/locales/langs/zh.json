@@ -210,6 +210,14 @@
     "500": "抱歉，服务器出错了"
   },
   "menus": {
+    "auditLog": {
+      "title": "审计与日志",
+      "operation": "操作审计",
+      "security": "登录与安全",
+      "exception": "异常与告警",
+      "request": "请求追踪",
+      "task": "任务运行"
+    },
     "login": {
       "title": "登录"
     },

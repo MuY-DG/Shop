@@ -4,9 +4,12 @@ import test from 'node:test'
 
 import {
   formatLogDateTime,
+  formatLogDevice,
   formatLogDuration,
   formatLogOperator,
   formatLogRequest,
+  formatLogSummary,
+  formatLogTarget,
   logLevelLabel,
   logLevelTone,
   logResultLabel,
@@ -21,6 +24,7 @@ test('normalizes system log filters and maps the occurrence range', () => {
     normalizeLogSearchParams({
       type: 'OPERATION',
       result: 'FAILURE',
+      keyword: '  商品 100  ',
       module: '  system-user  ',
       operator: '  Super  ',
       clientIp: '  127.0.0.1 ',
@@ -30,6 +34,7 @@ test('normalizes system log filters and maps the occurrence range', () => {
     {
       type: 'OPERATION',
       result: 'FAILURE',
+      keyword: '商品 100',
       module: 'system-user',
       operator: 'Super',
       clientIp: '127.0.0.1',
@@ -54,16 +59,24 @@ test('omits blank filters and incomplete occurrence ranges', () => {
   )
 })
 
-test('shows all log types directly instead of hiding them in a select', () => {
+test('uses dedicated log routes and no longer asks users to apply a type filter', () => {
   const source = readFileSync(new URL('./index.vue', import.meta.url), 'utf8')
+  const routeSource = readFileSync(
+    new URL('../../../router/modules/audit-log.ts', import.meta.url),
+    'utf8'
+  )
 
-  assert.match(source, /label: '日志类型'[\s\S]*?type: 'radiogroup'/)
-  assert.match(source, /\{ label: '全部', value: 'ALL' \}/)
-  assert.doesNotMatch(source, /placeholder: '请选择日志类型'/)
+  assert.doesNotMatch(source, /label: '日志类型'/)
+  assert.match(source, /AuditOperation:[\s\S]*?type: 'OPERATION'/)
+  assert.match(source, /AuditRequest:[\s\S]*?type: 'REQUEST'/)
+  assert.match(routeSource, /path: 'operation'/)
+  assert.match(routeSource, /path: 'security'/)
+  assert.match(routeSource, /path: 'exceptions'/)
+  assert.match(routeSource, /path: 'requests'/)
 })
 
 test('maps log types, levels, and results to stable labels and tag tones', () => {
-  assert.equal(logTypeLabel('LOGIN'), '登录日志')
+  assert.equal(logTypeLabel('SECURITY'), '安全日志')
   assert.equal(logTypeTone('EXCEPTION'), 'danger')
   assert.equal(logLevelLabel('WARN'), '警告')
   assert.equal(logLevelTone('INFO'), 'info')
@@ -88,6 +101,19 @@ test('formats list and detail values in the browser timezone without inventing r
   assert.equal(
     formatLogRequest({ requestMethod: 'POST', requestPath: '/admin/system/users' }),
     'POST /admin/system/users'
+  )
+  assert.equal(
+    formatLogSummary({ summary: ' 修改商品成功 ', action: 'PUT /legacy' }),
+    '修改商品成功'
+  )
+  assert.equal(formatLogSummary({ summary: '', action: 'login' }), 'login')
+  assert.equal(formatLogTarget({ targetType: 'spuId', targetId: '100' }), 'spuId：100')
+  assert.equal(formatLogTarget({ targetType: '', targetId: '' }), '-')
+  assert.equal(
+    formatLogDevice(
+      'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 Chrome/140.0.0.0 Safari/537.36'
+    ),
+    'Chrome 140 · macOS'
   )
 })
 

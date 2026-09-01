@@ -120,6 +120,10 @@ services:
       SHOP_SECRET_ENCRYPTION_ACTIVE_KEY_ID: ${SHOP_SECRET_ENCRYPTION_ACTIVE_KEY_ID:?SHOP_SECRET_ENCRYPTION_ACTIVE_KEY_ID is required}
       SHOP_SECRET_ENCRYPTION_KEY_RING: ${SHOP_SECRET_ENCRYPTION_KEY_RING:?SHOP_SECRET_ENCRYPTION_KEY_RING is required}
 
+    # 应用运行日志同时保留标准输出和每日 gzip 文件；重建容器不会删除归档。
+    volumes:
+      - shop-server-logs:/var/log/shop-server
+
     ports:
       # 只有宿主机 OpenResty/运维检查可以访问，公网不能直接访问 8080。
       - "127.0.0.1:8080:8080"
@@ -148,12 +152,13 @@ services:
     stop_grace_period: 30s
     # JVM 最大使用约 75%，容器总内存限制为 1.1 GB。
     mem_limit: 1100m
-    # 限制应用日志大小；业务日志应输出到标准输出并由 1Panel 查看。
+    # 标准输出使用高效轮转驱动；详细运行日志另按天压缩到持久化卷。
     logging:
-      driver: json-file
+      driver: local
       options:
         max-size: 20m
         max-file: "5"
+        compress: "true"
 
 # data 隔离业务数据流量；ops 为 MySQL/Redis 的宿主机回环端口提供默认网关。
 networks:
@@ -183,3 +188,4 @@ networks:
 volumes:
   mysql-data:
   redis-data:
+  shop-server-logs:

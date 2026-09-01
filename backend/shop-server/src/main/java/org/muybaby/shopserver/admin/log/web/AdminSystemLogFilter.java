@@ -17,6 +17,7 @@ import org.muybaby.shopserver.security.AuthenticatedPrincipal;
 import org.muybaby.shopserver.security.web.ClientIpResolver;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Component;
@@ -47,11 +48,17 @@ public class AdminSystemLogFilter extends OncePerRequestFilter {
 
     private final AdminSystemLogRecorder recorder;
     private final ClientIpResolver clientIpResolver;
+    private final long slowRequestThresholdMillis;
     private final AtomicLong lastFailureWarningAt = new AtomicLong();
 
-    public AdminSystemLogFilter(AdminSystemLogRecorder recorder, ClientIpResolver clientIpResolver) {
+    public AdminSystemLogFilter(
+            AdminSystemLogRecorder recorder,
+            ClientIpResolver clientIpResolver,
+            @Value("${shop.admin-system-log.slow-request-threshold:1s}") java.time.Duration slowRequestThreshold
+    ) {
         this.recorder = recorder;
         this.clientIpResolver = clientIpResolver;
+        this.slowRequestThresholdMillis = Math.max(1L, slowRequestThreshold.toMillis());
     }
 
     @Override
@@ -88,7 +95,8 @@ public class AdminSystemLogFilter extends OncePerRequestFilter {
         int status = requestFailure != null && response.getStatus() < 500
                 ? HttpServletResponse.SC_INTERNAL_SERVER_ERROR
                 : response.getStatus();
-        if (!shouldRecord(request, path, principal, status)) {
+        long durationMillis = Math.max(0L, (System.nanoTime() - startedAt) / 1_000_000L);
+        if (!shouldRecord(request, path, principal, status, durationMillis)) {
             return;
         }
         AdminSystemLogType type = type(request.getMethod(), path, status);
@@ -103,11 +111,24 @@ public class AdminSystemLogFilter extends OncePerRequestFilter {
         Operator operator = operator(request, path, principal);
         String routePattern = attribute(request, HandlerMapping.BEST_MATCHING_PATTERN_ATTRIBUTE);
         ErrorDetails error = errorDetails(request, status);
+        AuditSemantics semantics = semantics(
+                type,
+                result,
+                request.getMethod(),
+                path,
+                routePattern,
+                status,
+                error
+        );
 
         AdminSystemLogRecord record = new AdminSystemLogRecord(
                 type,
                 result,
                 level,
+                clean(semantics.eventCode(), 128),
+                clean(semantics.summary(), 255),
+                clean(semantics.targetType(), 64),
+                clean(semantics.targetId(), 128),
                 operator.id(),
                 clean(operator.username(), 64),
                 clean(module(path), 64),
@@ -116,7 +137,7 @@ public class AdminSystemLogFilter extends OncePerRequestFilter {
                 clean(path, 255),
                 clean(routePattern, 255),
                 status,
-                Math.max(0L, (System.nanoTime() - startedAt) / 1_000_000L),
+                durationMillis,
                 clean(clientIpResolver.resolve(request), 45),
                 clean(request.getHeader("User-Agent"), 255),
                 clean(attribute(request, RequestIdFilter.REQUEST_ID_ATTRIBUTE), 128),
@@ -131,15 +152,14 @@ public class AdminSystemLogFilter extends OncePerRequestFilter {
             HttpServletRequest request,
             String path,
             AuthenticatedPrincipal principal,
-            int status
+            int status,
+            long durationMillis
     ) {
         if (!path.startsWith("/admin/")) {
             return false;
         }
         if (LOGIN_PATH.equals(path)) {
-            return status != 429
-                    && status != HttpServletResponse.SC_SERVICE_UNAVAILABLE
-                    && request.getAttribute(RequestLogContext.LOGIN_OPERATOR_NAME_ATTRIBUTE) != null;
+            return request.getAttribute(RequestLogContext.LOGIN_OPERATOR_NAME_ATTRIBUTE) != null;
         }
         if (principal == null || principal.kind() != TokenKind.ADMIN) {
             return false;
@@ -147,7 +167,13 @@ public class AdminSystemLogFilter extends OncePerRequestFilter {
         if (status < 400 && isExcluded(path)) {
             return false;
         }
-        return "GET".equals(request.getMethod()) || WRITING_METHODS.contains(request.getMethod());
+        if (WRITING_METHODS.contains(request.getMethod())) {
+            return true;
+        }
+        if (!"GET".equals(request.getMethod())) {
+            return false;
+        }
+        return status >= 400 || durationMillis >= slowRequestThresholdMillis;
     }
 
     private boolean isExcluded(String path) {
@@ -161,12 +187,27 @@ public class AdminSystemLogFilter extends OncePerRequestFilter {
 
     private AdminSystemLogType type(String method, String path, int status) {
         if (LOGIN_PATH.equals(path)) {
-            return AdminSystemLogType.LOGIN;
+            return AdminSystemLogType.SECURITY;
         }
         if (status >= 500) {
             return AdminSystemLogType.EXCEPTION;
         }
-        return "GET".equals(method) ? AdminSystemLogType.ACCESS : AdminSystemLogType.OPERATION;
+        if (status == HttpServletResponse.SC_FORBIDDEN || isSecurityOperation(method, path)) {
+            return AdminSystemLogType.SECURITY;
+        }
+        return "GET".equals(method) ? AdminSystemLogType.REQUEST : AdminSystemLogType.OPERATION;
+    }
+
+    private boolean isSecurityOperation(String method, String path) {
+        if (!WRITING_METHODS.contains(method)) {
+            return false;
+        }
+        return path.equals("/admin/auth/logout")
+                || path.equals("/admin/auth/logout-all")
+                || path.equals("/admin/auth/password")
+                || path.equals("/admin/auth/profile")
+                || path.startsWith("/admin/auth/sessions/")
+                || path.contains("/sessions/");
     }
 
     private Operator operator(
@@ -220,6 +261,138 @@ public class AdminSystemLogFilter extends OncePerRequestFilter {
             return "login";
         }
         return method + " " + (routePattern.isBlank() ? path : routePattern);
+    }
+
+    private AuditSemantics semantics(
+            AdminSystemLogType type,
+            AdminSystemLogResult result,
+            String method,
+            String path,
+            String routePattern,
+            int status,
+            ErrorDetails error
+    ) {
+        if (type == AdminSystemLogType.SECURITY && LOGIN_PATH.equals(path)) {
+            String summary = result == AdminSystemLogResult.SUCCESS
+                    ? "管理员登录成功"
+                    : appendError("管理员登录失败", error);
+            return new AuditSemantics(
+                    result == AdminSystemLogResult.SUCCESS
+                            ? "ADMIN_LOGIN_SUCCESS"
+                            : "ADMIN_LOGIN_FAILURE",
+                    summary,
+                    "admin-account",
+                    ""
+            );
+        }
+
+        Target target = target(path, routePattern);
+        String moduleLabel = moduleLabel(module(path));
+        String subject = target.id().isBlank()
+                ? moduleLabel
+                : moduleLabel + "（" + target.id() + "）";
+        String eventCode = eventCode(method, path, routePattern, status);
+
+        if (type == AdminSystemLogType.EXCEPTION) {
+            return new AuditSemantics(
+                    eventCode,
+                    appendError(subject + "请求发生服务异常", error),
+                    target.type(),
+                    target.id()
+            );
+        }
+        if (type == AdminSystemLogType.REQUEST) {
+            String summary = status >= 400
+                    ? appendError(subject + "请求失败", error)
+                    : subject + "慢请求";
+            return new AuditSemantics(eventCode, summary, target.type(), target.id());
+        }
+
+        if (type == AdminSystemLogType.SECURITY) {
+            String summary = switch (path) {
+                case "/admin/auth/logout" -> "退出当前登录设备";
+                case "/admin/auth/logout-all" -> "退出全部登录设备";
+                case "/admin/auth/password" -> "修改登录密码";
+                case "/admin/auth/profile" -> "修改个人资料";
+                default -> status == HttpServletResponse.SC_FORBIDDEN
+                        ? "权限校验失败"
+                        : "执行安全操作";
+            };
+            summary = result == AdminSystemLogResult.SUCCESS
+                    ? summary + "成功"
+                    : appendError(summary, error);
+            return new AuditSemantics(eventCode, summary, target.type(), target.id());
+        }
+
+        String summary = switch (method) {
+            case "POST" -> "提交" + subject;
+            case "PUT", "PATCH" -> "修改" + subject;
+            case "DELETE" -> "删除" + subject;
+            default -> "操作" + subject;
+        };
+        if (result == AdminSystemLogResult.FAILURE) {
+            summary = appendError(summary + "失败", error);
+        } else {
+            summary += "成功";
+        }
+        return new AuditSemantics(eventCode, summary, target.type(), target.id());
+    }
+
+    private String appendError(String summary, ErrorDetails error) {
+        if (error == null || error.message().isBlank()) {
+            return summary;
+        }
+        return summary + "：" + error.message();
+    }
+
+    private String eventCode(String method, String path, String routePattern, int status) {
+        String source = method + "_" + (routePattern.isBlank() ? path : routePattern);
+        String normalized = source
+                .replaceAll("[^A-Za-z0-9]+", "_")
+                .replaceAll("^_+|_+$", "")
+                .toUpperCase(Locale.ROOT);
+        return status >= 500 ? normalized + "_EXCEPTION" : normalized;
+    }
+
+    private Target target(String path, String routePattern) {
+        if (routePattern == null || routePattern.isBlank()) {
+            return new Target(module(path), "");
+        }
+        String[] actualSegments = path.split("/");
+        String[] patternSegments = routePattern.split("/");
+        int length = Math.min(actualSegments.length, patternSegments.length);
+        for (int index = length - 1; index >= 0; index--) {
+            String patternSegment = patternSegments[index];
+            if (patternSegment.startsWith("{") && patternSegment.endsWith("}")) {
+                return new Target(
+                        patternSegment.substring(1, patternSegment.length() - 1),
+                        actualSegments[index]
+                );
+            }
+        }
+        return new Target(module(path), "");
+    }
+
+    private String moduleLabel(String module) {
+        return switch (module) {
+            case "auth" -> "账号与会话";
+            case "system" -> "系统配置";
+            case "product" -> "商品";
+            case "assets", "asset-folders" -> "素材";
+            case "operations" -> "运营统计";
+            case "customer-service" -> "在线客服";
+            case "customer-service-management" -> "客服管理";
+            case "marketing" -> "营销";
+            case "home" -> "首页装修";
+            case "after-sales", "aftersale" -> "售后";
+            case "pay", "payment" -> "支付";
+            case "orders", "order" -> "订单";
+            case "logistics" -> "物流";
+            case "finance" -> "财务";
+            case "data-cleanup" -> "数据清理";
+            case "compliance" -> "合规";
+            default -> module.isBlank() ? "后台" : module;
+        };
     }
 
     private String requestPath(HttpServletRequest request) {
@@ -277,6 +450,17 @@ public class AdminSystemLogFilter extends OncePerRequestFilter {
     }
 
     private record Operator(Long id, String username) {
+    }
+
+    private record AuditSemantics(
+            String eventCode,
+            String summary,
+            String targetType,
+            String targetId
+    ) {
+    }
+
+    private record Target(String type, String id) {
     }
 
     private record ErrorDetails(String code, String message) {

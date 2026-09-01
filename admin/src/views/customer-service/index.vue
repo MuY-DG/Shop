@@ -67,7 +67,7 @@
 </template>
 
 <script setup lang="ts">
-  import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+  import { computed, onActivated, onBeforeUnmount, onDeactivated, onMounted, ref } from 'vue'
   import { ElMessage, ElMessageBox } from 'element-plus'
   import { BarChart3, LogOut, MessageCircle, Settings, Wifi, WifiOff } from '@lucide/vue'
   import { useRoute } from 'vue-router'
@@ -91,6 +91,7 @@
   let stateTimer: ReturnType<typeof setInterval> | null = null
   let unsubscribeRealtime: (() => void) | null = null
   let unsubscribeRealtimeConnectionState: (() => void) | null = null
+  let workspaceActive = false
 
   const roles = computed(() => userStore.info.roles || [])
   const isAgent = computed(() => roles.value.includes('R_CUSTOMER_SERVICE'))
@@ -194,7 +195,9 @@
     void logout()
   }
 
-  onMounted(() => {
+  function activateWorkspace() {
+    if (workspaceActive) return
+    workspaceActive = true
     if (isAgent.value) {
       unsubscribeRealtimeConnectionState = realtimeClient.subscribeConnectionState((state) => {
         if (state !== 'CONNECTED' && agentState.value) {
@@ -216,15 +219,25 @@
     void loadAgentProfile()
     void loadAgentState()
     stateTimer = setInterval(() => {
-      if (!document.hidden) void loadAgentState()
+      if (workspaceActive && !document.hidden) void loadAgentState()
     }, 15000)
-  })
+  }
 
-  onBeforeUnmount(() => {
+  function deactivateWorkspace() {
+    if (!workspaceActive) return
+    workspaceActive = false
     unsubscribeRealtime?.()
+    unsubscribeRealtime = null
     unsubscribeRealtimeConnectionState?.()
+    unsubscribeRealtimeConnectionState = null
     if (stateTimer) clearInterval(stateTimer)
-  })
+    stateTimer = null
+  }
+
+  onMounted(activateWorkspace)
+  onActivated(activateWorkspace)
+  onDeactivated(deactivateWorkspace)
+  onBeforeUnmount(deactivateWorkspace)
 </script>
 
 <style scoped>

@@ -34,6 +34,10 @@ class AdminSystemLogSchemaTest {
                 "log_type",
                 "result",
                 "level",
+                "event_code",
+                "summary",
+                "target_type",
+                "target_id",
                 "operator_id",
                 "operator_name",
                 "module",
@@ -59,10 +63,12 @@ class AdminSystemLogSchemaTest {
                           and lower(index_name) in (
                               'idx_admin_system_log_occurred_id',
                               'idx_admin_system_log_type_result_occurred',
+                              'idx_admin_system_log_event_occurred',
                               'idx_admin_system_log_module_occurred',
                               'idx_admin_system_log_operator_occurred',
                               'idx_admin_system_log_client_ip_occurred',
-                              'idx_admin_system_log_request_id'
+                              'idx_admin_system_log_request_id',
+                              'idx_admin_system_log_target'
                           )
                         order by lower(index_name), ordinal_position
                         """)
@@ -72,6 +78,8 @@ class AdminSystemLogSchemaTest {
         assertThat(indexColumns).containsExactly(
                 new IndexColumn("idx_admin_system_log_client_ip_occurred", "client_ip"),
                 new IndexColumn("idx_admin_system_log_client_ip_occurred", "occurred_at"),
+                new IndexColumn("idx_admin_system_log_event_occurred", "event_code"),
+                new IndexColumn("idx_admin_system_log_event_occurred", "occurred_at"),
                 new IndexColumn("idx_admin_system_log_module_occurred", "module"),
                 new IndexColumn("idx_admin_system_log_module_occurred", "occurred_at"),
                 new IndexColumn("idx_admin_system_log_occurred_id", "occurred_at"),
@@ -79,6 +87,9 @@ class AdminSystemLogSchemaTest {
                 new IndexColumn("idx_admin_system_log_operator_occurred", "operator_id"),
                 new IndexColumn("idx_admin_system_log_operator_occurred", "occurred_at"),
                 new IndexColumn("idx_admin_system_log_request_id", "request_id"),
+                new IndexColumn("idx_admin_system_log_target", "target_type"),
+                new IndexColumn("idx_admin_system_log_target", "target_id"),
+                new IndexColumn("idx_admin_system_log_target", "occurred_at"),
                 new IndexColumn("idx_admin_system_log_type_result_occurred", "log_type"),
                 new IndexColumn("idx_admin_system_log_type_result_occurred", "result"),
                 new IndexColumn("idx_admin_system_log_type_result_occurred", "occurred_at")
@@ -121,21 +132,29 @@ class AdminSystemLogSchemaTest {
     }
 
     @Test
-    void systemLogMenuAndReadPermissionAreGrantedOnlyToSuperRole() {
-        Integer menuCount = jdbcClient.sql("""
+    void auditLogMenusAndReadPermissionAreGrantedOnlyToSuperRole() {
+        Integer rootMenuCount = jdbcClient.sql("""
                         select count(*)
                         from admin_menu
                         where id = 204
-                          and parent_id = 200
-                          and name = 'SystemLog'
-                          and path = 'log'
-                          and component = '/system/log'
-                          and title = 'menus.system.log'
+                          and parent_id is null
+                          and name = 'AuditLog'
+                          and path = '/audit-log'
+                          and component = '/index/index'
+                          and title = 'menus.auditLog.title'
                           and enabled = true
                           and visible = true
                         """)
                 .query(Integer.class)
                 .single();
+        List<String> childNames = jdbcClient.sql("""
+                        select name
+                        from admin_menu
+                        where parent_id = 204
+                        order by sort_order
+                        """)
+                .query(String.class)
+                .list();
         Integer permissionCount = jdbcClient.sql("""
                         select count(*)
                         from admin_permission
@@ -147,7 +166,7 @@ class AdminSystemLogSchemaTest {
         Integer menuPermissionCount = jdbcClient.sql("""
                         select count(*)
                         from admin_menu_permission
-                        where menu_id = 204
+                        where menu_id in (205,206,207,208,209)
                           and permission_id = 1300
                         """)
                 .query(Integer.class)
@@ -156,8 +175,8 @@ class AdminSystemLogSchemaTest {
                         select r.code
                         from admin_role_menu rm
                         join admin_role r on r.id = rm.role_id
-                        where rm.menu_id = 204
-                        order by r.code
+                        where rm.menu_id in (204,205,206,207,208,209)
+                        order by rm.menu_id, r.code
                         """)
                 .query(String.class)
                 .list();
@@ -171,10 +190,19 @@ class AdminSystemLogSchemaTest {
                 .query(String.class)
                 .list();
 
-        assertThat(menuCount).isEqualTo(1);
+        assertThat(rootMenuCount).isEqualTo(1);
+        assertThat(childNames).containsExactly(
+                "AuditOperation",
+                "AuditSecurity",
+                "AuditException",
+                "AuditRequest",
+                "AuditTask"
+        );
         assertThat(permissionCount).isEqualTo(1);
-        assertThat(menuPermissionCount).isEqualTo(1);
-        assertThat(menuRoleCodes).containsExactly("R_SUPER");
+        assertThat(menuPermissionCount).isEqualTo(5);
+        assertThat(menuRoleCodes).containsExactly(
+                "R_SUPER", "R_SUPER", "R_SUPER", "R_SUPER", "R_SUPER", "R_SUPER"
+        );
         assertThat(permissionRoleCodes).containsExactly("R_SUPER");
     }
 

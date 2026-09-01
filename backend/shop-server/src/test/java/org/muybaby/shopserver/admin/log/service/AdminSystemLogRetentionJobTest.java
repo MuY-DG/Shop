@@ -27,21 +27,23 @@ class AdminSystemLogRetentionJobTest {
     void executesExactlyOneDatabaseConfiguredBatch() {
         AdminSystemLogRetentionService service = mock(AdminSystemLogRetentionService.class);
         AdminSystemLogRetentionJob job = new AdminSystemLogRetentionJob(
-                service
+                service,
+                14
         ) {
             @Override
             Instant currentInstant() {
                 return Instant.parse("2026-01-01T16:30:00Z");
             }
         };
-        LocalDateTime cutoff = LocalDateTime.of(2024, 11, 27, 16, 30);
-        when(service.deleteBatchBefore(cutoff, 37)).thenReturn(37);
+        LocalDateTime auditCutoff = LocalDateTime.of(2024, 11, 27, 16, 30);
+        LocalDateTime requestCutoff = LocalDateTime.of(2025, 12, 18, 16, 30);
+        when(service.deleteExpiredBatch(auditCutoff, requestCutoff, 37)).thenReturn(37);
 
         int processed = job.execute(setting(400, 37));
 
         assertThat(processed).isEqualTo(37);
         assertThat(job.taskCode()).isEqualTo(DataCleanupTaskCode.ADMIN_SYSTEM_LOG);
-        verify(service, only()).deleteBatchBefore(cutoff, 37);
+        verify(service, only()).deleteExpiredBatch(auditCutoff, requestCutoff, 37);
     }
 
     private DataCleanupTaskSetting setting(int retentionDays, int batchSize) {
