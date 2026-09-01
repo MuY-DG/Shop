@@ -83,6 +83,19 @@ public class PaymentTimeoutCloseService {
         return closed == null ? 0 : closed;
     }
 
+    public boolean closeExpiredPayment(Long orderId) {
+        requireOrderId(orderId);
+        Boolean handled = withoutTransaction.execute(status -> {
+            ClaimedPayment payment = claimExpiredPayment(orderId, LocalDateTime.now(clock));
+            if (payment == null) {
+                return false;
+            }
+            PaymentProcessingResult result = processClaimedPayment(payment);
+            return result == PaymentProcessingResult.CLOSED || result == PaymentProcessingResult.PAID;
+        });
+        return Boolean.TRUE.equals(handled);
+    }
+
     private int closeExpiredPaymentsOutsideTransaction(int batchSize) {
         LocalDateTime scanTime = LocalDateTime.now(clock);
         if (!hasClaimableExpiredPayment(scanTime)) {
@@ -95,37 +108,44 @@ public class PaymentTimeoutCloseService {
             if (payment == null) {
                 break;
             }
-            try {
-                ResolvedPaymentConfig config = paymentConfigResolver.resolveForPayment(
-                        payment.paymentConfigId(), payment.paymentConfigFingerprint());
-                // Both provider operations happen after the claim transaction has committed.
-                WechatPayOrderQueryResult queryResult = wechatPayProvider.queryOrder(
-                        config, payment.outTradeNo());
-                validateProviderIdentity(payment, queryResult);
-                if (queryResult.paid()) {
-                    paymentFinalizationService.finalizePaid(
-                            payment.outTradeNo(),
-                            queryResult.transactionId(),
-                            queryResult.amountCent(),
-                            queryResult.paidAt() == null ? LocalDateTime.now(clock) : queryResult.paidAt(),
-                            "",
-                            config
-                    );
-                    continue;
-                }
-                if (!isAlreadyClosedAtProvider(queryResult.tradeState())) {
-                    wechatPayProvider.closeOrder(config, payment.outTradeNo());
-                }
-                if (finalizeClaimedPayment(payment)) {
-                    closedCount++;
-                }
-            } catch (RuntimeException ex) {
-                recordClaimFailure(payment, ex);
-                log.warn("One expired payment could not be closed; its lease will be retried (type={})",
-                        safeErrorCode(ex));
+            if (processClaimedPayment(payment) == PaymentProcessingResult.CLOSED) {
+                closedCount++;
             }
         }
         return closedCount;
+    }
+
+    private PaymentProcessingResult processClaimedPayment(ClaimedPayment payment) {
+        try {
+            ResolvedPaymentConfig config = paymentConfigResolver.resolveForPayment(
+                    payment.paymentConfigId(), payment.paymentConfigFingerprint());
+            // Both provider operations happen after the claim transaction has committed.
+            WechatPayOrderQueryResult queryResult = wechatPayProvider.queryOrder(
+                    config, payment.outTradeNo());
+            validateProviderIdentity(payment, queryResult);
+            if (queryResult.paid()) {
+                paymentFinalizationService.finalizePaid(
+                        payment.outTradeNo(),
+                        queryResult.transactionId(),
+                        queryResult.amountCent(),
+                        queryResult.paidAt() == null ? LocalDateTime.now(clock) : queryResult.paidAt(),
+                        "",
+                        config
+                );
+                return PaymentProcessingResult.PAID;
+            }
+            if (!isAlreadyClosedAtProvider(queryResult.tradeState())) {
+                wechatPayProvider.closeOrder(config, payment.outTradeNo());
+            }
+            return finalizeClaimedPayment(payment)
+                    ? PaymentProcessingResult.CLOSED
+                    : PaymentProcessingResult.UNCHANGED;
+        } catch (RuntimeException ex) {
+            recordClaimFailure(payment, ex);
+            log.warn("One expired payment could not be closed; its lease will be retried (type={})",
+                    safeErrorCode(ex));
+            return PaymentProcessingResult.FAILED;
+        }
     }
 
     private boolean hasClaimableExpiredPayment(LocalDateTime scanTime) {
@@ -162,6 +182,18 @@ public class PaymentTimeoutCloseService {
         for (int attempt = 0; attempt < MAX_CLAIM_CONTENTION_RETRIES; attempt++) {
             ClaimedPayment claimedPayment = requiresNewTransaction.execute(
                     status -> claimNextExpiredPaymentOnce(scanTime));
+            if (claimedPayment != null) {
+                return claimedPayment;
+            }
+            Thread.onSpinWait();
+        }
+        return null;
+    }
+
+    private ClaimedPayment claimExpiredPayment(Long orderId, LocalDateTime scanTime) {
+        for (int attempt = 0; attempt < MAX_CLAIM_CONTENTION_RETRIES; attempt++) {
+            ClaimedPayment claimedPayment = requiresNewTransaction.execute(
+                    status -> claimExpiredPaymentOnce(orderId, scanTime));
             if (claimedPayment != null) {
                 return claimedPayment;
             }
@@ -235,6 +267,84 @@ public class PaymentTimeoutCloseService {
                     .param("expiredClaimBefore", expiredClaimBefore)
                     .param("expiredPrepayClaimBefore", expiredPrepayClaimBefore)
                     .param("paymentOrderId", candidate.paymentOrderId())
+                    .update();
+        if (updated != 1) {
+            return null;
+        }
+        return new ClaimedPayment(
+                candidate.paymentOrderId(), candidate.orderId(), candidate.paymentConfigId(),
+                candidate.paymentConfigFingerprint(), candidate.outTradeNo(), claimToken);
+    }
+
+    private ClaimedPayment claimExpiredPaymentOnce(Long orderId, LocalDateTime scanTime) {
+        LocalDateTime claimedAt = LocalDateTime.now(clock);
+        LocalDateTime expiredClaimBefore = claimedAt.minus(properties.timeoutScanClaimTimeout());
+        LocalDateTime expiredPrepayClaimBefore = claimedAt.minus(initiationProperties.claimTimeout());
+        List<ExpiredPaymentRow> candidates = jdbcClient.sql("""
+                            select id as payment_order_id,
+                                   order_id,
+                                   payment_config_id,
+                                   payment_config_fingerprint,
+                                   out_trade_no
+                            from payment_order
+                            where order_id = :orderId
+                              and status in ('PREPARING', 'PAYING')
+                              and expires_at <= :scanTime
+                              and (
+                                  timeout_close_claim_token is null
+                                  or timeout_close_claimed_at is null
+                                  or timeout_close_claimed_at <= :expiredClaimBefore
+                              )
+                              and (
+                                  status = 'PAYING'
+                                  or prepay_claim_token is null
+                                  or prepay_claimed_at is null
+                                  or prepay_claimed_at <= :expiredPrepayClaimBefore
+                              )
+                            order by expires_at asc, id asc
+                            limit 1
+                            """)
+                    .param("orderId", orderId)
+                    .param("scanTime", scanTime)
+                    .param("expiredClaimBefore", expiredClaimBefore)
+                    .param("expiredPrepayClaimBefore", expiredPrepayClaimBefore)
+                    .query(this::mapExpiredPaymentRow)
+                    .list();
+        if (candidates.isEmpty()) {
+            return null;
+        }
+
+        ExpiredPaymentRow candidate = candidates.getFirst();
+        String claimToken = UUID.randomUUID().toString();
+        int updated = jdbcClient.sql("""
+                            update payment_order
+                            set timeout_close_claim_token = :claimToken,
+                                timeout_close_claimed_at = :claimedAt,
+                                timeout_close_attempts = timeout_close_attempts + 1,
+                                updated_at = :claimedAt
+                            where id = :paymentOrderId
+                              and order_id = :orderId
+                              and status in ('PREPARING', 'PAYING')
+                              and expires_at <= :scanTime
+                              and (
+                                  timeout_close_claim_token is null
+                                  or timeout_close_claimed_at is null
+                                  or timeout_close_claimed_at <= :expiredClaimBefore
+                              )
+                              and (
+                                  status = 'PAYING'
+                                  or prepay_claim_token is null
+                                  or prepay_claimed_at is null
+                                  or prepay_claimed_at <= :expiredPrepayClaimBefore
+                              )
+                            """)
+                    .param("claimToken", claimToken)
+                    .param("claimedAt", claimedAt)
+                    .param("scanTime", scanTime)
+                    .param("expiredClaimBefore", expiredClaimBefore)
+                    .param("expiredPrepayClaimBefore", expiredPrepayClaimBefore)
+                    .param("paymentOrderId", candidate.paymentOrderId())
+                    .param("orderId", orderId)
                     .update();
         if (updated != 1) {
             return null;
@@ -364,6 +474,12 @@ public class PaymentTimeoutCloseService {
         }
     }
 
+    private void requireOrderId(Long orderId) {
+        if (orderId == null || orderId <= 0) {
+            throw new IllegalArgumentException("Order id must be positive");
+        }
+    }
+
     private ExpiredPaymentRow mapExpiredPaymentRow(ResultSet rs, int rowNum) throws SQLException {
         return new ExpiredPaymentRow(
                 rs.getLong("payment_order_id"),
@@ -402,6 +518,13 @@ public class PaymentTimeoutCloseService {
     }
 
     private record PaymentClaimState(String status, LocalDateTime expiresAt, String claimToken) {
+    }
+
+    private enum PaymentProcessingResult {
+        CLOSED,
+        PAID,
+        UNCHANGED,
+        FAILED
     }
 
     private void validateProviderIdentity(

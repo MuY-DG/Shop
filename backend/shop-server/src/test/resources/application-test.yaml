@@ -58,6 +58,8 @@ shop:
     initiation:
       claim-timeout: 2m
     timeout-scan-enabled: false
+    timeout-zset:
+      enabled: false
     refund-recovery:
       enabled: false
     expire-minutes: 1440

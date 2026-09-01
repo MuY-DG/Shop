@@ -124,6 +124,27 @@ class PaymentTimeoutCloseServiceTest extends PaymentTestSupport {
     }
 
     @Test
+    void targetedCloseOnlyClaimsTheRequestedExpiredPayment() throws Exception {
+        seedEnabledPaymentConfig();
+        AppLoginSession session = appLogin("payment-timeout-targeted-user");
+        SeedOrder first = seedCreatedOrder(session.userId(), 2100L, false);
+        SeedOrder target = seedCreatedOrder(session.userId(), 2200L, false);
+        insertExpiredPayingPayment(first, "PAYTARGETFIRST" + first.orderId(), session.openid(), 2100L);
+        insertExpiredPayingPayment(target, "PAYTARGETSECOND" + target.orderId(), session.openid(), 2200L);
+
+        assertThat(paymentTimeoutCloseService.closeExpiredPayment(target.orderId())).isTrue();
+
+        assertThat(jdbcClient.sql("select status from shop_order where id = :orderId")
+                .param("orderId", first.orderId())
+                .query(String.class)
+                .single()).isEqualTo("PAYING");
+        assertThat(jdbcClient.sql("select status from shop_order where id = :orderId")
+                .param("orderId", target.orderId())
+                .query(String.class)
+                .single()).isEqualTo("CLOSED");
+    }
+
+    @Test
     void expiredPaymentPaidAtProviderIsFinalizedInsteadOfClosed() throws Exception {
         seedEnabledPaymentConfig();
         AppLoginSession session = appLogin("payment-timeout-paid-user");

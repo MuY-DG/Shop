@@ -30,8 +30,8 @@ public class PaymentTimeoutCloseScheduler {
     }
 
     @Scheduled(
-            fixedDelayString = "${shop.pay.timeout-scan-delay:60s}",
-            initialDelayString = "${shop.pay.timeout-scan-initial-delay:${shop.pay.timeout-scan-delay:60s}}"
+            fixedDelayString = "${shop.pay.timeout-scan-delay:5m}",
+            initialDelayString = "${shop.pay.timeout-scan-initial-delay:${shop.pay.timeout-scan-delay:5m}}"
     )
     public void runOnce() {
         try {

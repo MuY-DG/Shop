@@ -41,6 +41,7 @@ import org.muybaby.shopserver.order.dto.OrderReceiverUpdateResponse;
 import org.muybaby.shopserver.order.dto.OrderSubmitResponse;
 import org.muybaby.shopserver.order.dto.OrderSummaryItemResponse;
 import org.muybaby.shopserver.order.dto.OrderSummaryResponse;
+import org.muybaby.shopserver.payment.OrderPaymentTimeoutScheduledEvent;
 import org.muybaby.shopserver.product.StockChangeType;
 import org.muybaby.shopserver.promotion.CheckoutContext;
 import org.muybaby.shopserver.promotion.CouponCandidate;
@@ -54,6 +55,7 @@ import org.muybaby.shopserver.user.address.service.AppAddressService;
 import org.muybaby.shopserver.user.address.service.OwnedAddress;
 import org.muybaby.shopserver.user.service.AppUserService;
 import org.springframework.dao.DuplicateKeyException;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.jdbc.core.namedparam.MapSqlParameterSource;
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
 import org.springframework.jdbc.core.simple.JdbcClient;
@@ -105,6 +107,7 @@ public class AppOrderService {
     private final OrderReceiptCompletionService orderReceiptCompletionService;
     private final OrderPaymentDeadlinePolicy orderPaymentDeadlinePolicy;
     private final AppUserService appUserService;
+    private final ApplicationEventPublisher eventPublisher;
     private final Clock clock;
     private final CouponDiscountCalculator couponDiscountCalculator = new CouponDiscountCalculator();
 
@@ -122,6 +125,7 @@ public class AppOrderService {
             OrderReceiptCompletionService orderReceiptCompletionService,
             OrderPaymentDeadlinePolicy orderPaymentDeadlinePolicy,
             AppUserService appUserService,
+            ApplicationEventPublisher eventPublisher,
             Clock clock
     ) {
         this.jdbcClient = jdbcClient;
@@ -137,6 +141,7 @@ public class AppOrderService {
         this.orderReceiptCompletionService = orderReceiptCompletionService;
         this.orderPaymentDeadlinePolicy = orderPaymentDeadlinePolicy;
         this.appUserService = appUserService;
+        this.eventPublisher = eventPublisher;
         this.clock = clock;
     }
 
@@ -225,6 +230,7 @@ public class AppOrderService {
                 orderId, "", OrderStatus.CREATED.name(), "ORDER_CREATED",
                 OPERATOR_TYPE_APP, userId, "订单创建", now
         );
+        eventPublisher.publishEvent(new OrderPaymentTimeoutScheduledEvent(orderId, paymentExpiresAt));
 
         return new OrderSubmitResponse(
                 orderId,

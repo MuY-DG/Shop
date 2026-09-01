@@ -58,6 +58,25 @@ public class CreatedOrderTimeoutCloseService {
         return closed == null ? 0 : closed;
     }
 
+    public boolean closeExpiredCreatedOrder(Long orderId) {
+        requireOrderId(orderId);
+        Boolean closed = withoutTransaction.execute(status -> {
+            ClaimedOrder claimed = requiresNewTransaction.execute(
+                    transactionStatus -> claimExpiredOrderOnce(orderId, now()));
+            if (claimed == null) {
+                return false;
+            }
+            try {
+                return finalizeClaim(claimed);
+            } catch (RuntimeException ex) {
+                log.warn("One targeted expired created order could not be closed; its lease will be retried (type={})",
+                        safeErrorCode(ex));
+                return false;
+            }
+        });
+        return Boolean.TRUE.equals(closed);
+    }
+
     private int closeOutsideTransaction(int batchSize) {
         LocalDateTime scanTime = now();
         int closed = 0;
@@ -115,6 +134,35 @@ public class CreatedOrderTimeoutCloseService {
         }
 
         Long orderId = candidates.getFirst();
+        String token = UUID.randomUUID().toString();
+        int updated = jdbcClient.sql("""
+                        update shop_order
+                        set created_timeout_claim_token = :token,
+                            created_timeout_claimed_at = :claimedAt,
+                            created_timeout_attempts = created_timeout_attempts + 1,
+                            updated_at = :claimedAt
+                        where id = :orderId
+                          and status = 'CREATED'
+                          and payment_expires_at is not null
+                          and payment_expires_at <= :scanTime
+                          and (
+                            created_timeout_claim_token is null
+                            or created_timeout_claimed_at is null
+                            or created_timeout_claimed_at <= :expiredClaimBefore
+                          )
+                        """)
+                .param("token", token)
+                .param("claimedAt", claimedAt)
+                .param("orderId", orderId)
+                .param("scanTime", scanTime)
+                .param("expiredClaimBefore", expiredClaimBefore)
+                .update();
+        return updated == 1 ? new ClaimedOrder(orderId, token) : null;
+    }
+
+    private ClaimedOrder claimExpiredOrderOnce(Long orderId, LocalDateTime scanTime) {
+        LocalDateTime claimedAt = now();
+        LocalDateTime expiredClaimBefore = claimedAt.minus(properties.timeoutScanClaimTimeout());
         String token = UUID.randomUUID().toString();
         int updated = jdbcClient.sql("""
                         update shop_order
@@ -215,6 +263,12 @@ public class CreatedOrderTimeoutCloseService {
     private void requireValidBatchSize(int batchSize) {
         if (batchSize < 1 || batchSize > MAX_BATCH_SIZE) {
             throw new IllegalArgumentException("Created order timeout batch size must be between 1 and 500");
+        }
+    }
+
+    private void requireOrderId(Long orderId) {
+        if (orderId == null || orderId <= 0) {
+            throw new IllegalArgumentException("Order id must be positive");
         }
     }
 

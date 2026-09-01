@@ -2,6 +2,7 @@ package org.muybaby.shopserver.order.service;
 
 import org.junit.jupiter.api.Test;
 import org.muybaby.shopserver.payment.PaymentTestSupport;
+import org.muybaby.shopserver.payment.service.PaymentTimeoutZSetProcessor;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
@@ -18,6 +19,9 @@ class CreatedOrderTimeoutCloseServiceTest extends PaymentTestSupport {
 
     @Autowired
     private CreatedOrderTimeoutCloseService service;
+
+    @Autowired
+    private PaymentTimeoutZSetProcessor zsetProcessor;
 
     @Test
     void expiredCreatedOrderClosesAndReleasesStockAndCouponExactlyOnce() throws Exception {
@@ -51,6 +55,49 @@ class CreatedOrderTimeoutCloseServiceTest extends PaymentTestSupport {
         assertThat(service.closeExpiredCreatedOrders(10)).isZero();
         assertThat(value("select stock_available from product_sku where id = :id", order.skuId(), Integer.class))
                 .isEqualTo(10);
+    }
+
+    @Test
+    void targetedCloseOnlyClaimsTheRequestedExpiredOrder() throws Exception {
+        AppLoginSession session = appLogin("created-timeout-targeted-user");
+        SeedOrder first = seedCreatedOrder(session.userId(), 2100L, false);
+        SeedOrder target = seedCreatedOrder(session.userId(), 2200L, false);
+        expire(first.orderId());
+        expire(target.orderId());
+
+        assertThat(service.closeExpiredCreatedOrder(target.orderId())).isTrue();
+
+        assertThat(value("select status from shop_order where id = :id", first.orderId(), String.class))
+                .isEqualTo("CREATED");
+        assertThat(value("select status from shop_order where id = :id", target.orderId(), String.class))
+                .isEqualTo("CLOSED");
+    }
+
+    @Test
+    void zsetProcessorAcknowledgesOnlyAfterMysqlBecomesTerminal() throws Exception {
+        AppLoginSession session = appLogin("created-timeout-zset-processor-user");
+        SeedOrder future = seedCreatedOrder(session.userId(), 2100L, false);
+        SeedOrder expired = seedCreatedOrder(session.userId(), 2200L, false);
+        jdbcClient.sql("""
+                        update shop_order
+                        set payment_expires_at = timestampadd(HOUR, 1, current_timestamp)
+                        where id = :id
+                        """)
+                .param("id", future.orderId())
+                .update();
+        expire(expired.orderId());
+
+        PaymentTimeoutZSetProcessor.Result futureResult = zsetProcessor.process(future.orderId());
+        PaymentTimeoutZSetProcessor.Result expiredResult = zsetProcessor.process(expired.orderId());
+
+        assertThat(futureResult.acknowledged()).isFalse();
+        assertThat(futureResult.nextAttemptAt()).isNotNull();
+        assertThat(value("select status from shop_order where id = :id", future.orderId(), String.class))
+                .isEqualTo("CREATED");
+        assertThat(expiredResult.acknowledged()).isTrue();
+        assertThat(value("select status from shop_order where id = :id", expired.orderId(), String.class))
+                .isEqualTo("CLOSED");
+        assertThat(zsetProcessor.process(9_999_999L).acknowledged()).isTrue();
     }
 
     @Test

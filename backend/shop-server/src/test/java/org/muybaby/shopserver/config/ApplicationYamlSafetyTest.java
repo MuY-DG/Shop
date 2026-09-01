@@ -36,6 +36,11 @@ class ApplicationYamlSafetyTest {
                 .containsEntry("spring.servlet.multipart.max-file-size", "50MB")
                 .containsEntry("shop.storage.direct-upload.max-active-sessions-per-principal", 10)
                 .containsEntry("shop.pay.timeout-scan-enabled", true)
+                .containsEntry("shop.pay.timeout-scan-delay", "5m")
+                .containsEntry("shop.pay.timeout-zset.enabled", true)
+                .containsEntry("shop.pay.timeout-zset.poll-delay", "1s")
+                .containsEntry("shop.pay.timeout-zset.batch-size", 50)
+                .containsEntry("shop.pay.timeout-zset.retry-delay", "30s")
                 .containsEntry("shop.pay.expire-minutes", 15)
                 .doesNotContainKeys(
                         "shop.storage.direct-upload.session-retention",

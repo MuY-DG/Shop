@@ -163,10 +163,15 @@ shop: # 商城项目自定义业务配置的统一入口。
       max-timestamp-skew: 5m # 回调时间戳与服务器时间最多允许相差 5 分钟。
     initiation: # 创建微信预支付单时的并发占用配置。
       claim-timeout: 2m # 预支付创建占用超过 2 分钟后允许恢复。
-    timeout-scan-enabled: true # 启用超时支付订单自动核查任务。
-    timeout-scan-delay: 60s # 超时支付核查任务每 60 秒执行一次。
-    timeout-scan-batch-size: 50 # 每次最多核查 50 个超时支付订单。
+    timeout-scan-enabled: true # 启用数据库补偿扫描；用于补回 Redis 写入失败、数据丢失等漏单。
+    timeout-scan-delay: 5m # 数据库补偿扫描每 5 分钟执行一次。
+    timeout-scan-batch-size: 50 # 每次最多补偿核查 50 个超时支付订单。
     timeout-scan-claim-timeout: 5m # 超时订单处理占用超过 5 分钟后允许其他任务接管。
+    timeout-zset: # Redis ZSet 负责在支付截止时间附近快速唤醒，MySQL 仍是状态真相来源。
+      enabled: true
+      poll-delay: 1s # 每秒读取到期成员，不先删除；终态后才确认删除。
+      batch-size: 50
+      retry-delay: 30s # 处理中、并发占用或临时失败时退避重试。
     refund-recovery: # 微信退款异常和中断状态的自动恢复配置。
       enabled: true # 启用退款恢复任务。
       delay: 60s # 退款恢复任务每 60 秒执行一次。
