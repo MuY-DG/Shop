@@ -112,6 +112,7 @@ class OrderAggregateCleanupServiceTest {
         assertThat(count("payment_order", "order_id", ORDER_ID)).isZero();
         assertThat(count("payment_attempt", "order_id", ORDER_ID)).isZero();
         assertThat(count("refund_order", "order_id", ORDER_ID)).isZero();
+        assertThat(count("refund_provider_attempt", "order_id", ORDER_ID)).isZero();
         assertThat(count("after_sale_request", "order_id", ORDER_ID)).isZero();
         assertThat(count("after_sale_evidence", "after_sale_id", AFTER_SALE_ID)).isZero();
         assertThat(count("order_status_log", "order_id", ORDER_ID)).isZero();
@@ -239,7 +240,9 @@ class OrderAggregateCleanupServiceTest {
                 .contains("\"waybill_registrations\"")
                 .contains("\"tracking_snapshots\"")
                 .contains("\"tracking_events\"")
-                .contains("\"shipments\"");
+                .contains("\"shipments\"")
+                .contains("\"refund_provider_attempts\"")
+                .contains("\"provider_error_code\":\"NOT_ENOUGH\"");
 
         assertThat(storageAssetCleanupService.cleanupAsset(ASSET_ID)).isTrue();
         assertThat(storageAssetCleanupService.cleanupAsset(ORDER_ITEM_ASSET_ID)).isTrue();
@@ -849,6 +852,22 @@ class OrderAggregateCleanupServiceTest {
                 .param("oldAt", oldAt())
                 .update();
         jdbcClient.sql("""
+                        insert into refund_provider_attempt
+                            (id, refund_order_id, after_sale_id, order_id,
+                             out_trade_no, out_refund_no, attempt_type, source, result,
+                             provider_http_status, provider_error_code, provider_status,
+                             decision, request_id, created_at)
+                        values
+                            (9870018, 9870012, :afterSaleId, :orderId,
+                             'TRADE-9870001', 'REFUND-9870001', 'SUBMISSION', 'ADMIN', 'FAILURE',
+                             403, 'NOT_ENOUGH', '', 'MERCHANT_ACTION_REQUIRED',
+                             'refund-audit-request', :oldAt)
+                        """)
+                .param("afterSaleId", AFTER_SALE_ID)
+                .param("orderId", ORDER_ID)
+                .param("oldAt", oldAt())
+                .update();
+        jdbcClient.sql("""
                         insert into order_status_log
                             (id, order_id, from_status, to_status, event_type, operator_type,
                              description, created_at)
@@ -1343,6 +1362,8 @@ class OrderAggregateCleanupServiceTest {
         jdbcClient.sql("delete from after_sale_evidence where after_sale_id = :afterSaleId")
                 .param("afterSaleId", AFTER_SALE_ID).update();
         jdbcClient.sql("delete from payment_callback_log where id = 9870013 or out_trade_no = 'TRADE-9870001'").update();
+        jdbcClient.sql("delete from refund_provider_attempt where order_id = :orderId")
+                .param("orderId", ORDER_ID).update();
         jdbcClient.sql("delete from product_review where id = :reviewId")
                 .param("reviewId", REVIEW_ID).update();
         jdbcClient.sql("delete from payment_attempt where order_id = :orderId")

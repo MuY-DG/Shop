@@ -25,6 +25,7 @@ public record AdminAfterSaleDetailResponse(
         List<Long> evidenceFileIds,
         List<AfterSaleEvidenceFileResponse> evidenceFiles,
         RefundOrderResponse refundOrder,
+        List<AdminRefundProviderAttemptResponse> refundAttempts,
         AfterSaleOrderContextResponse orderContext,
         List<AfterSaleItemResponse> items,
         AfterSaleReturnResponse returnInfo,
@@ -33,7 +34,8 @@ public record AdminAfterSaleDetailResponse(
 
     public static AdminAfterSaleDetailResponse from(
             AfterSaleResponse afterSale,
-            AfterSaleOrderContextResponse orderContext
+            AfterSaleOrderContextResponse orderContext,
+            List<AdminRefundProviderAttemptResponse> refundAttempts
     ) {
         return new AdminAfterSaleDetailResponse(
                 afterSale.id(),
@@ -55,6 +57,7 @@ public record AdminAfterSaleDetailResponse(
                 afterSale.evidenceFileIds(),
                 afterSale.evidenceFiles(),
                 afterSale.refundOrder(),
+                refundAttempts,
                 orderContext,
                 afterSale.items(),
                 afterSale.returnInfo(),

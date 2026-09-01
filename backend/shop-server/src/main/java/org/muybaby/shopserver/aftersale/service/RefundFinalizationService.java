@@ -24,7 +24,7 @@ import java.util.Set;
 public class RefundFinalizationService {
 
     private static final Set<String> REOPENABLE_FAILED_PROVIDER_STATUSES = Set.of(
-            "ABNORMAL", "MANUAL_INTERVENTION");
+            "ABNORMAL", "MANUAL_INTERVENTION", "SUBMISSION_REJECTED");
 
     private final JdbcClient jdbcClient;
     private final OrderStatusLogService orderStatusLogService;
@@ -61,6 +61,77 @@ public class RefundFinalizationService {
             throw new BusinessException(ErrorCode.ORDER_STATE_CONFLICT);
         }
         return apply(providerState, verifiedConfig, recoveryClaimToken);
+    }
+
+    /**
+     * Finalizes a refund request that WeChat explicitly rejected before creating a provider refund.
+     * Unlike a timeout or transport failure, this is not an unknown result and must not remain
+     * presented as a refund already submitted to the channel.
+     */
+    @Transactional
+    public Outcome rejectSubmission(
+            String outRefundNo,
+            String providerErrorCode,
+            ResolvedPaymentConfig verifiedConfig
+    ) {
+        return rejectSubmission(outRefundNo, providerErrorCode, verifiedConfig, null);
+    }
+
+    @Transactional
+    public Outcome rejectClaimedSubmission(
+            String outRefundNo,
+            String providerErrorCode,
+            ResolvedPaymentConfig verifiedConfig,
+            String recoveryClaimToken
+    ) {
+        if (!StringUtils.hasText(recoveryClaimToken)) {
+            throw new BusinessException(ErrorCode.ORDER_STATE_CONFLICT);
+        }
+        return rejectSubmission(outRefundNo, providerErrorCode, verifiedConfig, recoveryClaimToken);
+    }
+
+    private Outcome rejectSubmission(
+            String outRefundNo,
+            String providerErrorCode,
+            ResolvedPaymentConfig verifiedConfig,
+            String expectedRecoveryClaimToken
+    ) {
+        RefundRoute route = findRoute(outRefundNo);
+        lockOrder(route.orderId());
+        lockAfterSale(route.afterSaleId());
+        RefundState refund = findForUpdate(outRefundNo);
+        if (!route.refundOrderId().equals(refund.id())
+                || !route.afterSaleId().equals(refund.afterSaleId())
+                || !route.orderId().equals(refund.orderId())
+                || !refund.id().equals(findLatestRefundOrderId(refund.afterSaleId()))) {
+            throw new BusinessException(ErrorCode.ORDER_STATE_CONFLICT);
+        }
+        paymentConfigIdentityValidator.validate(
+                refund.paymentConfigId(), refund.paymentConfigFingerprint(), verifiedConfig);
+        if (RefundOrderStatus.SUCCESS.name().equals(refund.status())) {
+            return Outcome.DUPLICATE;
+        }
+        if (!RefundOrderStatus.PROCESSING.name().equals(refund.status())) {
+            throw new BusinessException(ErrorCode.ORDER_STATE_CONFLICT);
+        }
+        if (StringUtils.hasText(expectedRecoveryClaimToken)) {
+            if (!expectedRecoveryClaimToken.equals(refund.recoveryClaimToken())) {
+                throw new BusinessException(ErrorCode.ORDER_STATE_CONFLICT);
+            }
+        } else if (StringUtils.hasText(refund.recoveryClaimToken())) {
+            throw new BusinessException(ErrorCode.ORDER_STATE_CONFLICT);
+        }
+        String errorCode = normalizeStatus(providerErrorCode);
+        ProviderRefundState rejectedState = new ProviderRefundState(
+                refund.outRefundNo(), "", refund.outTradeNo(), "SUBMISSION_REJECTED",
+                refund.refundAmountCent(), null, "");
+        return markFailed(
+                refund,
+                rejectedState,
+                "SUBMISSION_REJECTED",
+                errorCode,
+                "refund request rejected by provider: " + errorCode
+        );
     }
 
     private Outcome apply(
@@ -475,6 +546,22 @@ public class RefundFinalizationService {
             ProviderRefundState providerState,
             String providerStatus
     ) {
+        return markFailed(
+                refund,
+                providerState,
+                providerStatus,
+                providerStatus,
+                "refund provider status " + providerStatus
+        );
+    }
+
+    private Outcome markFailed(
+            RefundState refund,
+            ProviderRefundState providerState,
+            String providerStatus,
+            String errorCode,
+            String errorMessage
+    ) {
         LocalDateTime now = LocalDateTime.now(java.time.ZoneOffset.UTC);
         int refundRows = jdbcClient.sql("""
                         update refund_order
@@ -494,8 +581,8 @@ public class RefundFinalizationService {
                 .param("refundId", nullToEmpty(providerState.refundId()))
                 .param("callbackStatus", providerStatus)
                 .param("callbackDigest", nullToEmpty(providerState.callbackDigest()))
-                .param("lastErrorCode", providerStatus)
-                .param("lastErrorMessage", "refund provider status " + providerStatus)
+                .param("lastErrorCode", errorCode)
+                .param("lastErrorMessage", errorMessage)
                 .param("updatedAt", now)
                 .param("refundOrderId", refund.id())
                 .param("expectedStatus", RefundOrderStatus.PROCESSING.name())
@@ -532,10 +619,10 @@ public class RefundFinalizationService {
         afterSaleStatusLogService.record(
                 refund.afterSaleId(), AfterSaleStatus.REFUNDING.name(),
                 AfterSaleStatus.REFUND_FAILED.name(), "REFUND_FAILED",
-                "WECHAT", null, "微信退款失败：" + providerStatus, now);
+                "WECHAT", null, "微信退款失败：" + errorCode, now);
         orderStatusLogService.record(
                 refund.orderId(), refund.afterSaleId(), refund.orderStatus(), refund.orderStatus(),
-                "REFUND_FAILED", "WECHAT", null, "微信退款失败：" + providerStatus, now);
+                "REFUND_FAILED", "WECHAT", null, "微信退款失败：" + errorCode, now);
         return Outcome.FAILED;
     }
 

@@ -24,9 +24,9 @@ class SchemaGenerationBaselineTest {
         Flyway flyway = MigrationTestSupport.migrateToLatest(jdbcUrl, "sa", "");
         JdbcClient jdbc = JdbcClient.create(new DriverManagerDataSource(jdbcUrl, "sa", ""));
 
-        assertThat(flyway.info().current().getVersion().getVersion()).isEqualTo("12");
-        assertThat(flyway.info().applied()).hasSize(12);
-        assertThat(tableCount(jdbc)).isEqualTo(130);
+        assertThat(flyway.info().current().getVersion().getVersion()).isEqualTo("13");
+        assertThat(flyway.info().applied()).hasSize(13);
+        assertThat(tableCount(jdbc)).isEqualTo(131);
 
         assertThat(tableExists(jdbc, "payment_config_snapshot")).isFalse();
         assertThat(tableExists(jdbc, "payment_runtime_setting")).isFalse();
@@ -37,6 +37,10 @@ class SchemaGenerationBaselineTest {
         assertThat(columnExists(jdbc, "wechat_service_card_config", "imported_from_env_at")).isFalse();
         assertThat(columnExists(jdbc, "payment_callback_log", "route_mode")).isFalse();
         assertThat(columnExists(jdbc, "after_sale_request", "app_deleted_at")).isTrue();
+        assertThat(tableExists(jdbc, "refund_provider_attempt")).isTrue();
+        assertThat(columnExists(jdbc, "admin_system_log", "related_target_type")).isTrue();
+        assertThat(columnExists(jdbc, "admin_system_log", "related_target_id")).isTrue();
+        assertThat(columnExists(jdbc, "admin_system_log", "provider_error_code")).isTrue();
         assertNonNullable(jdbc, "payment_callback_log", "route_digest");
         assertNonNullable(jdbc, "payment_order", "payment_config_id");
         assertNonNullable(jdbc, "payment_order", "payment_config_fingerprint");

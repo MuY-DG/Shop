@@ -25,17 +25,19 @@ public class AdminSystemLogRecorder {
         jdbcClient.sql("""
                         insert into admin_system_log (
                             log_type, result, level, event_code, summary, target_type, target_id,
+                            related_target_type, related_target_id,
                             operator_id, operator_name,
                             module, action, request_method, request_path, route_pattern,
                             http_status, duration_ms, client_ip, user_agent, request_id,
-                            error_code, error_message, occurred_at
+                            error_code, provider_error_code, error_message, occurred_at
                         )
                         values (
                             :logType, :result, :level, :eventCode, :summary, :targetType, :targetId,
+                            :relatedTargetType, :relatedTargetId,
                             :operatorId, :operatorName,
                             :module, :action, :requestMethod, :requestPath, :routePattern,
                             :httpStatus, :durationMs, :clientIp, :userAgent, :requestId,
-                            :errorCode, :errorMessage, :occurredAt
+                            :errorCode, :providerErrorCode, :errorMessage, :occurredAt
                         )
                         """)
                 .param("logType", Objects.requireNonNull(record.type(), "type").name())
@@ -45,6 +47,8 @@ public class AdminSystemLogRecorder {
                 .param("summary", truncate(record.summary(), 255))
                 .param("targetType", truncate(record.targetType(), 64))
                 .param("targetId", truncate(record.targetId(), 128))
+                .param("relatedTargetType", truncate(record.relatedTargetType(), 64))
+                .param("relatedTargetId", truncate(record.relatedTargetId(), 128))
                 .param("operatorId", record.operatorUserId(), Types.BIGINT)
                 .param("operatorName", truncate(record.operatorUsername(), 64))
                 .param("module", truncate(record.module(), 64))
@@ -58,6 +62,7 @@ public class AdminSystemLogRecorder {
                 .param("userAgent", truncate(record.userAgent(), 255))
                 .param("requestId", truncate(record.requestId(), 128))
                 .param("errorCode", truncate(record.errorCode(), 64))
+                .param("providerErrorCode", truncate(record.providerErrorCode(), 64))
                 .param("errorMessage", truncate(record.errorMessage(), 255))
                 .param(
                         "occurredAt",

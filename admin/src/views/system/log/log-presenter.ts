@@ -115,11 +115,17 @@ export const formatLogSummary = (log: Pick<Api.SystemLog.LogListItem, 'summary' 
   normalizedText(log.summary) || normalizedText(log.action) || '未提供摘要'
 
 export const formatLogTarget = (
-  log: Pick<Api.SystemLog.LogListItem, 'targetType' | 'targetId'>
+  log: Pick<
+    Api.SystemLog.LogListItem,
+    'targetType' | 'targetId' | 'relatedTargetType' | 'relatedTargetId'
+  >
 ) => {
   const targetId = normalizedText(log.targetId)
   if (!targetId) return '-'
-  return `${normalizedText(log.targetType) || '对象'}：${targetId}`
+  const primary = `${normalizedText(log.targetType) || '对象'}：${targetId}`
+  const relatedId = normalizedText(log.relatedTargetId)
+  if (!relatedId) return primary
+  return `${primary} / ${normalizedText(log.relatedTargetType) || '关联对象'}：${relatedId}`
 }
 
 export const formatLogDevice = (userAgent?: string | null) => {

@@ -41,6 +41,7 @@ public class RefundRecoveryService {
     private final PaymentNotificationRouteService paymentNotificationRouteService;
     private final WechatPayProvider wechatPayProvider;
     private final RefundFinalizationService refundFinalizationService;
+    private final RefundProviderAttemptService refundProviderAttemptService;
     private final RefundRecoveryProperties properties;
     private final Clock clock;
     private final TransactionTemplate requiresNewTransaction;
@@ -52,6 +53,7 @@ public class RefundRecoveryService {
             PaymentNotificationRouteService paymentNotificationRouteService,
             WechatPayProvider wechatPayProvider,
             RefundFinalizationService refundFinalizationService,
+            RefundProviderAttemptService refundProviderAttemptService,
             RefundRecoveryProperties properties,
             Clock clock,
             PlatformTransactionManager transactionManager
@@ -61,6 +63,7 @@ public class RefundRecoveryService {
         this.paymentNotificationRouteService = paymentNotificationRouteService;
         this.wechatPayProvider = wechatPayProvider;
         this.refundFinalizationService = refundFinalizationService;
+        this.refundProviderAttemptService = refundProviderAttemptService;
         this.properties = properties;
         this.clock = clock;
         this.requiresNewTransaction = new TransactionTemplate(transactionManager);
@@ -123,7 +126,7 @@ public class RefundRecoveryService {
             WechatRefundQueryResult providerResult = executeRecoveryStep(
                     claimed,
                     RecoveryStage.QUERY,
-                    () -> wechatPayProvider.queryRefund(config, claimed.outRefundNo())
+                    () -> queryRefund(config, claimed, "ADMIN")
             );
             boolean resubmitted = false;
             if ("NOT_FOUND".equalsIgnoreCase(providerResult.status())) {
@@ -134,11 +137,7 @@ public class RefundRecoveryService {
                     return new ManualRecoveryResult(
                             claimed.refundOrderId(), "NOT_FOUND", null, false);
                 }
-                providerResult = executeRecoveryStep(
-                        claimed,
-                        RecoveryStage.SUBMISSION,
-                        () -> submitOriginalRefundRequest(config, claimed)
-                );
+                providerResult = resubmitOriginalRefund(config, claimed, "ADMIN");
                 resubmitted = true;
             }
 
@@ -181,18 +180,20 @@ public class RefundRecoveryService {
                 WechatRefundQueryResult providerResult = executeRecoveryStep(
                         claimedRefund,
                         RecoveryStage.QUERY,
-                        () -> wechatPayProvider.queryRefund(config, claimedRefund.outRefundNo())
+                        () -> queryRefund(config, claimedRefund, "SYSTEM")
                 );
                 if ("NOT_FOUND".equalsIgnoreCase(providerResult.status())) {
                     if (RefundOrderStatus.FAILED.name().equals(claimedRefund.status())) {
                         releaseClaimAfterProviderNotFound(claimedRefund);
                         continue;
                     }
-                    providerResult = executeRecoveryStep(
-                            claimedRefund,
-                            RecoveryStage.SUBMISSION,
-                            () -> submitOriginalRefundRequest(config, claimedRefund)
-                    );
+                    if (WechatRefundFailureClassifier.classify(claimedRefund.lastErrorCode())
+                            .disposition().requiresMerchantAction()) {
+                        rejectClaimedSubmission(claimedRefund, config);
+                        recoveredCount++;
+                        continue;
+                    }
+                    providerResult = resubmitOriginalRefund(config, claimedRefund, "SYSTEM");
                 }
                 WechatRefundQueryResult resolvedProviderResult = providerResult;
                 RefundFinalizationService.Outcome outcome = executeRecoveryStep(
@@ -213,7 +214,8 @@ public class RefundRecoveryService {
 
     private WechatRefundQueryResult submitOriginalRefundRequest(
             ResolvedPaymentConfig config,
-            ClaimedRefund claimedRefund
+            ClaimedRefund claimedRefund,
+            String source
     ) {
         requireOriginalRefundSubmissionAllowed(claimedRefund);
         WechatRefundRequest retryRequest = new WechatRefundRequest(
@@ -226,15 +228,117 @@ public class RefundRecoveryService {
                 paymentNotificationRouteService.refundNotifyUrl(
                         config.refundNotifyUrl(), claimedRefund.notificationRouteToken())
         );
-        WechatRefundResult retryResult = wechatPayProvider.requestRefund(config, retryRequest);
-        return new WechatRefundQueryResult(
-                claimedRefund.outRefundNo(),
-                retryResult.refundId(),
-                claimedRefund.outTradeNo(),
-                retryResult.status(),
-                claimedRefund.refundAmountCent(),
-                null
-        );
+        try {
+            WechatRefundResult retryResult = wechatPayProvider.requestRefund(config, retryRequest);
+            refundProviderAttemptService.recordRefund(
+                    claimedRefund.refundOrderId(), "RESUBMISSION", source, "SUCCESS",
+                    retryResult.status(), "ORIGINAL_REQUEST_ACCEPTED", null);
+            return new WechatRefundQueryResult(
+                    claimedRefund.outRefundNo(),
+                    retryResult.refundId(),
+                    claimedRefund.outTradeNo(),
+                    retryResult.status(),
+                    claimedRefund.refundAmountCent(),
+                    null
+            );
+        } catch (RuntimeException failure) {
+            WechatRefundFailureClassifier.Classification classification =
+                    WechatRefundFailureClassifier.classify(ProviderFailureCode.safeCode(failure));
+            refundProviderAttemptService.recordRefund(
+                    claimedRefund.refundOrderId(), "RESUBMISSION", source, "FAILURE", "",
+                    classification.disposition().name(), failure);
+            throw failure;
+        }
+    }
+
+    private WechatRefundQueryResult queryRefund(
+            ResolvedPaymentConfig config,
+            ClaimedRefund claimedRefund,
+            String source
+    ) {
+        try {
+            WechatRefundQueryResult result = wechatPayProvider.queryRefund(
+                    config, claimedRefund.outRefundNo());
+            refundProviderAttemptService.recordRefund(
+                    claimedRefund.refundOrderId(), "QUERY", source, "SUCCESS",
+                    result.status(), queryDecision(result.status()), null);
+            return result;
+        } catch (RuntimeException failure) {
+            refundProviderAttemptService.recordRefund(
+                    claimedRefund.refundOrderId(), "QUERY", source, "FAILURE", "",
+                    "RECOVERY_SCHEDULED", failure);
+            throw failure;
+        }
+    }
+
+    private WechatRefundQueryResult resubmitOriginalRefund(
+            ResolvedPaymentConfig config,
+            ClaimedRefund claimedRefund,
+            String source
+    ) {
+        try {
+            return executeRecoveryStep(
+                    claimedRefund,
+                    RecoveryStage.SUBMISSION,
+                    () -> submitOriginalRefundRequest(config, claimedRefund, source));
+        } catch (RuntimeException failure) {
+            finalizeExplicitSubmissionRejection(claimedRefund, config, source, failure);
+            throw failure;
+        }
+    }
+
+    private void finalizeExplicitSubmissionRejection(
+            ClaimedRefund claimedRefund,
+            ResolvedPaymentConfig config,
+            String source,
+            RuntimeException failure
+    ) {
+        WechatRefundFailureClassifier.Classification classification =
+                WechatRefundFailureClassifier.classify(ProviderFailureCode.safeCode(failure));
+        if (!RefundOrderStatus.PROCESSING.name().equals(claimedRefund.status())
+                || !classification.disposition().requiresMerchantAction()) {
+            return;
+        }
+        try {
+            refundFinalizationService.rejectSubmission(
+                    claimedRefund.outRefundNo(), classification.providerErrorCode(), config);
+            refundProviderAttemptService.recordRefund(
+                    claimedRefund.refundOrderId(), "DECISION", source, "SUCCESS", "",
+                    classification.disposition().name(), null);
+        } catch (RuntimeException finalizationFailure) {
+            log.warn("An explicit refund rejection could not be finalized (type={})",
+                    ProviderFailureCode.safeCode(finalizationFailure));
+        }
+    }
+
+    private void rejectClaimedSubmission(
+            ClaimedRefund claimedRefund,
+            ResolvedPaymentConfig config
+    ) {
+        RefundFinalizationService.Outcome outcome = requiresNewTransaction.execute(status -> {
+            RefundFinalizationService.Outcome finalized = refundFinalizationService.rejectClaimedSubmission(
+                    claimedRefund.outRefundNo(), claimedRefund.lastErrorCode(), config,
+                    claimedRefund.claimToken());
+            clearClaimIfOwned(claimedRefund, null);
+            return finalized;
+        });
+        refundProviderAttemptService.recordRefund(
+                claimedRefund.refundOrderId(), "DECISION", "SYSTEM", "SUCCESS", "NOT_FOUND",
+                WechatRefundFailureClassifier.classify(claimedRefund.lastErrorCode())
+                        .disposition().name(), null);
+        if (outcome == null) {
+            throw new BusinessException(ErrorCode.ORDER_STATE_CONFLICT);
+        }
+    }
+
+    private String queryDecision(String providerStatus) {
+        if ("NOT_FOUND".equalsIgnoreCase(providerStatus)) {
+            return "ORIGINAL_REQUEST_REQUIRED";
+        }
+        if ("PROCESSING".equalsIgnoreCase(providerStatus)) {
+            return "QUERY_LATER";
+        }
+        return "APPLY_PROVIDER_RESULT";
     }
 
     private ClaimedRefund claimRefundForManualRecovery(
@@ -263,6 +367,7 @@ public class RefundRecoveryService {
                                ro.status,
                                ro.callback_status,
                                ro.recovery_attempts,
+                               ro.last_error_code,
                                ro.notification_route_token,
                                po.payment_config_id,
                                po.payment_config_fingerprint,
@@ -341,7 +446,8 @@ public class RefundRecoveryService {
                 candidate.transactionId(),
                 candidate.refundAmountCent(),
                 candidate.totalAmountCent(),
-                providerReason(candidate)
+                providerReason(candidate),
+                candidate.lastErrorCode()
         );
     }
 
@@ -399,6 +505,7 @@ public class RefundRecoveryService {
                                ro.status,
                                ro.callback_status,
                                ro.recovery_attempts,
+                               ro.last_error_code,
                                ro.notification_route_token,
                                po.payment_config_id,
                                po.payment_config_fingerprint,
@@ -482,7 +589,8 @@ public class RefundRecoveryService {
                 candidate.transactionId(),
                 candidate.refundAmountCent(),
                 candidate.totalAmountCent(),
-                providerReason(candidate)
+                providerReason(candidate),
+                candidate.lastErrorCode()
         );
     }
 
@@ -522,7 +630,8 @@ public class RefundRecoveryService {
                     claimed.claimToken()
             );
             LocalDateTime nextRecoveryAt = switch (outcome) {
-                case PROCESSING -> LocalDateTime.now(clock).plus(properties.delay());
+                case PROCESSING -> LocalDateTime.now(clock).plus(processingQueryDelay(
+                        claimed.recoveryAttempts()));
                 case FAILED, DUPLICATE -> LocalDateTime.now(clock).plus(properties.maxRetryDelay());
                 case SUCCESS -> null;
             };
@@ -701,6 +810,29 @@ public class RefundRecoveryService {
                 : candidate;
     }
 
+    private Duration processingQueryDelay(int recoveryAttempts) {
+        if (recoveryAttempts <= 5) {
+            return properties.delay();
+        }
+        if (recoveryAttempts >= 9) {
+            return properties.maxRetryDelay();
+        }
+        long multiplier = switch (recoveryAttempts) {
+            case 6 -> 5L;
+            case 7 -> 10L;
+            default -> 20L;
+        };
+        Duration candidate;
+        try {
+            candidate = properties.delay().multipliedBy(multiplier);
+        } catch (ArithmeticException ex) {
+            return properties.maxRetryDelay();
+        }
+        return candidate.compareTo(properties.maxRetryDelay()) > 0
+                ? properties.maxRetryDelay()
+                : candidate;
+    }
+
     private void requireValidBatchSize(int batchSize) {
         if (batchSize < 1 || batchSize > MAX_BATCH_SIZE) {
             throw new IllegalArgumentException("Refund recovery batch size must be between 1 and 200");
@@ -717,6 +849,7 @@ public class RefundRecoveryService {
                 rs.getString("status"),
                 rs.getString("callback_status"),
                 rs.getInt("recovery_attempts"),
+                rs.getString("last_error_code"),
                 rs.getString("out_trade_no"),
                 rs.getString("transaction_id"),
                 rs.getLong("refund_amount_cent"),
@@ -758,6 +891,7 @@ public class RefundRecoveryService {
             String status,
             String callbackStatus,
             int recoveryAttempts,
+            String lastErrorCode,
             String outTradeNo,
             String transactionId,
             long refundAmountCent,
@@ -782,7 +916,8 @@ public class RefundRecoveryService {
             String transactionId,
             long refundAmountCent,
             long totalAmountCent,
-            String reason
+            String reason,
+            String lastErrorCode
     ) {
     }
 

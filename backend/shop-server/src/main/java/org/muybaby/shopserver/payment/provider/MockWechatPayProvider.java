@@ -249,6 +249,10 @@ public class MockWechatPayProvider implements WechatPayProvider {
         refundQueryFailures.add(outRefundNo);
     }
 
+    public void allowRefundQueryFor(String outRefundNo) {
+        refundQueryFailures.remove(outRefundNo);
+    }
+
     public void requirePayNotificationConfig(String outTradeNo, long configId) {
         requiredPayNotificationConfigIds.put(outTradeNo, configId);
     }

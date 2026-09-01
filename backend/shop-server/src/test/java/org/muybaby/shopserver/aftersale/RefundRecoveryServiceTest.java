@@ -19,6 +19,7 @@ import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
 
 import java.time.LocalDateTime;
+import java.time.ZoneOffset;
 import java.util.Arrays;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
@@ -32,6 +33,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doAnswer;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -144,6 +146,34 @@ class RefundRecoveryServiceTest extends PaymentTestSupport {
     }
 
     @Test
+    void longRunningProcessingRefundUsesThirtyMinuteQueryDelay() throws Exception {
+        ApprovedRefund approved = approveRefund("refund-recovery-processing-backoff");
+        jdbcClient.sql("""
+                        update refund_order
+                        set recovery_attempts = 8
+                        where id = :refundOrderId
+                        """)
+                .param("refundOrderId", approved.refundOrderId())
+                .update();
+        makeRecoveryDue(approved.outRefundNo());
+        LocalDateTime beforeRecovery = LocalDateTime.now(ZoneOffset.UTC);
+
+        assertThat(refundRecoveryService.recoverPendingRefunds(10)).isEqualTo(1);
+
+        LocalDateTime nextRecoveryAt = jdbcClient.sql("""
+                        select next_recovery_at
+                        from refund_order
+                        where id = :refundOrderId
+                        """)
+                .param("refundOrderId", approved.refundOrderId())
+                .query(LocalDateTime.class)
+                .single();
+        assertThat(nextRecoveryAt).isBetween(
+                beforeRecovery.plusMinutes(30),
+                LocalDateTime.now(ZoneOffset.UTC).plusMinutes(30).plusSeconds(1));
+    }
+
+    @Test
     void missingUncertainRefundIsResubmittedWithTheSameMerchantRefundNumber() throws Exception {
         ApprovedRefund approved = approveRefund("refund-recovery-resubmit");
         mockWechatPayProvider.forgetRefund(approved.outRefundNo());
@@ -181,6 +211,48 @@ class RefundRecoveryServiceTest extends PaymentTestSupport {
                 .param("outRefundNo", approved.outRefundNo())
                 .query(Integer.class)
                 .single()).isEqualTo(1);
+    }
+
+    @Test
+    void missingRefundWithKnownMerchantActionErrorBecomesTerminalInsteadOfBeingResubmitted() throws Exception {
+        ApprovedRefund approved = approveRefund("refund-recovery-known-rejection");
+        mockWechatPayProvider.forgetRefund(approved.outRefundNo());
+        jdbcClient.sql("""
+                        update refund_order
+                        set callback_status = 'REQUEST_UNKNOWN',
+                            last_error_code = 'NOT_ENOUGH'
+                        where out_refund_no = :outRefundNo
+                        """)
+                .param("outRefundNo", approved.outRefundNo())
+                .update();
+        makeRecoveryDue(approved.outRefundNo());
+        org.mockito.Mockito.clearInvocations(refundProvider);
+
+        assertThat(refundRecoveryService.recoverPendingRefunds(10)).isEqualTo(1);
+
+        verify(refundProvider).queryRefund(any(), eq(approved.outRefundNo()));
+        verify(refundProvider, never()).requestRefund(any(), any());
+        assertThat(jdbcClient.sql("""
+                        select status || '|' || callback_status || '|' || last_error_code
+                        from refund_order
+                        where id = :refundOrderId
+                        """)
+                .param("refundOrderId", approved.refundOrderId())
+                .query(String.class)
+                .single()).isEqualTo("FAILED|SUBMISSION_REJECTED|NOT_ENOUGH");
+        assertThat(statusOf("after_sale_request", approved.afterSaleId())).isEqualTo("REFUND_FAILED");
+        assertThat(jdbcClient.sql("""
+                        select attempt_type || '|' || provider_status || '|' || decision
+                        from refund_provider_attempt
+                        where refund_order_id = :refundOrderId
+                        order by id desc
+                        limit 2
+                        """)
+                .param("refundOrderId", approved.refundOrderId())
+                .query(String.class)
+                .list()).containsExactly(
+                "DECISION|NOT_FOUND|BALANCE_REQUIRED",
+                "QUERY|NOT_FOUND|ORIGINAL_REQUEST_REQUIRED");
     }
 
     @Test

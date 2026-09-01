@@ -49,8 +49,8 @@ class SchemaGenerationBaselineMySqlTest {
         Flyway flyway = MigrationTestSupport.migrateToLatest(
                 MYSQL.getJdbcUrl(), MYSQL.getUsername(), MYSQL.getPassword());
 
-        assertThat(flyway.info().current().getVersion().getVersion()).isEqualTo("12");
-        assertThat(flyway.info().applied()).hasSize(12);
+        assertThat(flyway.info().current().getVersion().getVersion()).isEqualTo("13");
+        assertThat(flyway.info().applied()).hasSize(13);
         assertThat(jdbc.sql("select compliance_type from product_spu order by id")
                 .query(String.class).list()).containsExactly("NON_FOOD", "FOOD", "NON_FOOD");
         assertThat(jdbc.sql("select icon from admin_menu where id = 105")
@@ -64,8 +64,11 @@ class SchemaGenerationBaselineMySqlTest {
                         from information_schema.columns
                         where table_schema = database()
                           and table_name = 'admin_system_log'
-                          and column_name in ('event_code', 'summary', 'target_type', 'target_id')
-                        """).query(Long.class).single()).isEqualTo(4L);
+                          and column_name in (
+                              'event_code', 'summary', 'target_type', 'target_id',
+                              'related_target_type', 'related_target_id', 'provider_error_code'
+                          )
+                        """).query(Long.class).single()).isEqualTo(7L);
         jdbc.sql("""
                         insert into product_spu (id, category_id, title, selling_points, detail_html, status)
                         values (9890024, 1, 'New default', '', '', 'DRAFT')
@@ -88,7 +91,13 @@ class SchemaGenerationBaselineMySqlTest {
                         select count(*)
                         from information_schema.tables
                         where table_schema = database()
-                        """).query(Long.class).single()).isEqualTo(131);
+                        """).query(Long.class).single()).isEqualTo(132);
+        assertThat(jdbc.sql("""
+                        select count(*)
+                        from information_schema.tables
+                        where table_schema = database()
+                          and table_name = 'refund_provider_attempt'
+                        """).query(Long.class).single()).isEqualTo(1L);
         assertThat(jdbc.sql("""
                         select count(*)
                         from information_schema.tables

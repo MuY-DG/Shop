@@ -524,6 +524,8 @@ export function buildOrderSummaryView(order: OrderSummaryResponse): OrderSummary
   const afterSaleStatus = order.latestAfterSale
     ? buildAfterSaleCardStatus(order.latestAfterSale)
     : undefined;
+  const refundNeedsMerchantHandling = order.status === "REFUNDING"
+    && order.latestAfterSale?.status === "REFUND_FAILED";
   return {
     ...order,
     ...orderActions,
@@ -531,7 +533,9 @@ export function buildOrderSummaryView(order: OrderSummaryResponse): OrderSummary
     items: (Array.isArray(order.items) ? order.items : []).map(buildOrderSummaryItemView),
     statusText: orderActions.canReview
       ? "待评价"
-      : order.status === "REFUNDED" ? "交易关闭" : orderStatusText(order.status),
+      : order.status === "REFUNDED"
+        ? "交易关闭"
+        : refundNeedsMerchantHandling ? "退款待处理" : orderStatusText(order.status),
     statusTone: orderActions.canReview ? "brand" : orderStatusTone(order.status),
     amountText: money(order.status === "PAID" || order.status === "PARTIALLY_SHIPPED"
       || order.paidAmountCent > 0
@@ -602,6 +606,8 @@ export function buildOrderDetailView(order: AppOrderDetailResponse): OrderDetail
   const latestAfterSaleView = order.latestAfterSale
     ? buildAfterSaleView(order.latestAfterSale)
     : undefined;
+  const refundNeedsMerchantHandling = order.status === "REFUNDING"
+    && latestAfterSaleView?.status === "REFUND_FAILED";
   const canApply = canApplyAfterSale(order.status, order.latestAfterSale);
   const afterSaleActionMode = !latestAfterSaleView || latestAfterSaleView.status === "CANCELLED"
     ? "APPLY"
@@ -631,11 +637,13 @@ export function buildOrderDetailView(order: AppOrderDetailResponse): OrderDetail
     ...order,
     ...orderActions,
     items: order.items.map(buildOrderItemView),
-    statusText: orderStatusText(order.status),
+    statusText: refundNeedsMerchantHandling ? "退款待处理" : orderStatusText(order.status),
     statusTone: orderStatusTone(order.status),
-    statusHeadline: statusHeadline(order.status),
+    statusHeadline: refundNeedsMerchantHandling ? "退款待处理" : statusHeadline(order.status),
     statusIcon: statusIcon(order.status),
-    statusDescription: statusDescription(order.status),
+    statusDescription: refundNeedsMerchantHandling
+      ? "退款暂未完成，商家正在核查处理"
+      : statusDescription(order.status),
     receiverPhoneDisplay: maskReceiverPhone(order.receiverPhone),
     totalQuantity,
     orderInfoItemCount,

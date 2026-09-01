@@ -1678,6 +1678,7 @@ declare namespace Api {
 
     interface Detail extends Item {
       orderContext: OrderContext
+      refundAttempts: RefundProviderAttempt[]
     }
 
     type Record = Api.Order.OrderStatusLog
@@ -1710,6 +1711,24 @@ declare namespace Api {
       lastErrorMessage?: string | null
       requestedAt?: string | null
       successAt?: string | null
+    }
+
+    interface RefundProviderAttempt {
+      id: string
+      refundOrderId?: string | null
+      afterSaleId: number
+      orderId: number
+      outTradeNo: string
+      outRefundNo: string
+      attemptType: string
+      source: string
+      result: string
+      providerHttpStatus?: number | null
+      providerErrorCode?: string | null
+      providerStatus?: string | null
+      decision: string
+      requestId?: string | null
+      createdAt: string
     }
 
     interface AuditPayload {

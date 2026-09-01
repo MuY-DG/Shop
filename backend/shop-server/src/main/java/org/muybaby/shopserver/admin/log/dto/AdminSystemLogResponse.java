@@ -13,6 +13,8 @@ public record AdminSystemLogResponse(
         String summary,
         String targetType,
         String targetId,
+        String relatedTargetType,
+        String relatedTargetId,
         String module,
         String action,
         @JsonStringId Long operatorUserId,
@@ -26,6 +28,7 @@ public record AdminSystemLogResponse(
         Integer statusCode,
         Long durationMs,
         String errorCode,
+        String providerErrorCode,
         String errorMessage,
         LocalDateTime createdAt
 ) {

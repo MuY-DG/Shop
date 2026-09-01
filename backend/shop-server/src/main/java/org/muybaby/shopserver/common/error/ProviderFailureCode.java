@@ -36,6 +36,11 @@ public final class ProviderFailureCode {
         return null;
     }
 
+    public static Integer safeHttpStatus(Throwable failure) {
+        ServiceException serviceException = findWechatPayServiceException(failure);
+        return serviceException == null ? null : serviceException.getHttpStatusCode();
+    }
+
     private static String sanitize(String value, String fallback) {
         if (value == null || value.isBlank()) {
             return fallback;

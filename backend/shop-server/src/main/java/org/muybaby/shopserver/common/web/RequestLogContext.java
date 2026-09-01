@@ -11,6 +11,8 @@ public final class RequestLogContext {
             RequestLogContext.class.getName() + ".errorCode";
     public static final String ERROR_MESSAGE_ATTRIBUTE =
             RequestLogContext.class.getName() + ".errorMessage";
+    public static final String PROVIDER_ERROR_CODE_ATTRIBUTE =
+            RequestLogContext.class.getName() + ".providerErrorCode";
     public static final String LOGIN_OPERATOR_ID_ATTRIBUTE =
             RequestLogContext.class.getName() + ".loginOperatorId";
     public static final String LOGIN_OPERATOR_NAME_ATTRIBUTE =
@@ -31,6 +33,21 @@ public final class RequestLogContext {
         }
         request.setAttribute(ERROR_CODE_ATTRIBUTE, Integer.toString(errorCode.code()));
         request.setAttribute(ERROR_MESSAGE_ATTRIBUTE, errorCode.message());
+    }
+
+    public static void markProviderError(String providerErrorCode) {
+        if (RequestContextHolder.getRequestAttributes() instanceof ServletRequestAttributes attributes
+                && providerErrorCode != null && !providerErrorCode.isBlank()) {
+            attributes.getRequest().setAttribute(PROVIDER_ERROR_CODE_ATTRIBUTE, providerErrorCode);
+        }
+    }
+
+    public static String currentRequestId() {
+        if (RequestContextHolder.getRequestAttributes() instanceof ServletRequestAttributes attributes) {
+            Object requestId = attributes.getRequest().getAttribute(RequestIdFilter.REQUEST_ID_ATTRIBUTE);
+            return requestId == null ? "" : requestId.toString();
+        }
+        return "";
     }
 
     public static void markLoginCandidate(HttpServletRequest request, String username) {

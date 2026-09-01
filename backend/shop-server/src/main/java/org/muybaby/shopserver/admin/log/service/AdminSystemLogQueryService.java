@@ -49,10 +49,10 @@ public class AdminSystemLogQueryService {
 
         List<AdminSystemLogResponse> records = bindFilters(jdbcClient.sql("""
                         select id, log_type, result, level, event_code, summary, target_type, target_id,
-                               operator_id, operator_name,
+                               related_target_type, related_target_id, operator_id, operator_name,
                                module, action, request_method, request_path, route_pattern,
                                http_status, duration_ms, client_ip, user_agent, request_id,
-                               error_code, error_message, occurred_at
+                               error_code, provider_error_code, error_message, occurred_at
                         from admin_system_log log
                         """ + whereClause + """
                         order by log.occurred_at desc, log.id desc
@@ -73,7 +73,12 @@ public class AdminSystemLogQueryService {
                           and (:keyword = ''
                                or lower(log.summary) like lower(:keywordPattern) escape '!'
                                or lower(log.event_code) like lower(:keywordPattern) escape '!'
-                               or log.target_id = :keyword)
+                               or log.target_id = :keyword
+                               or log.related_target_id = :keyword
+                               or lower(log.error_code) like lower(:keywordPattern) escape '!'
+                               or lower(log.provider_error_code) like lower(:keywordPattern) escape '!'
+                               or lower(log.error_message) like lower(:keywordPattern) escape '!'
+                               or lower(log.request_path) like lower(:keywordPattern) escape '!')
                           and (:module = '' or log.module = :module)
                           and (:operator = ''
                                or lower(log.operator_name) like lower(:operatorPattern) escape '!'
@@ -210,6 +215,8 @@ public class AdminSystemLogQueryService {
                 rs.getString("summary"),
                 rs.getString("target_type"),
                 rs.getString("target_id"),
+                rs.getString("related_target_type"),
+                rs.getString("related_target_id"),
                 rs.getString("module"),
                 rs.getString("action"),
                 rs.getObject("operator_id", Long.class),
@@ -223,6 +230,7 @@ public class AdminSystemLogQueryService {
                 rs.getInt("http_status"),
                 rs.getLong("duration_ms"),
                 rs.getString("error_code"),
+                rs.getString("provider_error_code"),
                 rs.getString("error_message"),
                 rs.getObject("occurred_at", LocalDateTime.class)
         );

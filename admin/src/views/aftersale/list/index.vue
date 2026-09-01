@@ -608,10 +608,62 @@
                     class="detail-fact detail-fact--full"
                   >
                     <dt>回调状态</dt>
-                    <dd>{{ currentDetail.refundOrder.callbackStatus }}</dd>
+                    <dd>
+                      {{ formatRefundCallbackStatus(currentDetail.refundOrder.callbackStatus) }}
+                    </dd>
+                  </div>
+                  <div
+                    v-if="currentDetail.refundOrder.lastErrorCode === 'NOT_ENOUGH'"
+                    class="detail-fact detail-fact--full"
+                  >
+                    <dt>处理建议</dt>
+                    <dd
+                      >请先补足微信商户余额，再点击“安全查询并重提”；系统会沿用原商户退款单号，避免重复退款。</dd
+                    >
                   </div>
                 </dl>
                 <ElEmpty v-else description="暂无退款单" :image-size="60" />
+                <div v-if="currentDetail.refundAttempts?.length" class="refund-attempts">
+                  <h4>微信渠道处理轨迹</h4>
+                  <ElTimeline>
+                    <ElTimelineItem
+                      v-for="attempt in currentDetail.refundAttempts"
+                      :key="attempt.id"
+                      :timestamp="formatDateTime(attempt.createdAt)"
+                      placement="top"
+                    >
+                      <div class="refund-attempt">
+                        <div class="refund-attempt__title">
+                          <strong>{{ formatRefundAttemptType(attempt.attemptType) }}</strong>
+                          <ElTag
+                            :type="attempt.result === 'SUCCESS' ? 'success' : 'danger'"
+                            size="small"
+                            effect="plain"
+                          >
+                            {{ attempt.result === 'SUCCESS' ? '成功' : '失败' }}
+                          </ElTag>
+                        </div>
+                        <p>
+                          来源：{{ formatRefundAttemptSource(attempt.source) }} · 决策：{{
+                            formatRefundAttemptDecision(attempt.decision)
+                          }}
+                          <template v-if="attempt.providerStatus">
+                            · 渠道状态：{{ attempt.providerStatus }}
+                          </template>
+                        </p>
+                        <p v-if="attempt.providerErrorCode || attempt.providerHttpStatus">
+                          微信错误：{{ attempt.providerErrorCode || '-' }}
+                          <template v-if="attempt.providerHttpStatus">
+                            · HTTP {{ attempt.providerHttpStatus }}
+                          </template>
+                        </p>
+                        <p v-if="attempt.requestId" class="detail-fact__mono">
+                          Request ID：{{ attempt.requestId }}
+                        </p>
+                      </div>
+                    </ElTimelineItem>
+                  </ElTimeline>
+                </div>
               </section>
             </div>
           </div>
@@ -1505,7 +1557,65 @@
   const formatRefundError = (refundOrder: Api.AfterSale.RefundOrder) => {
     const code = refundOrder.lastErrorCode || ''
     const message = refundOrder.lastErrorMessage || ''
+    if (code === 'NOT_ENOUGH') {
+      return 'NOT_ENOUGH / 微信商户余额不足，退款申请未受理'
+    }
     return [code, message].filter(Boolean).join(' / ') || '-'
+  }
+
+  const formatRefundCallbackStatus = (value?: string | null) => {
+    const labels: Record<string, string> = {
+      PROCESSING: '微信处理中',
+      SUCCESS: '微信退款成功',
+      CLOSED: '微信退款关闭',
+      ABNORMAL: '微信退款异常',
+      REQUEST_UNKNOWN: '提交结果待确认',
+      SUBMISSION_REJECTED: '微信未受理',
+      MANUAL_INTERVENTION: '人工介入'
+    }
+    return value ? labels[value] || value : '-'
+  }
+
+  const formatRefundAttemptType = (value: string) => {
+    const labels: Record<string, string> = {
+      ORDER_PREFLIGHT: '支付订单核验',
+      SUBMISSION: '申请退款',
+      QUERY: '查询退款单',
+      RESUBMISSION: '原单重提',
+      DECISION: '系统处理决策'
+    }
+    return labels[value] || value
+  }
+
+  const formatRefundAttemptSource = (value: string) => {
+    const labels: Record<string, string> = {
+      ADMIN: '管理员操作',
+      SYSTEM: '系统自动恢复'
+    }
+    return labels[value] || value
+  }
+
+  const formatRefundAttemptDecision = (value: string) => {
+    const labels: Record<string, string> = {
+      VERIFIED_PAID: '已确认微信支付成功',
+      ACCEPTED: '微信已受理',
+      QUERY_REQUIRED: '申请非 200，先查询确认',
+      PROVIDER_CONFIRMED: '查询已确认渠道状态',
+      NOT_FOUND: '微信退款单不存在',
+      MERCHANT_ACTION_REQUIRED: '暂停自动重试，等待商户处理',
+      ORIGINAL_RETRY: '使用原商户退款单号重试',
+      ORIGINAL_REQUEST_ACCEPTED: '原商户退款单号已被微信受理',
+      ORIGINAL_REQUEST_REQUIRED: '微信未查到退款单，可以原参数重试',
+      APPLY_PROVIDER_RESULT: '按微信查询结果更新退款状态',
+      QUERY_LATER: '退款仍在处理中，稍后继续查单',
+      BALANCE_REQUIRED: '余额不足，等待商户补足余额',
+      CONFIGURATION_FAILURE: '退款配置异常，等待商户处理',
+      BUSINESS_REJECTION: '退款请求不符合业务规则，等待核查',
+      USER_ACCOUNT_ABNORMAL: '用户微信账户异常，转人工处理',
+      RECOVERY_SCHEDULED: '已安排安全查单恢复',
+      PREFLIGHT_REJECTED: '支付状态核验未通过'
+    }
+    return labels[value] || value
   }
 
   const formatRecordTitle = (record: Api.AfterSale.Record) =>
@@ -2653,6 +2763,39 @@
 
   .detail-card :deep(.el-empty) {
     padding: 6px 0 10px;
+  }
+
+  .refund-attempts {
+    padding-top: 16px;
+    margin-top: 16px;
+    border-top: 1px solid var(--el-border-color-lighter);
+
+    h4 {
+      margin: 0 0 16px;
+      font-size: 14px;
+      font-weight: 600;
+      color: var(--el-text-color-primary);
+    }
+  }
+
+  .refund-attempt {
+    padding: 10px 12px;
+    background: var(--el-fill-color-lighter);
+    border-radius: 8px;
+
+    p {
+      margin: 6px 0 0;
+      font-size: 12px;
+      line-height: 18px;
+      color: var(--el-text-color-secondary);
+    }
+  }
+
+  .refund-attempt__title {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
   }
 
   .evidence-list {

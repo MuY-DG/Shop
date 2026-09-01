@@ -108,6 +108,15 @@ test('formats list and detail values in the browser timezone without inventing r
   )
   assert.equal(formatLogSummary({ summary: '', action: 'login' }), 'login')
   assert.equal(formatLogTarget({ targetType: 'spuId', targetId: '100' }), 'spuId：100')
+  assert.equal(
+    formatLogTarget({
+      targetType: 'afterSaleId',
+      targetId: '7',
+      relatedTargetType: 'refundOrderId',
+      relatedTargetId: '4'
+    }),
+    'afterSaleId：7 / refundOrderId：4'
+  )
   assert.equal(formatLogTarget({ targetType: '', targetId: '' }), '-')
   assert.equal(
     formatLogDevice(

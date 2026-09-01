@@ -74,6 +74,30 @@ public enum ErrorCode {
     WECHAT_SERVICE_CARD_CONFIG_UNAVAILABLE(600012, "微信服务动态接入配置不可用"),
     WECHAT_SERVICE_CARD_CONFIG_CONFLICT(600013, "微信服务动态接入配置已被其他管理员修改，请刷新后重试"),
     WECHAT_REFUND_FAILED(700001, "WeChat refund failed"),
+    WECHAT_REFUND_BALANCE_INSUFFICIENT(
+            700002,
+            "微信商户余额不足，退款申请未受理；请充值后使用原商户退款单号重试"
+    ),
+    WECHAT_REFUND_CONFIGURATION_INVALID(
+            700003,
+            "微信支付退款配置异常，退款申请未受理；请检查商户号、权限和签名配置"
+    ),
+    WECHAT_REFUND_USER_ACCOUNT_ABNORMAL(
+            700004,
+            "用户微信账户异常，退款申请未受理；请转人工核查其他退款方式"
+    ),
+    WECHAT_REFUND_REQUEST_REJECTED(
+            700005,
+            "微信拒绝退款申请；请核对原支付订单和退款参数后处理"
+    ),
+    WECHAT_REFUND_RECONCILIATION_PENDING(
+            700006,
+            "微信退款提交结果待确认，系统将自动查单；请勿更换退款单号或重复退款"
+    ),
+    WECHAT_REFUND_PREFLIGHT_FAILED(
+            700007,
+            "微信支付订单状态核验失败，未发起退款；请稍后重试或检查支付配置"
+    ),
     STORAGE_FILE_UNAVAILABLE(800001, "Storage file unavailable"),
     STORAGE_UPLOAD_POLICY_REJECTED(800002, "Storage upload policy rejected"),
     STORAGE_FILE_IN_USE(800003, "Storage file in use"),

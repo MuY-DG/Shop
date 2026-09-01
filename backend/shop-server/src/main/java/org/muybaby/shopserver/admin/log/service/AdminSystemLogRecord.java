@@ -14,6 +14,8 @@ public record AdminSystemLogRecord(
         String summary,
         String targetType,
         String targetId,
+        String relatedTargetType,
+        String relatedTargetId,
         Long operatorUserId,
         String operatorUsername,
         String module,
@@ -27,6 +29,7 @@ public record AdminSystemLogRecord(
         String userAgent,
         String requestId,
         String errorCode,
+        String providerErrorCode,
         String errorMessage,
         LocalDateTime createdAt
 ) {

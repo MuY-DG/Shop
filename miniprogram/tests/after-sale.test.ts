@@ -233,6 +233,12 @@ test("进行中售后阻止重复申请并允许终态后重新申请", () => {
   assert.equal(retryOrder.afterSaleActionMode, "DETAIL");
   assert.equal(retryOrder.afterSaleActionText, "售后详细");
 
+  const failedRefundOrder = buildOrderDetailView(order("REFUNDING", afterSale("REFUND_FAILED")));
+  assert.equal(failedRefundOrder.statusText, "退款待处理");
+  assert.equal(failedRefundOrder.statusHeadline, "退款待处理");
+  assert.equal(failedRefundOrder.statusDescription, "退款暂未完成，商家正在核查处理");
+  assert.equal(failedRefundOrder.latestAfterSaleView?.statusText, "退款处理异常");
+
   const cancelledOrder = buildOrderDetailView(order("COMPLETED", afterSale("CANCELLED")));
   assert.equal(cancelledOrder.canApplyAfterSale, true);
   assert.equal(cancelledOrder.afterSaleActionMode, "APPLY");

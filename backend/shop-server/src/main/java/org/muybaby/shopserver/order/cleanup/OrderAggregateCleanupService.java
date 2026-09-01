@@ -578,6 +578,8 @@ public class OrderAggregateCleanupService {
                 order by evidence.id
                 """, orderId));
         sections.put("refunds", refunds);
+        sections.put("refund_provider_attempts", rows(
+                "select * from refund_provider_attempt where order_id = :orderId order by id", orderId));
         sections.put("refund_inventory_restock_items", rows("""
                 select restock.*
                 from refund_inventory_restock_item restock
@@ -744,6 +746,7 @@ public class OrderAggregateCleanupService {
                 delete from refund_inventory_restock_item
                 where refund_order_id in (select id from refund_order where order_id = :orderId)
                 """, orderId);
+        delete("delete from refund_provider_attempt where order_id = :orderId", orderId);
         delete("""
                 delete from after_sale_evidence
                 where after_sale_id in (select id from after_sale_request where order_id = :orderId)
@@ -821,6 +824,13 @@ public class OrderAggregateCleanupService {
     }
 
     private void lockChildRows(Long orderId) {
+        jdbcClient.sql("""
+                        select id from refund_provider_attempt
+                        where order_id = :orderId order by id for update
+                        """)
+                .param("orderId", orderId)
+                .query(Long.class)
+                .list();
         jdbcClient.sql("select id from refund_order where order_id = :orderId order by id for update")
                 .param("orderId", orderId)
                 .query(Long.class)

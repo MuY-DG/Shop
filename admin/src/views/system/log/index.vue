@@ -188,6 +188,9 @@
           <ElDescriptionsItem label="错误码">{{
             formatLogText(currentLog.errorCode)
           }}</ElDescriptionsItem>
+          <ElDescriptionsItem label="微信错误码">{{
+            formatLogText(currentLog.providerErrorCode)
+          }}</ElDescriptionsItem>
           <ElDescriptionsItem label="错误信息">
             <span class="breakable-text">{{ formatLogText(currentLog.errorMessage) }}</span>
           </ElDescriptionsItem>

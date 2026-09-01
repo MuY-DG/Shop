@@ -129,6 +129,8 @@ public class AdminSystemLogFilter extends OncePerRequestFilter {
                 clean(semantics.summary(), 255),
                 clean(semantics.targetType(), 64),
                 clean(semantics.targetId(), 128),
+                clean(semantics.relatedTargetType(), 64),
+                clean(semantics.relatedTargetId(), 128),
                 operator.id(),
                 clean(operator.username(), 64),
                 clean(module(path), 64),
@@ -142,6 +144,7 @@ public class AdminSystemLogFilter extends OncePerRequestFilter {
                 clean(request.getHeader("User-Agent"), 255),
                 clean(attribute(request, RequestIdFilter.REQUEST_ID_ATTRIBUTE), 128),
                 clean(error.code(), 64),
+                clean(error.providerCode(), 64),
                 clean(error.message(), 255),
                 LocalDateTime.now(java.time.ZoneOffset.UTC)
         );
@@ -228,12 +231,13 @@ public class AdminSystemLogFilter extends OncePerRequestFilter {
 
     private ErrorDetails errorDetails(HttpServletRequest request, int status) {
         if (status < 400) {
-            return new ErrorDetails("", "");
+            return new ErrorDetails("", "", "");
         }
         String code = attribute(request, RequestLogContext.ERROR_CODE_ATTRIBUTE);
         String message = attribute(request, RequestLogContext.ERROR_MESSAGE_ATTRIBUTE);
+        String providerCode = attribute(request, RequestLogContext.PROVIDER_ERROR_CODE_ATTRIBUTE);
         if (!code.isBlank() || !message.isBlank()) {
-            return new ErrorDetails(code, message);
+            return new ErrorDetails(code, message, providerCode);
         }
         ErrorCode fallback = switch (status) {
             case HttpServletResponse.SC_UNAUTHORIZED -> ErrorCode.AUTHENTICATION_REQUIRED;
@@ -245,8 +249,8 @@ public class AdminSystemLogFilter extends OncePerRequestFilter {
             default -> status >= 500 ? ErrorCode.INTERNAL_ERROR : null;
         };
         return fallback == null
-                ? new ErrorDetails("", "")
-                : new ErrorDetails(Integer.toString(fallback.code()), fallback.message());
+                ? new ErrorDetails("", "", providerCode)
+                : new ErrorDetails(Integer.toString(fallback.code()), fallback.message(), providerCode);
     }
 
     private String module(String path) {
@@ -282,6 +286,8 @@ public class AdminSystemLogFilter extends OncePerRequestFilter {
                             : "ADMIN_LOGIN_FAILURE",
                     summary,
                     "admin-account",
+                    "",
+                    "",
                     ""
             );
         }
@@ -298,14 +304,18 @@ public class AdminSystemLogFilter extends OncePerRequestFilter {
                     eventCode,
                     appendError(subject + "请求发生服务异常", error),
                     target.type(),
-                    target.id()
+                    target.id(),
+                    target.relatedType(),
+                    target.relatedId()
             );
         }
         if (type == AdminSystemLogType.REQUEST) {
             String summary = status >= 400
                     ? appendError(subject + "请求失败", error)
                     : subject + "慢请求";
-            return new AuditSemantics(eventCode, summary, target.type(), target.id());
+            return new AuditSemantics(
+                    eventCode, summary, target.type(), target.id(),
+                    target.relatedType(), target.relatedId());
         }
 
         if (type == AdminSystemLogType.SECURITY) {
@@ -321,7 +331,9 @@ public class AdminSystemLogFilter extends OncePerRequestFilter {
             summary = result == AdminSystemLogResult.SUCCESS
                     ? summary + "成功"
                     : appendError(summary, error);
-            return new AuditSemantics(eventCode, summary, target.type(), target.id());
+            return new AuditSemantics(
+                    eventCode, summary, target.type(), target.id(),
+                    target.relatedType(), target.relatedId());
         }
 
         String summary = switch (method) {
@@ -335,7 +347,9 @@ public class AdminSystemLogFilter extends OncePerRequestFilter {
         } else {
             summary += "成功";
         }
-        return new AuditSemantics(eventCode, summary, target.type(), target.id());
+        return new AuditSemantics(
+                eventCode, summary, target.type(), target.id(),
+                target.relatedType(), target.relatedId());
     }
 
     private String appendError(String summary, ErrorDetails error) {
@@ -356,21 +370,32 @@ public class AdminSystemLogFilter extends OncePerRequestFilter {
 
     private Target target(String path, String routePattern) {
         if (routePattern == null || routePattern.isBlank()) {
-            return new Target(module(path), "");
+            return new Target(module(path), "", "", "");
         }
         String[] actualSegments = path.split("/");
         String[] patternSegments = routePattern.split("/");
         int length = Math.min(actualSegments.length, patternSegments.length);
-        for (int index = length - 1; index >= 0; index--) {
+        Target preferred = null;
+        Target last = null;
+        for (int index = 0; index < length; index++) {
             String patternSegment = patternSegments[index];
             if (patternSegment.startsWith("{") && patternSegment.endsWith("}")) {
-                return new Target(
-                        patternSegment.substring(1, patternSegment.length() - 1),
-                        actualSegments[index]
-                );
+                String type = patternSegment.substring(1, patternSegment.length() - 1);
+                Target candidate = new Target(type, actualSegments[index], "", "");
+                last = candidate;
+                if ("afterSaleId".equals(type)) {
+                    preferred = candidate;
+                }
             }
         }
-        return new Target(module(path), "");
+        Target primary = preferred == null ? last : preferred;
+        if (primary == null) {
+            return new Target(module(path), "", "", "");
+        }
+        if (last != null && (!last.type().equals(primary.type()) || !last.id().equals(primary.id()))) {
+            return new Target(primary.type(), primary.id(), last.type(), last.id());
+        }
+        return primary;
     }
 
     private String moduleLabel(String module) {
@@ -456,13 +481,15 @@ public class AdminSystemLogFilter extends OncePerRequestFilter {
             String eventCode,
             String summary,
             String targetType,
-            String targetId
+            String targetId,
+            String relatedTargetType,
+            String relatedTargetId
     ) {
     }
 
-    private record Target(String type, String id) {
+    private record Target(String type, String id, String relatedType, String relatedId) {
     }
 
-    private record ErrorDetails(String code, String message) {
+    private record ErrorDetails(String code, String message, String providerCode) {
     }
 }

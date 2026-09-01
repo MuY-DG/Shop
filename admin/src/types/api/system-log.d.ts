@@ -13,6 +13,8 @@ declare namespace Api {
       summary: string
       targetType: string
       targetId: string
+      relatedTargetType?: string
+      relatedTargetId?: string
       module: string
       action: string
       operatorUserId?: string
@@ -26,6 +28,7 @@ declare namespace Api {
       statusCode: number
       durationMs: number
       errorCode?: string
+      providerErrorCode?: string
       errorMessage?: string
       createdAt: string
     }

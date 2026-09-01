@@ -38,6 +38,8 @@ class AdminSystemLogSchemaTest {
                 "summary",
                 "target_type",
                 "target_id",
+                "related_target_type",
+                "related_target_id",
                 "operator_id",
                 "operator_name",
                 "module",
@@ -51,6 +53,7 @@ class AdminSystemLogSchemaTest {
                 "user_agent",
                 "request_id",
                 "error_code",
+                "provider_error_code",
                 "error_message",
                 "occurred_at"
         );
@@ -68,7 +71,9 @@ class AdminSystemLogSchemaTest {
                               'idx_admin_system_log_operator_occurred',
                               'idx_admin_system_log_client_ip_occurred',
                               'idx_admin_system_log_request_id',
-                              'idx_admin_system_log_target'
+                              'idx_admin_system_log_target',
+                              'idx_admin_system_log_related_target',
+                              'idx_admin_system_log_provider_error'
                           )
                         order by lower(index_name), ordinal_position
                         """)
@@ -86,6 +91,11 @@ class AdminSystemLogSchemaTest {
                 new IndexColumn("idx_admin_system_log_occurred_id", "id"),
                 new IndexColumn("idx_admin_system_log_operator_occurred", "operator_id"),
                 new IndexColumn("idx_admin_system_log_operator_occurred", "occurred_at"),
+                new IndexColumn("idx_admin_system_log_provider_error", "provider_error_code"),
+                new IndexColumn("idx_admin_system_log_provider_error", "occurred_at"),
+                new IndexColumn("idx_admin_system_log_related_target", "related_target_type"),
+                new IndexColumn("idx_admin_system_log_related_target", "related_target_id"),
+                new IndexColumn("idx_admin_system_log_related_target", "occurred_at"),
                 new IndexColumn("idx_admin_system_log_request_id", "request_id"),
                 new IndexColumn("idx_admin_system_log_target", "target_type"),
                 new IndexColumn("idx_admin_system_log_target", "target_id"),
@@ -122,6 +132,9 @@ class AdminSystemLogSchemaTest {
                           and route_pattern = ''
                           and user_agent = ''
                           and error_code = ''
+                          and related_target_type = ''
+                          and related_target_id = ''
+                          and provider_error_code = ''
                           and error_message = ''
                           and occurred_at is not null
                         """)
@@ -129,6 +142,25 @@ class AdminSystemLogSchemaTest {
                 .single();
 
         assertThat(rowCount).isEqualTo(1);
+    }
+
+    @Test
+    void refundProviderAttemptSchemaIsAppendOnlyAuditReady() {
+        List<String> columns = jdbcClient.sql("""
+                        select lower(column_name)
+                        from information_schema.columns
+                        where lower(table_schema) = 'public'
+                          and lower(table_name) = 'refund_provider_attempt'
+                        order by ordinal_position
+                        """)
+                .query(String.class)
+                .list();
+
+        assertThat(columns).containsExactly(
+                "id", "refund_order_id", "after_sale_id", "order_id",
+                "out_trade_no", "out_refund_no", "attempt_type", "source", "result",
+                "provider_http_status", "provider_error_code", "provider_status",
+                "decision", "request_id", "created_at");
     }
 
     @Test

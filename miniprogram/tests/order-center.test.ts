@@ -207,6 +207,19 @@ test("订单列表展示最新售后结果并使用真实退款金额", () => {
   assert.equal(closedReturnView.afterSaleStatusText, "退货申请已关闭");
   assert.equal(closedReturnView.afterSaleStatusDescription, "因审核不通过");
 
+  const failedRefund = summary("REFUNDING");
+  failedRefund.latestAfterSale = {
+    afterSaleType: "REFUND_ONLY",
+    status: "REFUND_FAILED",
+    requestedAmountCent: 4540,
+    approvedAmountCent: 4540,
+    refundAmountCent: 4540
+  };
+  const failedRefundView = buildOrderSummaryView(failedRefund);
+  assert.equal(failedRefundView.statusText, "退款待处理");
+  assert.equal(failedRefundView.afterSaleStatusText, "售后处理中");
+  assert.equal(failedRefundView.afterSaleStatusDescription, "后台客服正在加速处理退款异常");
+
   assert.equal(buildOrderSummaryView(summary("COMPLETED")).afterSaleStatusText, "");
 });
 

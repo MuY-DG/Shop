@@ -70,6 +70,7 @@ public abstract class PaymentTestSupport {
     private void clearSeededPaymentFlowState() {
         jdbcClient.sql("delete from storage_asset_usage").update();
         jdbcClient.sql("delete from refund_inventory_restock_item").update();
+        jdbcClient.sql("delete from refund_provider_attempt").update();
         jdbcClient.sql("delete from refund_order").update();
         jdbcClient.sql("delete from after_sale_evidence").update();
         jdbcClient.sql("delete from after_sale_status_log").update();
@@ -361,6 +362,7 @@ public abstract class PaymentTestSupport {
                 .param("paidAmountCent", paidAmountCent)
                 .param("paidAt", paidAt)
                 .update();
+        mockWechatPayProvider.markOrderPaid(outTradeNo, paidAmountCent, transactionId);
         return new SeedPaidOrder(order.orderId(), order.orderNo(), outTradeNo, transactionId, paidAmountCent);
     }
 
