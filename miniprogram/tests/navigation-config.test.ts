@@ -663,6 +663,20 @@ test("商品加购按钮调用真实购物车接口并同步底部角标", () =>
   assert.match(tabStyle, /\.tab-bar__items\s*\{[\s\S]*position: relative;[\s\S]*z-index: 1/);
 });
 
+test("首页推荐商品使用稳定的两列网格", () => {
+  const styles = readFileSync(
+    resolve(sourceRoot, "components/home-product-section/home-product-section.less"),
+    "utf8"
+  );
+
+  assert.match(
+    styles,
+    /\.compact-grid\s*\{[^}]*display:\s*grid;[^}]*grid-template-columns:\s*repeat\(2,\s*minmax\(0,\s*1fr\)\);[^}]*gap:\s*@space-5;/
+  );
+  assert.match(styles, /\.compact-item\s*\{[^}]*min-width:\s*0;/);
+  assert.doesNotMatch(styles, /\.compact-item\s*\{[^}]*width:\s*calc\(/);
+});
+
 test("账户中心注册真实页面、移除消息中心并接入自建在线客服", () => {
   const appConfig = JSON.parse(
     readFileSync(resolve(sourceRoot, "app.json"), "utf8")

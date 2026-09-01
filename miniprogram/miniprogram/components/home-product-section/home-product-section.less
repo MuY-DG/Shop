@@ -105,10 +105,10 @@
 .featured-item--spaced { margin-left: @space-5; }
 
 .compact-grid {
-  display: flex;
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   padding-top: @space-2;
   gap: @space-5;
 }
 
-.compact-item { width: calc(50% - 10rpx); }
+.compact-item { min-width: 0; }
