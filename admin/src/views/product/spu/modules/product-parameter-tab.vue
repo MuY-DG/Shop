@@ -22,12 +22,12 @@
         :required="definition.required"
       >
         <template #label>
-          <div class="parameter-label">
+          <span class="parameter-label">
             <span>{{ definition.parameterName }}</span>
             <ElTag v-if="definition.cardVisible" size="small" type="success">卡片展示</ElTag>
             <ElTag v-if="definition.detailVisible" size="small" type="info">详情展示</ElTag>
             <small v-if="definition.description">{{ definition.description }}</small>
-          </div>
+          </span>
         </template>
 
         <ElInput
@@ -214,6 +214,7 @@
       margin: 0;
       font-size: 16px;
     }
+
     p {
       margin: 6px 0 0;
       color: var(--el-text-color-secondary);
@@ -226,10 +227,21 @@
     gap: 4px 20px;
   }
 
-  .parameter-label {
+  .parameter-form :deep(.el-form-item__label) {
     display: flex;
+    align-items: center;
+    height: auto !important;
+    min-height: var(--el-component-custom-height);
+    line-height: 1.4 !important;
+  }
+
+  .parameter-label {
+    display: inline-flex;
+    flex-wrap: wrap;
     gap: 6px;
     align-items: center;
+    max-width: 100%;
+    vertical-align: top;
 
     small {
       color: var(--el-text-color-secondary);
