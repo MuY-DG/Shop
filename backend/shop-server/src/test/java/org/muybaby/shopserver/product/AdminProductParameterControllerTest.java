@@ -169,6 +169,36 @@ class AdminProductParameterControllerTest {
         return insertCategory(name, 0L);
     }
 
+    @Test
+    void freeFormParameterCannotBeMarkedAsFilterable() throws Exception {
+        String token = adminLoginAndExtractToken();
+        Long categoryId = insertCategory("参数测试-筛选类型约束");
+
+        mockMvc.perform(post("/admin/product/parameter-definitions")
+                        .header("Authorization", "Bearer " + token)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "parameterCode":"FILTERABLE_TEXT_TEST",
+                                  "parameterName":"自由文本",
+                                  "valueType":"TEXT",
+                                  "unit":"",
+                                  "required":false,
+                                  "filterable":true,
+                                  "cardVisible":false,
+                                  "detailVisible":true,
+                                  "cardRole":"META",
+                                  "cardRenderer":"TEXT",
+                                  "cardPriority":0,
+                                  "sortOrder":0,
+                                  "status":"ENABLED",
+                                  "categoryIds":[%d],
+                                  "options":[]
+                                }
+                                """.formatted(categoryId)))
+                .andExpect(status().isBadRequest());
+    }
+
     private Long insertCategory(String name, Long parentId) {
         jdbcClient.sql("""
                         insert into product_category (parent_id, name, icon, sort_order, status)

@@ -128,8 +128,7 @@ public class ProductParameterService {
     public List<AppProductFilterGroupResponse> filterFacets(Long categoryId, String keyword) {
         List<AdminProductParameterDefinitionResponse> definitions = definitions(categoryId, true).stream()
                 .filter(definition -> Boolean.TRUE.equals(definition.filterable()))
-                .filter(definition -> ProductParameterValueType.SINGLE_SELECT.name().equals(definition.valueType())
-                        || ProductParameterValueType.MULTI_SELECT.name().equals(definition.valueType()))
+                .filter(definition -> ProductParameterValueType.valueOf(definition.valueType()).supportsFiltering())
                 .filter(definition -> !definition.options().isEmpty())
                 .toList();
         if (definitions.isEmpty()) {
@@ -612,6 +611,9 @@ public class ProductParameterService {
         List<AdminProductParameterOptionRequest> options = request.options() == null ? List.of() : request.options();
         boolean selectable = valueType == ProductParameterValueType.SINGLE_SELECT
                 || valueType == ProductParameterValueType.MULTI_SELECT;
+        if (Boolean.TRUE.equals(request.filterable()) && !valueType.supportsFiltering()) {
+            throw new BusinessException(ErrorCode.VALIDATION_FAILED);
+        }
         if (selectable && options.isEmpty() || !selectable && !options.isEmpty()) {
             throw new BusinessException(ErrorCode.VALIDATION_FAILED);
         }

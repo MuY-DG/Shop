@@ -142,10 +142,17 @@
           />
         </ElFormItem>
         <ElFormItem label="参数用途">
-          <ElCheckbox v-model="formData.required">必填</ElCheckbox>
-          <ElCheckbox v-model="formData.filterable">可筛选</ElCheckbox>
-          <ElCheckbox v-model="formData.cardVisible">商品卡片展示</ElCheckbox>
-          <ElCheckbox v-model="formData.detailVisible">商品详情展示</ElCheckbox>
+          <div class="usage-field">
+            <div>
+              <ElCheckbox v-model="formData.required">必填</ElCheckbox>
+              <ElCheckbox v-model="formData.filterable" :disabled="!selectable">
+                可筛选
+              </ElCheckbox>
+              <ElCheckbox v-model="formData.cardVisible">商品卡片展示</ElCheckbox>
+              <ElCheckbox v-model="formData.detailVisible">商品详情展示</ElCheckbox>
+            </div>
+            <small>小程序筛选仅支持具有固定选项的单选、多选参数。</small>
+          </div>
         </ElFormItem>
 
         <ElFormItem v-if="formData.cardVisible" label="卡片呈现">
@@ -178,7 +185,11 @@
                 maxlength="64"
                 placeholder="显示名称，如：中辣"
               />
-              <ElInput v-model="option.optionCode" maxlength="64" placeholder="编码，如：MEDIUM" />
+              <ElInput
+                v-model="option.optionCode"
+                maxlength="64"
+                placeholder="添加选项时自动生成"
+              />
               <ElInputNumber
                 v-model="option.displayLevel"
                 :min="0"
@@ -219,6 +230,7 @@
     fetchProductParameterDefinitions,
     updateProductParameterDefinition
   } from '@/api/product'
+  import { nextParameterOptionCode, supportsParameterFiltering } from './parameter-editor-state'
 
   defineOptions({ name: 'ProductParameter' })
 
@@ -289,9 +301,7 @@
       children: node.children?.length ? toCategoryTreeOptions(node.children) : undefined
     }))
   const categoryTreeOptions = computed(() => toCategoryTreeOptions(categories.value))
-  const selectable = computed(
-    () => formData.valueType === 'SINGLE_SELECT' || formData.valueType === 'MULTI_SELECT'
-  )
+  const selectable = computed(() => supportsParameterFiltering(formData.valueType))
   const rules: FormRules<ParameterForm> = {
     parameterName: [{ required: true, message: '请输入参数名称', trigger: 'blur' }],
     parameterCode: [
@@ -375,7 +385,7 @@
         unit: item.unit || '',
         description: item.description || '',
         required: item.required,
-        filterable: item.filterable,
+        filterable: supportsParameterFiltering(item.valueType) && item.filterable,
         cardVisible: item.cardVisible,
         detailVisible: item.detailVisible,
         cardRole: item.cardRole || 'META',
@@ -401,13 +411,16 @@
   )
 
   const handleValueTypeChange = () => {
-    if (!selectable.value) formData.options = []
+    if (!selectable.value) {
+      formData.options = []
+      formData.filterable = false
+    }
     if (selectable.value && !formData.options.length) addOption()
   }
 
   const addOption = () => {
     formData.options.push({
-      optionCode: '',
+      optionCode: nextParameterOptionCode(formData.options),
       optionLabel: '',
       displayLevel: null,
       sortOrder: formData.options.length
@@ -516,6 +529,14 @@
     display: grid;
     width: 100%;
     gap: 10px;
+  }
+  .usage-field {
+    display: grid;
+    gap: 2px;
+
+    small {
+      color: var(--el-text-color-secondary);
+    }
   }
   .option-row {
     display: grid;

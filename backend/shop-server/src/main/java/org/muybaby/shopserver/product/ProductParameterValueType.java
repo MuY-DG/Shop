@@ -5,5 +5,9 @@ public enum ProductParameterValueType {
     NUMBER,
     SINGLE_SELECT,
     MULTI_SELECT,
-    BOOLEAN
+    BOOLEAN;
+
+    public boolean supportsFiltering() {
+        return this == SINGLE_SELECT || this == MULTI_SELECT;
+    }
 }
