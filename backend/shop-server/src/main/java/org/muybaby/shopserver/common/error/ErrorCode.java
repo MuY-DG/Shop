@@ -67,12 +67,9 @@ public enum ErrorCode {
     WECHAT_WAYBILL_REGISTRATION_UNAVAILABLE(600005, "物流查询暂不可用，请稍后重试"),
     WECHAT_WAYBILL_CONFLICT(600006, "电子面单状态已变化，请刷新后重试"),
     WECHAT_WAYBILL_UNAVAILABLE(600007, "微信电子面单服务暂不可用，请稍后重试"),
-    WECHAT_SERVICE_CARD_RUNTIME_CONFLICT(600008, "微信服务动态运行配置已被其他管理员修改，请刷新后重试"),
     WECHAT_SHIPPING_RUNTIME_CONFLICT(600009, "微信发货运行配置已被其他管理员修改，请刷新后重试"),
     WECHAT_PLATFORM_CONFIG_UNAVAILABLE(600010, "微信平台配置不可用"),
     WECHAT_PLATFORM_CONFIG_CONFLICT(600011, "微信平台配置已被其他管理员修改，请刷新后重试"),
-    WECHAT_SERVICE_CARD_CONFIG_UNAVAILABLE(600012, "微信服务动态接入配置不可用"),
-    WECHAT_SERVICE_CARD_CONFIG_CONFLICT(600013, "微信服务动态接入配置已被其他管理员修改，请刷新后重试"),
     WECHAT_REFUND_FAILED(700001, "WeChat refund failed"),
     WECHAT_REFUND_BALANCE_INSUFFICIENT(
             700002,

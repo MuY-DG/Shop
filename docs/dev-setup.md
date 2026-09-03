@@ -108,7 +108,7 @@ cd backend/shop-server
 - Redis 密码
 - 数据库敏感字段的 AES 主密钥 ID 和 key ring
 
-微信、支付、COS、服务动态和业务开关通过 Admin 保存到数据库。真实密码、APIv3 Key、
+微信、支付、COS 和业务开关通过 Admin 保存到数据库。真实密码、APIv3 Key、
 PEM 和 COS Secret 不写入 Git、YAML、文档或聊天记录。
 
 ## 常见问题

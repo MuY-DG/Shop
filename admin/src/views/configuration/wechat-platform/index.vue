@@ -13,7 +13,7 @@
         <div class="section-header">
           <div>
             <div class="section-header__title">微信小程序平台配置</div>
-            <div class="section-header__subtitle">登录、手机号、发货与服务动态共用这组凭据</div>
+            <div class="section-header__subtitle">登录、手机号、发货与物流服务共用这组凭据</div>
           </div>
           <div class="section-header__aside">
             <ElTag :type="sourceTagType">{{ sourceLabel }}</ElTag>

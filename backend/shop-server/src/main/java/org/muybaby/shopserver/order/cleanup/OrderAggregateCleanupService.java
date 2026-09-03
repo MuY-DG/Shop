@@ -255,16 +255,6 @@ public class OrderAggregateCleanupService {
                                 and active_payment.status not in ('PAID', 'CLOSED')
                           )
                           and not exists (
-                              select 1
-                              from wechat_service_card_delivery service_delivery
-                              join wechat_service_card service_card
-                                on service_card.id = service_delivery.card_id
-                              where service_card.order_id = o.id
-                                and service_delivery.state in (
-                                    'PENDING', 'SENDING', 'UNKNOWN', 'RECONCILING'
-                                )
-                          )
-                          and not exists (
                               select 1 from refund_order active_refund
                               where active_refund.order_id = o.id
                                 and not (
@@ -398,16 +388,6 @@ public class OrderAggregateCleanupService {
                                     )
                                 )
                           )
-                          and not exists (
-                              select 1
-                              from wechat_service_card_delivery service_delivery
-                              join wechat_service_card service_card
-                                on service_card.id = service_delivery.card_id
-                              where service_card.order_id = o.id
-                                and service_delivery.state in (
-                                    'PENDING', 'SENDING', 'UNKNOWN', 'RECONCILING'
-                                )
-                          )
                         """)
                 .param("orderId", orderId)
                 .param("cutoff", cutoff)
@@ -492,22 +472,6 @@ public class OrderAggregateCleanupService {
         sections.put("payment_attempts", rows(
                 "select * from payment_attempt where order_id = :orderId order by id", orderId));
         sections.put("payment_callbacks", callbacks);
-        sections.put("wechat_service_cards", rows(
-                "select * from wechat_service_card where order_id = :orderId order by id", orderId));
-        sections.put("wechat_service_card_deliveries", rows("""
-                select delivery.*
-                from wechat_service_card_delivery delivery
-                join wechat_service_card card on card.id = delivery.card_id
-                where card.order_id = :orderId
-                order by delivery.id
-                """, orderId));
-        sections.put("wechat_service_card_callbacks", rows("""
-                select callback.*
-                from wechat_service_card_callback_log callback
-                join wechat_service_card card on card.id = callback.card_id
-                where card.order_id = :orderId
-                order by callback.id
-                """, orderId));
         sections.put("shipments", rows(
                 "select * from order_shipment where order_id = :orderId order by id", orderId));
         sections.put("shipment_items", rows("""
@@ -732,15 +696,6 @@ public class OrderAggregateCleanupService {
                    or out_refund_no in (select out_refund_no from refund_order where order_id = :orderId)
                 """, orderId);
         delete("delete from payment_attempt where order_id = :orderId", orderId);
-        delete("""
-                delete from wechat_service_card_callback_log
-                where card_id in (select id from wechat_service_card where order_id = :orderId)
-                """, orderId);
-        delete("""
-                delete from wechat_service_card_delivery
-                where card_id in (select id from wechat_service_card where order_id = :orderId)
-                """, orderId);
-        delete("delete from wechat_service_card where order_id = :orderId", orderId);
         delete("delete from order_status_log where order_id = :orderId", orderId);
         delete("""
                 delete from refund_inventory_restock_item
@@ -846,32 +801,6 @@ public class OrderAggregateCleanupService {
                 .query(Long.class)
                 .list();
         jdbcClient.sql("select id from payment_order where order_id = :orderId order by id for update")
-                .param("orderId", orderId)
-                .query(Long.class)
-                .list();
-        jdbcClient.sql("select id from wechat_service_card where order_id = :orderId order by id for update")
-                .param("orderId", orderId)
-                .query(Long.class)
-                .list();
-        jdbcClient.sql("""
-                        select delivery.id
-                        from wechat_service_card_delivery delivery
-                        join wechat_service_card card on card.id = delivery.card_id
-                        where card.order_id = :orderId
-                        order by delivery.id
-                        for update
-                        """)
-                .param("orderId", orderId)
-                .query(Long.class)
-                .list();
-        jdbcClient.sql("""
-                        select callback.id
-                        from wechat_service_card_callback_log callback
-                        join wechat_service_card card on card.id = callback.card_id
-                        where card.order_id = :orderId
-                        order by callback.id
-                        for update
-                        """)
                 .param("orderId", orderId)
                 .query(Long.class)
                 .list();

@@ -49,8 +49,8 @@ class SchemaGenerationBaselineMySqlTest {
         Flyway flyway = MigrationTestSupport.migrateToLatest(
                 MYSQL.getJdbcUrl(), MYSQL.getUsername(), MYSQL.getPassword());
 
-        assertThat(flyway.info().current().getVersion().getVersion()).isEqualTo("13");
-        assertThat(flyway.info().applied()).hasSize(13);
+        assertThat(flyway.info().current().getVersion().getVersion()).isEqualTo("15");
+        assertThat(flyway.info().applied()).hasSize(15);
         assertThat(jdbc.sql("select compliance_type from product_spu order by id")
                 .query(String.class).list()).containsExactly("NON_FOOD", "FOOD", "NON_FOOD");
         assertThat(jdbc.sql("select icon from admin_menu where id = 105")
@@ -91,7 +91,7 @@ class SchemaGenerationBaselineMySqlTest {
                         select count(*)
                         from information_schema.tables
                         where table_schema = database()
-                        """).query(Long.class).single()).isEqualTo(132);
+                        """).query(Long.class).single()).isEqualTo(125);
         assertThat(jdbc.sql("""
                         select count(*)
                         from information_schema.tables
@@ -175,10 +175,10 @@ class SchemaGenerationBaselineMySqlTest {
                         """).query(Long.class).single()).isEqualTo(1);
         assertThat(jdbc.sql("""
                         select count(*)
-                        from wechat_service_card_runtime_setting
-                        where id = 1 and capture_enabled = false and worker_enabled = false
-                          and revision = 1
-                        """).query(Long.class).single()).isEqualTo(1);
+                        from information_schema.tables
+                        where table_schema = database()
+                          and table_name like 'wechat_service_card%'
+                        """).query(Long.class).single()).isZero();
         assertThat(jdbc.sql("""
                         select count(*)
                         from finance_reconciliation_runtime_setting

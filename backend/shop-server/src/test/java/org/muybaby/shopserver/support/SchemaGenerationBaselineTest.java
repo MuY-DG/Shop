@@ -24,9 +24,9 @@ class SchemaGenerationBaselineTest {
         Flyway flyway = MigrationTestSupport.migrateToLatest(jdbcUrl, "sa", "");
         JdbcClient jdbc = JdbcClient.create(new DriverManagerDataSource(jdbcUrl, "sa", ""));
 
-        assertThat(flyway.info().current().getVersion().getVersion()).isEqualTo("13");
-        assertThat(flyway.info().applied()).hasSize(13);
-        assertThat(tableCount(jdbc)).isEqualTo(131);
+        assertThat(flyway.info().current().getVersion().getVersion()).isEqualTo("15");
+        assertThat(flyway.info().applied()).hasSize(15);
+        assertThat(tableCount(jdbc)).isEqualTo(124);
 
         assertThat(tableExists(jdbc, "payment_config_snapshot")).isFalse();
         assertThat(tableExists(jdbc, "payment_runtime_setting")).isFalse();
@@ -34,7 +34,13 @@ class SchemaGenerationBaselineTest {
         assertThat(columnExists(jdbc, "payment_config", "merchant_certificate_file_id")).isFalse();
         assertThat(columnExists(jdbc, "payment_config", "wechat_public_key_file_id")).isFalse();
         assertThat(columnExists(jdbc, "wechat_platform_config", "imported_from_env_at")).isFalse();
-        assertThat(columnExists(jdbc, "wechat_service_card_config", "imported_from_env_at")).isFalse();
+        assertThat(tableExists(jdbc, "wechat_service_card_config")).isFalse();
+        assertThat(tableExists(jdbc, "wechat_service_card_config_audit")).isFalse();
+        assertThat(tableExists(jdbc, "wechat_service_card_runtime_setting")).isFalse();
+        assertThat(tableExists(jdbc, "wechat_service_card_runtime_audit")).isFalse();
+        assertThat(tableExists(jdbc, "wechat_service_card")).isFalse();
+        assertThat(tableExists(jdbc, "wechat_service_card_delivery")).isFalse();
+        assertThat(tableExists(jdbc, "wechat_service_card_callback_log")).isFalse();
         assertThat(columnExists(jdbc, "payment_callback_log", "route_mode")).isFalse();
         assertThat(columnExists(jdbc, "after_sale_request", "app_deleted_at")).isTrue();
         assertThat(tableExists(jdbc, "refund_provider_attempt")).isTrue();
@@ -162,12 +168,16 @@ class SchemaGenerationBaselineTest {
 
     private void assertReferenceData(JdbcClient jdbc) {
         assertThat(jdbc.sql("select count(*) from admin_role").query(Long.class).single()).isEqualTo(5);
-        assertThat(jdbc.sql("select count(*) from admin_permission").query(Long.class).single()).isEqualTo(126);
-        assertThat(jdbc.sql("select count(*) from admin_menu").query(Long.class).single()).isEqualTo(62);
+        assertThat(jdbc.sql("select count(*) from admin_permission").query(Long.class).single()).isEqualTo(122);
+        assertThat(jdbc.sql("select count(*) from admin_menu").query(Long.class).single()).isEqualTo(61);
+        assertThat(jdbc.sql("select count(*) from admin_permission where auth_mark like 'wechat-service-card:%'")
+                .query(Long.class).single()).isZero();
+        assertThat(jdbc.sql("select count(*) from admin_menu where id = 806")
+                .query(Long.class).single()).isZero();
         assertThat(jdbc.sql("select icon from admin_menu where id = 105")
                 .query(String.class).single()).isEqualTo("ri:route-line");
         assertThat(jdbc.sql("select count(*) from admin_role_permission where role_id = 1")
-                .query(Long.class).single()).isEqualTo(126);
+                .query(Long.class).single()).isEqualTo(122);
         assertThat(jdbc.sql("select count(*) from admin_user_role where user_id = 1 and role_id = 1")
                 .query(Long.class).single()).isEqualTo(1);
         assertThat(jdbc.sql("select checkpoint_name from payment_secret_rotation_checkpoint order by checkpoint_name")
@@ -184,14 +194,6 @@ class SchemaGenerationBaselineTest {
                 .containsEntry("upload_enabled", false)
                 .containsEntry("delivery_enabled", false)
                 .containsEntry("receipt_reconciliation_enabled", false)
-                .containsEntry("revision", 1L)
-                .containsEntry("change_reason", "INITIAL_FAIL_CLOSED");
-        assertThat(jdbc.sql("""
-                        select capture_enabled, worker_enabled, revision, change_reason
-                        from wechat_service_card_runtime_setting where id = 1
-                        """).query().singleRow())
-                .containsEntry("capture_enabled", false)
-                .containsEntry("worker_enabled", false)
                 .containsEntry("revision", 1L)
                 .containsEntry("change_reason", "INITIAL_FAIL_CLOSED");
         assertThat(jdbc.sql("""
