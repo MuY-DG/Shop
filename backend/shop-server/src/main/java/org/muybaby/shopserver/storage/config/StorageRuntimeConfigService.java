@@ -7,6 +7,8 @@ import org.muybaby.shopserver.storage.dto.AdminStorageConfigRequest;
 import org.muybaby.shopserver.storage.dto.AdminStorageConfigResponse;
 import org.muybaby.shopserver.storage.dto.AdminStorageBucketListRequest;
 import org.muybaby.shopserver.storage.dto.AdminStorageBucketResponse;
+import org.muybaby.shopserver.storage.dto.AdminStorageDomainListRequest;
+import org.muybaby.shopserver.storage.dto.AdminStorageDomainResponse;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.PlatformTransactionManager;
@@ -22,9 +24,10 @@ import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.util.ArrayList;
 import java.util.HexFormat;
-import java.util.Locale;
 import java.util.List;
+import java.util.Locale;
 import java.util.Optional;
 import java.util.regex.Pattern;
 
@@ -91,8 +94,36 @@ public class StorageRuntimeConfigService {
         String secretKey = textOrFallback(request.secretKey(), current.secretKey(), 256);
         return storageConfigVerifier.listBuckets(secretId, secretKey).stream()
                 .map(bucket -> new AdminStorageBucketResponse(
-                        bucket.bucket(), bucket.region()))
+                        bucket.bucket(),
+                        bucket.region(),
+                        defaultPublicBaseUrl(bucket.bucket(), bucket.region())))
                 .toList();
+    }
+
+    @Transactional(propagation = Propagation.NOT_SUPPORTED)
+    public List<AdminStorageDomainResponse> listDomains(AdminStorageDomainListRequest request) {
+        if (request == null) {
+            throw validationFailure();
+        }
+        ResolvedStorageConfig current = persistedRow()
+                .map(this::resolveForEditing)
+                .orElseGet(this::emptyConfig);
+        String bucket = textOrFallback(request.bucket(), current.bucket(), 128);
+        String region = textOrFallback(request.region(), current.region(), 64);
+        String secretId = textOrFallback(request.secretId(), current.secretId(), 256);
+        String secretKey = textOrFallback(request.secretKey(), current.secretKey(), 256);
+        requireCosConfig(region, bucket, secretId, secretKey);
+
+        String defaultPublicBaseUrl = defaultPublicBaseUrl(bucket, region);
+        List<AdminStorageDomainResponse> domains = new ArrayList<>();
+        domains.add(new AdminStorageDomainResponse(defaultPublicBaseUrl, "DEFAULT"));
+        customDomainVerifier.listEnabledRestDomains(
+                        region, bucket, secretId, secretKey).stream()
+                .map(domain -> "https://" + domain)
+                .filter(domain -> !defaultPublicBaseUrl.equals(domain))
+                .map(domain -> new AdminStorageDomainResponse(domain, "CUSTOM"))
+                .forEach(domains::add);
+        return List.copyOf(domains);
     }
 
     @Transactional(propagation = Propagation.NOT_SUPPORTED)

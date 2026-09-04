@@ -725,11 +725,22 @@ declare namespace Api {
     interface BucketOption {
       bucket: string
       region: string
+      defaultPublicBaseUrl: string
     }
 
     interface BucketListRequest {
       secretId?: string
       secretKey?: string
+    }
+
+    interface DomainOption {
+      publicBaseUrl: string
+      type: 'DEFAULT' | 'CUSTOM'
+    }
+
+    interface DomainListRequest extends BucketListRequest {
+      bucket: string
+      region: string
     }
 
     type AssetScope = 'LIBRARY' | 'ATTACHMENT' | 'SECRET'

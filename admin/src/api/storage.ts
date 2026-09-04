@@ -13,6 +13,13 @@ export function fetchStorageBuckets(data: Api.Storage.BucketListRequest) {
   })
 }
 
+export function fetchStorageDomains(data: Api.Storage.DomainListRequest) {
+  return request.post<Api.Storage.DomainOption[]>({
+    url: '/admin/storage/config/domains',
+    data
+  })
+}
+
 export function updateStorageConfig(data: Api.Storage.ConfigForm) {
   return request.put<Api.Storage.Config>({
     url: '/admin/storage/config',

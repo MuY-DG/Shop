@@ -1,8 +1,9 @@
 package org.muybaby.shopserver.storage.dto;
 
-public record AdminStorageBucketResponse(
+public record AdminStorageDomainListRequest(
         String bucket,
         String region,
-        String defaultPublicBaseUrl
+        String secretId,
+        String secretKey
 ) {
 }

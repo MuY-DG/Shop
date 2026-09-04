@@ -18,6 +18,7 @@ import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
 
 import java.util.List;
+import java.util.Locale;
 
 @Component
 public class CosCustomDomainVerifier {
@@ -107,6 +108,69 @@ public class CosCustomDomainVerifier {
         }
     }
 
+    public List<String> listEnabledRestDomains(
+            String region,
+            String bucket,
+            String secretId,
+            String secretKey
+    ) {
+        if (!StringUtils.hasText(region)
+                || !StringUtils.hasText(bucket)
+                || !StringUtils.hasText(secretId)
+                || !StringUtils.hasText(secretKey)) {
+            throw new BusinessException(ErrorCode.VALIDATION_FAILED);
+        }
+
+        COSClient cosClient = null;
+        try {
+            cosClient = cosClientFactory.create(region, secretId, secretKey);
+            BucketDomainConfiguration configuration =
+                    cosClient.getBucketDomainConfiguration(bucket);
+            List<DomainRule> rules = configuration == null
+                    ? List.of()
+                    : configuration.getDomainRules();
+            if (rules == null) {
+                return List.of();
+            }
+            return rules.stream()
+                    .filter(CosCustomDomainVerifier::enabledRestDomain)
+                    .map(DomainRule::getName)
+                    .filter(StringUtils::hasText)
+                    .map(domain -> domain.trim().toLowerCase(Locale.ROOT))
+                    .distinct()
+                    .sorted()
+                    .toList();
+        } catch (CosServiceException ex) {
+            if (missingDomainConfiguration(ex)) {
+                return List.of();
+            }
+            log.warn(
+                    "COS custom domain list failed: bucket={}, region={}, "
+                            + "status={}, errorCode={}, requestId={}",
+                    bucket,
+                    region,
+                    ex.getStatusCode(),
+                    ex.getErrorCode(),
+                    ex.getRequestId()
+            );
+            throw new BusinessException(unavailable(ex.getStatusCode())
+                    ? ErrorCode.STORAGE_CUSTOM_DOMAIN_VERIFICATION_UNAVAILABLE
+                    : ErrorCode.STORAGE_CUSTOM_DOMAIN_LIST_FAILED);
+        } catch (CosClientException ex) {
+            log.warn(
+                    "COS custom domain list unavailable: bucket={}, region={}, errorCode={}",
+                    bucket,
+                    region,
+                    ex.getErrorCode()
+            );
+            throw new BusinessException(ErrorCode.STORAGE_CUSTOM_DOMAIN_VERIFICATION_UNAVAILABLE);
+        } catch (IllegalArgumentException ex) {
+            throw new BusinessException(ErrorCode.STORAGE_CUSTOM_DOMAIN_LIST_FAILED);
+        } finally {
+            shutdownQuietly(cosClient);
+        }
+    }
+
     private static COSClient createCosClient(String region, String secretId, String secretKey) {
         COSCredentials credentials = new BasicCOSCredentials(secretId, secretKey);
         ClientConfig clientConfig = new ClientConfig(new Region(region));
@@ -121,8 +185,12 @@ public class CosCustomDomainVerifier {
     }
 
     private static boolean enabledRestDomain(DomainRule rule, String domain) {
+        return enabledRestDomain(rule) && domain.equalsIgnoreCase(rule.getName());
+    }
+
+    private static boolean enabledRestDomain(DomainRule rule) {
         return rule != null
-                && domain.equalsIgnoreCase(rule.getName())
+                && StringUtils.hasText(rule.getName())
                 && "ENABLED".equalsIgnoreCase(rule.getStatus())
                 && "REST".equalsIgnoreCase(rule.getType());
     }

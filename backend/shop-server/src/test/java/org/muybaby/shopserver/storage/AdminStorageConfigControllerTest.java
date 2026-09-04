@@ -127,8 +127,42 @@ class AdminStorageConfigControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data[0].bucket").value("shop-a-1250000000"))
                 .andExpect(jsonPath("$.data[0].region").value("ap-guangzhou"))
+                .andExpect(jsonPath("$.data[0].defaultPublicBaseUrl")
+                        .value("https://shop-a-1250000000.cos.ap-guangzhou.myqcloud.com"))
                 .andExpect(jsonPath("$.data[1].bucket").value("shop-b-1250000000"))
                 .andExpect(jsonPath("$.data[1].region").value("ap-shanghai"));
+    }
+
+    @Test
+    void listsDefaultAndEnabledRestDomainsForTheSelectedBucket() throws Exception {
+        String writeToken = token(List.of("storage:config:write"));
+        when(customDomainVerifier.listEnabledRestDomains(
+                "ap-guangzhou",
+                "shop-a-1250000000",
+                "draft-id",
+                "draft-key"
+        )).thenReturn(List.of("assets.example.test", "media.example.test"));
+
+        mockMvc.perform(post("/admin/storage/config/domains")
+                        .header("Authorization", "Bearer " + writeToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "bucket":"shop-a-1250000000",
+                                  "region":"ap-guangzhou",
+                                  "secretId":"draft-id",
+                                  "secretKey":"draft-key"
+                                }
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data[0].type").value("DEFAULT"))
+                .andExpect(jsonPath("$.data[0].publicBaseUrl")
+                        .value("https://shop-a-1250000000.cos.ap-guangzhou.myqcloud.com"))
+                .andExpect(jsonPath("$.data[1].type").value("CUSTOM"))
+                .andExpect(jsonPath("$.data[1].publicBaseUrl")
+                        .value("https://assets.example.test"))
+                .andExpect(jsonPath("$.data[2].publicBaseUrl")
+                        .value("https://media.example.test"));
     }
 
     @Test

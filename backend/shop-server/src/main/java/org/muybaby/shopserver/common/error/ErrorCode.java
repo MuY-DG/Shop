@@ -119,6 +119,7 @@ public enum ErrorCode {
     STORAGE_BUCKET_LIST_FAILED(800014, "无法获取存储桶，请检查密钥及 cos:GetService 权限；也可手动填写"),
     STORAGE_CONFIG_VERIFICATION_FAILED(800015, "COS 存储桶验证失败，请检查存储桶、地域、密钥及上传、读取、删除权限"),
     STORAGE_CONFIG_VERIFICATION_UNAVAILABLE(800016, "COS 存储桶验证服务暂不可用，请稍后重试"),
+    STORAGE_CUSTOM_DOMAIN_LIST_FAILED(800017, "无法获取 COS 自定义域名，请检查 cos:GetBucketDomain 权限；默认域名仍可使用"),
     CUSTOMER_SERVICE_CONVERSATION_UNAVAILABLE(900001, "Customer service conversation unavailable"),
     CUSTOMER_SERVICE_STATE_CONFLICT(900002, "Customer service conversation state conflict"),
     CUSTOMER_SERVICE_ASSIGNMENT_REQUIRED(900003, "Customer service assignment required"),

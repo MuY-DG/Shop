@@ -47,14 +47,22 @@
             :placeholder="config?.secretKeyConfigured ? '已配置，留空不修改' : '请输入 SecretKey'"
           />
         </ElFormItem>
-        <ElFormItem label="存储桶" prop="bucket">
+        <ElFormItem :label="manualLocation ? '存储桶' : '存储桶 · 地域'" prop="bucket">
           <div class="field-with-action">
+            <ElInput
+              v-if="manualLocation"
+              v-model="formData.bucket"
+              placeholder="例如：shop-1250000000"
+              @blur="applyManualDefaultDomain"
+            />
             <ElSelect
+              v-else
               v-model="formData.bucket"
               filterable
-              allow-create
               default-first-option
-              placeholder="请选择或输入存储桶"
+              :loading="loadingBuckets"
+              :disabled="loadingDomains"
+              placeholder="请先获取并选择存储桶"
               @change="handleBucketChange"
             >
               <ElOption
@@ -67,23 +75,48 @@
             <ElButton
               v-auth="'storage:config:write'"
               :loading="loadingBuckets"
-              :disabled="saving"
+              :disabled="saving || loadingDomains"
               @click="handleLoadBuckets"
             >
               获取存储桶
             </ElButton>
           </div>
-          <div class="form-tip">请填写包含 APPID 后缀的完整存储桶名称。</div>
+          <div class="form-tip">
+            {{
+              manualLocation
+                ? '无法自动获取时，请填写包含 APPID 后缀的完整存储桶名称。'
+                : '选择项已经包含地域，保存时无需再次填写。'
+            }}
+          </div>
         </ElFormItem>
-        <ElFormItem label="地域" prop="region">
-          <ElInput v-model="formData.region" placeholder="选择存储桶后自动填写，也可手动输入" />
+        <ElFormItem v-if="manualLocation" label="地域" prop="region">
+          <ElInput
+            v-model="formData.region"
+            placeholder="例如：ap-guangzhou"
+            @blur="applyManualDefaultDomain"
+          />
         </ElFormItem>
         <ElFormItem label="COS 客户端域名" prop="publicBaseUrl">
-          <ElInput v-model="formData.publicBaseUrl" :placeholder="cosDomainPlaceholder" />
+          <ElSelect
+            class="domain-select"
+            v-model="formData.publicBaseUrl"
+            filterable
+            allow-create
+            default-first-option
+            clearable
+            :loading="loadingDomains"
+            :placeholder="cosDomainPlaceholder"
+          >
+            <ElOption
+              v-for="option in domainOptions"
+              :key="option.publicBaseUrl"
+              :label="`${option.type === 'DEFAULT' ? '默认域名' : '自定义域名'} · ${domainHost(option.publicBaseUrl)}`"
+              :value="option.publicBaseUrl"
+            />
+          </ElSelect>
           <div class="form-tip"
-            >可留空使用 COS 默认域名；也可填写已绑定到当前存储桶的 HTTPS
-            自定义源站根域名。客户端上传、公开读取和私有签名下载都会使用该配置，自定义源站不会开启
-            CDN。</div
+            >选择存储桶后自动获取默认域名和已启用的 REST 自定义域名；无法获取时仍可手动输入 HTTPS
+            根域名。客户端上传、公开读取和私有签名下载都会使用该配置，自定义源站不会开启 CDN。</div
           >
         </ElFormItem>
 
@@ -92,11 +125,15 @@
             type="primary"
             v-auth="'storage:config:write'"
             :loading="saving"
+            :disabled="loadingBuckets || loadingDomains"
             @click="handleSave"
           >
             保存配置
           </ElButton>
-          <ElButton :disabled="!dirty || loading || saving" @click="resetUnsavedChanges">
+          <ElButton
+            :disabled="!dirty || loading || saving || loadingBuckets || loadingDomains"
+            @click="resetUnsavedChanges"
+          >
             撤销未保存修改
           </ElButton>
         </ElFormItem>
@@ -108,15 +145,25 @@
 <script setup lang="ts">
   import { computed, onMounted, reactive, ref } from 'vue'
   import { ElMessage, type FormInstance, type FormRules } from 'element-plus'
-  import { fetchStorageBuckets, fetchStorageConfig, updateStorageConfig } from '@/api/storage'
+  import {
+    fetchStorageBuckets,
+    fetchStorageConfig,
+    fetchStorageDomains,
+    updateStorageConfig
+  } from '@/api/storage'
 
   defineOptions({ name: 'DeveloperStorageConfig' })
 
   const loading = ref(false)
   const saving = ref(false)
   const loadingBuckets = ref(false)
+  const loadingDomains = ref(false)
+  const manualLocation = ref(false)
   const config = ref<Api.Storage.Config | null>(null)
   const bucketOptions = ref<Api.Storage.BucketOption[]>([])
+  const domainOptions = ref<Api.Storage.DomainOption[]>([])
+  const lastAutomaticDomain = ref('')
+  let domainRequestVersion = 0
   const baseline = ref('')
   const formRef = ref<FormInstance>()
 
@@ -145,6 +192,30 @@
     }
     return '留空自动生成 COS 默认域名'
   })
+
+  const defaultPublicBaseUrl = (bucket: string, region: string) => {
+    const normalizedBucket = bucket.trim()
+    const normalizedRegion = region.trim()
+    if (!normalizedBucket || !normalizedRegion) return ''
+    return `https://${normalizedBucket}.cos.${normalizedRegion}.myqcloud.com`
+  }
+
+  const domainHost = (publicBaseUrl: string) => {
+    try {
+      return new URL(publicBaseUrl).hostname
+    } catch {
+      return publicBaseUrl
+    }
+  }
+
+  const credentialPayload = () => {
+    const secretId = String(formData.secretId || '').trim()
+    const secretKey = String(formData.secretKey || '').trim()
+    return {
+      ...(secretId ? { secretId } : {}),
+      ...(secretKey ? { secretKey } : {})
+    }
+  }
 
   const secretIdPlaceholder = computed(() =>
     config.value?.secretIdMasked
@@ -224,6 +295,8 @@
   }))
 
   const fillForm = (value: Api.Storage.Config) => {
+    domainRequestVersion += 1
+    loadingDomains.value = false
     Object.assign(formData, {
       publicBaseUrl: value.publicBaseUrl,
       region: value.region,
@@ -231,6 +304,26 @@
       secretId: '',
       secretKey: ''
     })
+    manualLocation.value = false
+    const defaultDomain = defaultPublicBaseUrl(value.bucket, value.region)
+    bucketOptions.value = value.bucket
+      ? [
+          {
+            bucket: value.bucket,
+            region: value.region,
+            defaultPublicBaseUrl: defaultDomain
+          }
+        ]
+      : []
+    domainOptions.value = value.publicBaseUrl
+      ? [
+          {
+            publicBaseUrl: value.publicBaseUrl,
+            type: value.publicBaseUrl === defaultDomain ? 'DEFAULT' : 'CUSTOM'
+          }
+        ]
+      : []
+    lastAutomaticDomain.value = value.publicBaseUrl === defaultDomain ? defaultDomain : ''
     baseline.value = snapshot()
     formRef.value?.clearValidate()
   }
@@ -239,26 +332,87 @@
     if (config.value) fillForm(config.value)
   }
 
-  const handleBucketChange = (bucket: string) => {
+  const loadDomains = async (selected: Api.Storage.BucketOption, preferredDomain?: string) => {
+    const requestVersion = ++domainRequestVersion
+    loadingDomains.value = true
+    const fallbackDomain = selected.defaultPublicBaseUrl
+    formData.publicBaseUrl = preferredDomain || fallbackDomain
+    lastAutomaticDomain.value = preferredDomain ? '' : fallbackDomain
+    domainOptions.value = [
+      {
+        publicBaseUrl: fallbackDomain,
+        type: 'DEFAULT'
+      }
+    ]
+    try {
+      const domains = await fetchStorageDomains({
+        bucket: selected.bucket,
+        region: selected.region,
+        ...credentialPayload()
+      })
+      if (requestVersion !== domainRequestVersion) return
+      domainOptions.value = domains
+      if (preferredDomain && domains.some((item) => item.publicBaseUrl === preferredDomain)) {
+        formData.publicBaseUrl = preferredDomain
+        lastAutomaticDomain.value = preferredDomain === fallbackDomain ? fallbackDomain : ''
+      } else {
+        formData.publicBaseUrl = fallbackDomain
+        lastAutomaticDomain.value = fallbackDomain
+      }
+    } catch {
+      if (requestVersion !== domainRequestVersion) return
+      if (preferredDomain && preferredDomain !== fallbackDomain) {
+        domainOptions.value.push({ publicBaseUrl: preferredDomain, type: 'CUSTOM' })
+      }
+    } finally {
+      if (requestVersion === domainRequestVersion) loadingDomains.value = false
+    }
+  }
+
+  const handleBucketChange = async (bucket: string) => {
     const selected = bucketOptions.value.find((option) => option.bucket === bucket)
-    if (selected) formData.region = selected.region
+    if (!selected) return
+    formData.region = selected.region
+    await loadDomains(selected)
+  }
+
+  const applyManualDefaultDomain = () => {
+    const nextDefault = defaultPublicBaseUrl(formData.bucket, formData.region)
+    if (!formData.publicBaseUrl || formData.publicBaseUrl === lastAutomaticDomain.value) {
+      formData.publicBaseUrl = nextDefault
+      domainOptions.value = nextDefault ? [{ publicBaseUrl: nextDefault, type: 'DEFAULT' }] : []
+    }
+    lastAutomaticDomain.value = nextDefault
   }
 
   const handleLoadBuckets = async () => {
     await formRef.value?.validateField(['secretId', 'secretKey'])
     loadingBuckets.value = true
     try {
-      const secretId = String(formData.secretId || '').trim()
-      const secretKey = String(formData.secretKey || '').trim()
-      bucketOptions.value = await fetchStorageBuckets({
-        ...(secretId ? { secretId } : {}),
-        ...(secretKey ? { secretKey } : {})
-      })
+      const previousBucket = formData.bucket
+      const previousRegion = formData.region
+      const previousDomain = formData.publicBaseUrl
+      bucketOptions.value = await fetchStorageBuckets(credentialPayload())
       if (bucketOptions.value.length === 0) {
+        manualLocation.value = true
         ElMessage.warning('当前账号没有可列出的存储桶，也可以手动填写')
         return
       }
+      manualLocation.value = false
+      const selected = bucketOptions.value.find(
+        (option) => option.bucket === previousBucket && option.region === previousRegion
+      )
+      if (selected) {
+        await loadDomains(selected, previousDomain)
+      } else {
+        formData.bucket = ''
+        formData.region = ''
+        formData.publicBaseUrl = ''
+        domainOptions.value = []
+      }
       ElMessage.success(`已获取 ${bucketOptions.value.length} 个存储桶`)
+    } catch {
+      manualLocation.value = true
     } finally {
       loadingBuckets.value = false
     }
@@ -339,8 +493,13 @@
     width: 100%;
     gap: 8px;
 
-    :deep(.el-select) {
+    :deep(.el-select),
+    :deep(.el-input) {
       flex: 1;
     }
+  }
+
+  .domain-select {
+    width: 100%;
   }
 </style>

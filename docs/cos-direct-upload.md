@@ -51,8 +51,9 @@ SecretKey 不会下发客户端。
 如需在 Admin 中自动列出账号下的存储桶，还需额外授予账号级
 `cos:GetService`；没有该权限时仍可手动填写存储桶和地域。
 
-`GetBucketDomain` 用于校验自定义客户端域名确实绑定当前地域和存储桶；它不能代替
-DNS、HTTPS、CORS 或真实上传检查。
+`GetBucketDomain` 用于自动列出当前存储桶已启用的 REST 自定义域名，并在保存时校验
+所选自定义客户端域名确实绑定当前地域和存储桶；它不能代替 DNS、HTTPS、CORS 或
+真实上传检查。默认 COS 域名由存储桶和地域直接生成，不依赖该权限。
 
 ### CORS
 

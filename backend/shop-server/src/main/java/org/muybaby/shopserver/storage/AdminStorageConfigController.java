@@ -6,6 +6,8 @@ import org.muybaby.shopserver.storage.dto.AdminStorageConfigRequest;
 import org.muybaby.shopserver.storage.dto.AdminStorageConfigResponse;
 import org.muybaby.shopserver.storage.dto.AdminStorageBucketListRequest;
 import org.muybaby.shopserver.storage.dto.AdminStorageBucketResponse;
+import org.muybaby.shopserver.storage.dto.AdminStorageDomainListRequest;
+import org.muybaby.shopserver.storage.dto.AdminStorageDomainResponse;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PutMapping;
@@ -38,6 +40,14 @@ public class AdminStorageConfigController {
             @RequestBody AdminStorageBucketListRequest request
     ) {
         return ApiResponse.success(storageRuntimeConfigService.listBuckets(request));
+    }
+
+    @PostMapping("/domains")
+    @PreAuthorize("hasAuthority('storage:config:write')")
+    public ApiResponse<List<AdminStorageDomainResponse>> listDomains(
+            @RequestBody AdminStorageDomainListRequest request
+    ) {
+        return ApiResponse.success(storageRuntimeConfigService.listDomains(request));
     }
 
     @PutMapping

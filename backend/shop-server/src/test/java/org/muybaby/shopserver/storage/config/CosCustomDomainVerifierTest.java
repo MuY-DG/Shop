@@ -53,6 +53,55 @@ class CosCustomDomainVerifierTest {
     }
 
     @Test
+    void listsOnlyEnabledRestDomainsInStableNormalizedOrder() {
+        COSClient cosClient = mock(COSClient.class);
+        BucketDomainConfiguration configuration = new BucketDomainConfiguration();
+        configuration.setDomainRules(List.of(
+                rule("B.EXAMPLE.TEST", "ENABLED", "REST"),
+                rule("disabled.example.test", "DISABLED", "REST"),
+                rule("website.example.test", "ENABLED", "WEBSITE"),
+                rule("a.example.test", "ENABLED", "REST"),
+                rule("b.example.test", "ENABLED", "REST")
+        ));
+        when(cosClient.getBucketDomainConfiguration("shop-1250000000"))
+                .thenReturn(configuration);
+        CosCustomDomainVerifier verifier = new CosCustomDomainVerifier(
+                (region, secretId, secretKey) -> cosClient);
+
+        assertThat(verifier.listEnabledRestDomains(
+                "ap-chengdu",
+                "shop-1250000000",
+                "secret-id",
+                "secret-key"
+        )).containsExactly("a.example.test", "b.example.test");
+
+        verify(cosClient).shutdown();
+    }
+
+    @Test
+    void mapsDomainListPermissionFailureToItsOwnToastCode() {
+        COSClient cosClient = mock(COSClient.class);
+        CosServiceException forbidden = new CosServiceException("Access denied");
+        forbidden.setStatusCode(403);
+        forbidden.setErrorCode("AccessDenied");
+        when(cosClient.getBucketDomainConfiguration("shop-1250000000"))
+                .thenThrow(forbidden);
+        CosCustomDomainVerifier verifier = new CosCustomDomainVerifier(
+                (region, secretId, secretKey) -> cosClient);
+
+        assertThatThrownBy(() -> verifier.listEnabledRestDomains(
+                "ap-chengdu",
+                "shop-1250000000",
+                "secret-id",
+                "secret-key"
+        )).isInstanceOfSatisfying(BusinessException.class, ex ->
+                assertThat(ex.errorCode())
+                        .isEqualTo(ErrorCode.STORAGE_CUSTOM_DOMAIN_LIST_FAILED));
+
+        verify(cosClient).shutdown();
+    }
+
+    @Test
     void rejectsDomainsThatAreNotEnabledRestOriginsForTheBucket() {
         COSClient cosClient = mock(COSClient.class);
         BucketDomainConfiguration configuration = new BucketDomainConfiguration();
