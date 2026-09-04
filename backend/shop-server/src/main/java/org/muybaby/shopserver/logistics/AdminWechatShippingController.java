@@ -53,7 +53,7 @@ public class AdminWechatShippingController {
     }
 
     @GetMapping("/capability")
-    @PreAuthorize("hasAuthority('order:ship')")
+    @PreAuthorize("hasAnyAuthority('order:ship', 'wechat-shipping:runtime:read')")
     public ApiResponse<WechatShippingCapabilityResponse> capability(
             @AuthenticationPrincipal AuthenticatedPrincipal principal
     ) {

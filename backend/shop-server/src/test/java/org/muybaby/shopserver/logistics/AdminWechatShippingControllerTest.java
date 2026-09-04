@@ -69,7 +69,7 @@ class AdminWechatShippingControllerTest {
     }
 
     @Test
-    void allCatalogEndpointsRequireAuthenticationAndOrderShipAuthority() throws Exception {
+    void allWechatShippingEndpointsRequireAuthenticationAndTheirAuthorities() throws Exception {
         String noPermissionToken = adminToken(List.of());
 
         assertProtected(() -> get("/admin/wechat-shipping/capability"), noPermissionToken);
@@ -114,6 +114,23 @@ class AdminWechatShippingControllerTest {
                         .content(runtimeUpdateJson(0)))
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.code").value(600009));
+    }
+
+    @Test
+    void runtimeReaderCanCheckCapabilityAfterEnablingSynchronization() throws Exception {
+        String token = adminToken(List.of("wechat-shipping:runtime:read"));
+        jdbcClient.sql("""
+                        insert into wechat_shipping_runtime_setting (
+                            id, upload_enabled, delivery_enabled,
+                            receipt_reconciliation_enabled, revision, change_reason
+                        ) values (1, true, false, false, 1, 'TEST_ENABLE_UPLOAD')
+                        """).update();
+
+        mockMvc.perform(get("/admin/wechat-shipping/capability")
+                        .header("Authorization", "Bearer " + token))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.state").value("AVAILABLE"))
+                .andExpect(jsonPath("$.data.tradeManaged").value(true));
     }
 
     @Test

@@ -2,7 +2,8 @@ import request from '@/utils/http'
 
 export function fetchWechatShippingCapability() {
   return request.get<Api.Order.WechatShippingCapability>({
-    url: '/admin/wechat-shipping/capability'
+    url: '/admin/wechat-shipping/capability',
+    showErrorMessage: false
   })
 }
 

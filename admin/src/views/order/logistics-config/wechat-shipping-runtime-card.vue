@@ -99,10 +99,19 @@
 <script setup lang="ts">
   import { computed, onMounted, reactive, ref } from 'vue'
   import { ElMessage } from 'element-plus'
-  import { fetchWechatShippingRuntime, updateWechatShippingRuntime } from '@/api/wechat-shipping'
+  import {
+    fetchWechatShippingCapability,
+    fetchWechatShippingRuntime,
+    updateWechatShippingRuntime
+  } from '@/api/wechat-shipping'
   import { useAuth } from '@/hooks/core/useAuth'
   import { formatLocalDateTime } from '@/utils/date-time'
   import { isHttpError } from '@/utils/http/error'
+  import {
+    describeWechatShippingCapabilityFailure,
+    disabledWechatShippingRuntimeUpdate,
+    isWechatShippingCapabilityAvailable
+  } from './wechat-shipping-runtime-state'
 
   const { hasAuth } = useAuth()
   const canRead = computed(() => hasAuth('wechat-shipping:runtime:read'))
@@ -163,6 +172,50 @@
     if (draft.receiptReconciliationEnabled) draft.uploadEnabled = true
   }
 
+  const disableAfterCapabilityFailure = async (
+    enabledRuntime: Api.Order.WechatShippingRuntime,
+    reason: string
+  ) => {
+    try {
+      const disabled = await updateWechatShippingRuntime(
+        disabledWechatShippingRuntimeUpdate(enabledRuntime.version)
+      )
+      fill(disabled)
+      ElMessage.error({
+        message: `${reason}，同步开关已自动关闭`,
+        duration: 7000
+      })
+    } catch {
+      try {
+        await loadRuntime()
+      } catch {
+        // The next manual refresh will reconcile an uncertain rollback result.
+      }
+      ElMessage.error({
+        message: `${reason}；自动关闭失败，请刷新当前设置后重新确认`,
+        duration: 7000
+      })
+    }
+  }
+
+  const verifyEnabledCapability = async (enabledRuntime: Api.Order.WechatShippingRuntime) => {
+    let capability: Api.Order.WechatShippingCapability
+    try {
+      capability = await fetchWechatShippingCapability()
+    } catch {
+      await disableAfterCapabilityFailure(enabledRuntime, '微信发货能力检测失败')
+      return
+    }
+    if (isWechatShippingCapabilityAvailable(capability)) {
+      ElMessage.success('已接入微信发货信息管理服务，当前可同步发货信息')
+      return
+    }
+    await disableAfterCapabilityFailure(
+      enabledRuntime,
+      describeWechatShippingCapabilityFailure(capability)
+    )
+  }
+
   const saveRuntime = async () => {
     if (!runtime.value || !canSave.value || saving.value) return
     saving.value = true
@@ -174,7 +227,11 @@
         version: runtime.value.version
       })
       fill(updated)
-      ElMessage.success('微信订单同步设置已保存')
+      if (updated.uploadEnabled) {
+        await verifyEnabledCapability(updated)
+      } else {
+        ElMessage.success('微信订单同步设置已保存')
+      }
     } catch (error) {
       if (isHttpError(error) && error.httpStatus === 409) {
         ElMessage.warning('运行配置已被其他管理员修改，已刷新为最新状态')
