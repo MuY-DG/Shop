@@ -49,6 +49,7 @@ public class AdminPaymentConfigService {
     private final PaymentNotificationRouteService paymentNotificationRouteService;
     private final PaymentSecretCipher paymentSecretCipher;
     private final PaymentPemValidator paymentPemValidator;
+    private final PaymentConfigVerifier paymentConfigVerifier;
     private final TransactionTemplate requiresNewTransaction;
     private final TransactionTemplate withoutTransaction;
 
@@ -60,6 +61,7 @@ public class AdminPaymentConfigService {
             PaymentNotificationRouteService paymentNotificationRouteService,
             PaymentSecretCipher paymentSecretCipher,
             PaymentPemValidator paymentPemValidator,
+            PaymentConfigVerifier paymentConfigVerifier,
             PlatformTransactionManager transactionManager
     ) {
         this.jdbcClient = jdbcClient;
@@ -69,6 +71,7 @@ public class AdminPaymentConfigService {
         this.paymentNotificationRouteService = paymentNotificationRouteService;
         this.paymentSecretCipher = paymentSecretCipher;
         this.paymentPemValidator = paymentPemValidator;
+        this.paymentConfigVerifier = paymentConfigVerifier;
         this.requiresNewTransaction = new TransactionTemplate(transactionManager);
         this.requiresNewTransaction.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
         this.withoutTransaction = new TransactionTemplate(transactionManager);
@@ -336,6 +339,7 @@ public class AdminPaymentConfigService {
     public AdminPaymentConfigResponse enable(Long configId) {
         return outsideTransaction(() -> {
             StoredConfigSnapshot storedConfig = inspectStoredConfig(configId, false, null);
+            paymentConfigVerifier.requireUsable(storedConfig.resolved());
             return requireTransactionResult(requiresNewTransaction.execute(status ->
                     enableInTransaction(configId, storedConfig)));
         });
@@ -377,7 +381,7 @@ public class AdminPaymentConfigService {
         requireNotificationRouteReady(resolved);
         PaymentConfigRow confirmed = requireConfigRow(configId, false);
         requireUnchangedConfig(observed, confirmed);
-        return new StoredConfigSnapshot(confirmed);
+        return new StoredConfigSnapshot(confirmed, resolved);
     }
 
     private void revalidateStoredConfig(StoredConfigSnapshot storedConfig, boolean lockAllConfigs) {
@@ -746,7 +750,7 @@ public class AdminPaymentConfigService {
     ) {
     }
 
-    private record StoredConfigSnapshot(PaymentConfigRow config) {
+    private record StoredConfigSnapshot(PaymentConfigRow config, ResolvedPaymentConfig resolved) {
     }
 
     private record ValidatedConfig(

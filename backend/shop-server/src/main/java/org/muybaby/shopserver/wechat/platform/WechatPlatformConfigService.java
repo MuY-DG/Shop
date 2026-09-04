@@ -48,17 +48,45 @@ public class WechatPlatformConfigService implements WechatPlatformCredentialReso
                 false, "NONE", "", "", false, 0, null, null);
     }
 
+    @Transactional(readOnly = true)
+    public WechatPlatformCredentials candidate(
+            AdminWechatPlatformConfigUpdateRequest request
+    ) {
+        return resolveCandidate(request, repository.find());
+    }
+
     @Transactional
     public AdminWechatPlatformConfigResponse update(
             AdminWechatPlatformConfigUpdateRequest request,
             Long operatorId
     ) {
         requireOperator(operatorId);
+        Optional<WechatPlatformConfigEntity> persisted = repository.find();
+        WechatPlatformCredentials candidate = resolveCandidate(request, persisted);
+        String appId = candidate.appId();
+        String appSecret = candidate.appSecret();
+        if (persisted.isPresent()) {
+            WechatPlatformConfigEntity row = persisted.orElseThrow();
+            PaymentSecretCipher.EncryptedSecret encrypted = encrypt(appSecret);
+            if (!repository.update(row.revision(), appId, encrypted, operatorId)) {
+                throw conflict();
+            }
+        } else {
+            if (!repository.insert(appId, encrypt(appSecret), operatorId)) {
+                throw conflict();
+            }
+        }
+        return current();
+    }
+
+    private WechatPlatformCredentials resolveCandidate(
+            AdminWechatPlatformConfigUpdateRequest request,
+            Optional<WechatPlatformConfigEntity> persisted
+    ) {
         if (request == null || request.version() == null || request.version() < 0) {
             throw validation();
         }
         String appId = requiredText(request.appId(), MAX_APP_ID_LENGTH);
-        Optional<WechatPlatformConfigEntity> persisted = repository.find();
         String appSecret;
         if (persisted.isPresent()) {
             WechatPlatformConfigEntity row = persisted.orElseThrow();
@@ -68,10 +96,6 @@ public class WechatPlatformConfigService implements WechatPlatformCredentialReso
             appSecret = StringUtils.hasText(request.appSecret())
                     ? requiredAppSecret(request.appSecret())
                     : resolvePersisted(row).appSecret();
-            PaymentSecretCipher.EncryptedSecret encrypted = encrypt(appSecret);
-            if (!repository.update(row.revision(), appId, encrypted, operatorId)) {
-                throw conflict();
-            }
         } else {
             if (request.version() != 0) {
                 throw conflict();
@@ -80,11 +104,9 @@ public class WechatPlatformConfigService implements WechatPlatformCredentialReso
                 throw validation();
             }
             appSecret = requiredAppSecret(request.appSecret());
-            if (!repository.insert(appId, encrypt(appSecret), operatorId)) {
-                throw conflict();
-            }
         }
-        return current();
+        return new WechatPlatformCredentials(
+                appId, appSecret, WechatPlatformCredentials.Source.DATABASE);
     }
 
     @Transactional

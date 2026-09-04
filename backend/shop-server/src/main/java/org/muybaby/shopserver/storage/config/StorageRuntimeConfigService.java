@@ -5,6 +5,8 @@ import org.muybaby.shopserver.common.error.ErrorCode;
 import org.muybaby.shopserver.payment.config.PaymentSecretCipher;
 import org.muybaby.shopserver.storage.dto.AdminStorageConfigRequest;
 import org.muybaby.shopserver.storage.dto.AdminStorageConfigResponse;
+import org.muybaby.shopserver.storage.dto.AdminStorageBucketListRequest;
+import org.muybaby.shopserver.storage.dto.AdminStorageBucketResponse;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.PlatformTransactionManager;
@@ -22,6 +24,7 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.util.HexFormat;
 import java.util.Locale;
+import java.util.List;
 import java.util.Optional;
 import java.util.regex.Pattern;
 
@@ -40,17 +43,20 @@ public class StorageRuntimeConfigService {
     private final JdbcClient jdbcClient;
     private final PaymentSecretCipher secretCipher;
     private final CosCustomDomainVerifier customDomainVerifier;
+    private final CosStorageConfigVerifier storageConfigVerifier;
     private final TransactionTemplate transaction;
 
     public StorageRuntimeConfigService(
             JdbcClient jdbcClient,
             PaymentSecretCipher secretCipher,
             CosCustomDomainVerifier customDomainVerifier,
+            CosStorageConfigVerifier storageConfigVerifier,
             PlatformTransactionManager transactionManager
     ) {
         this.jdbcClient = jdbcClient;
         this.secretCipher = secretCipher;
         this.customDomainVerifier = customDomainVerifier;
+        this.storageConfigVerifier = storageConfigVerifier;
         this.transaction = new TransactionTemplate(transactionManager);
     }
 
@@ -74,6 +80,22 @@ public class StorageRuntimeConfigService {
     }
 
     @Transactional(propagation = Propagation.NOT_SUPPORTED)
+    public List<AdminStorageBucketResponse> listBuckets(AdminStorageBucketListRequest request) {
+        if (request == null) {
+            throw validationFailure();
+        }
+        ResolvedStorageConfig current = persistedRow()
+                .map(this::resolveForEditing)
+                .orElseGet(this::emptyConfig);
+        String secretId = textOrFallback(request.secretId(), current.secretId(), 256);
+        String secretKey = textOrFallback(request.secretKey(), current.secretKey(), 256);
+        return storageConfigVerifier.listBuckets(secretId, secretKey).stream()
+                .map(bucket -> new AdminStorageBucketResponse(
+                        bucket.bucket(), bucket.region()))
+                .toList();
+    }
+
+    @Transactional(propagation = Propagation.NOT_SUPPORTED)
     public AdminStorageConfigResponse update(AdminStorageConfigRequest request) {
         if (request == null) {
             throw validationFailure();
@@ -86,6 +108,9 @@ public class StorageRuntimeConfigService {
         String secretId = textOrFallback(request.secretId(), current.secretId(), 256);
         String secretKey = textOrFallback(request.secretKey(), current.secretKey(), 256);
         requireCosConfig(region, bucket, secretId, secretKey);
+
+        storageConfigVerifier.requireWritable(new ResolvedStorageConfig(
+                "", region, bucket, secretId, secretKey));
 
         String publicBaseUrl = normalizePublicBaseUrl(
                 request.publicBaseUrl() == null ? current.publicBaseUrl() : request.publicBaseUrl());

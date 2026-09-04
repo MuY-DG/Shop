@@ -10,6 +10,6 @@ export function updateWechatPlatformConfig(data: Api.WechatPlatform.ConfigUpdate
   return request.put<Api.WechatPlatform.Config>({
     url: baseUrl,
     data,
-    showSuccessMessage: true
+    showSuccessMessage: false
   })
 }

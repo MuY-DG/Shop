@@ -6,10 +6,17 @@ export function fetchStorageConfig() {
   })
 }
 
+export function fetchStorageBuckets(data: Api.Storage.BucketListRequest) {
+  return request.post<Api.Storage.BucketOption[]>({
+    url: '/admin/storage/config/buckets',
+    data
+  })
+}
+
 export function updateStorageConfig(data: Api.Storage.ConfigForm) {
   return request.put<Api.Storage.Config>({
     url: '/admin/storage/config',
     data,
-    showSuccessMessage: true
+    showSuccessMessage: false
   })
 }

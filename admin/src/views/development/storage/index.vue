@@ -31,13 +31,6 @@
         label-width="128px"
         class="storage-form"
       >
-        <ElFormItem label="地域" prop="region">
-          <ElInput v-model="formData.region" placeholder="例如：ap-guangzhou" />
-        </ElFormItem>
-        <ElFormItem label="存储桶" prop="bucket">
-          <ElInput v-model="formData.bucket" placeholder="例如：shop-1250000000" />
-          <div class="form-tip">请填写包含 APPID 后缀的完整存储桶名称。</div>
-        </ElFormItem>
         <ElFormItem label="SecretId" prop="secretId">
           <ElInput
             v-model="formData.secretId"
@@ -53,6 +46,37 @@
             autocomplete="new-password"
             :placeholder="config?.secretKeyConfigured ? '已配置，留空不修改' : '请输入 SecretKey'"
           />
+        </ElFormItem>
+        <ElFormItem label="存储桶" prop="bucket">
+          <div class="field-with-action">
+            <ElSelect
+              v-model="formData.bucket"
+              filterable
+              allow-create
+              default-first-option
+              placeholder="请选择或输入存储桶"
+              @change="handleBucketChange"
+            >
+              <ElOption
+                v-for="option in bucketOptions"
+                :key="`${option.bucket}:${option.region}`"
+                :label="`${option.bucket} · ${option.region}`"
+                :value="option.bucket"
+              />
+            </ElSelect>
+            <ElButton
+              v-auth="'storage:config:write'"
+              :loading="loadingBuckets"
+              :disabled="saving"
+              @click="handleLoadBuckets"
+            >
+              获取存储桶
+            </ElButton>
+          </div>
+          <div class="form-tip">请填写包含 APPID 后缀的完整存储桶名称。</div>
+        </ElFormItem>
+        <ElFormItem label="地域" prop="region">
+          <ElInput v-model="formData.region" placeholder="选择存储桶后自动填写，也可手动输入" />
         </ElFormItem>
         <ElFormItem label="COS 客户端域名" prop="publicBaseUrl">
           <ElInput v-model="formData.publicBaseUrl" :placeholder="cosDomainPlaceholder" />
@@ -83,14 +107,16 @@
 
 <script setup lang="ts">
   import { computed, onMounted, reactive, ref } from 'vue'
-  import type { FormInstance, FormRules } from 'element-plus'
-  import { fetchStorageConfig, updateStorageConfig } from '@/api/storage'
+  import { ElMessage, type FormInstance, type FormRules } from 'element-plus'
+  import { fetchStorageBuckets, fetchStorageConfig, updateStorageConfig } from '@/api/storage'
 
   defineOptions({ name: 'DeveloperStorageConfig' })
 
   const loading = ref(false)
   const saving = ref(false)
+  const loadingBuckets = ref(false)
   const config = ref<Api.Storage.Config | null>(null)
+  const bucketOptions = ref<Api.Storage.BucketOption[]>([])
   const baseline = ref('')
   const formRef = ref<FormInstance>()
 
@@ -213,6 +239,31 @@
     if (config.value) fillForm(config.value)
   }
 
+  const handleBucketChange = (bucket: string) => {
+    const selected = bucketOptions.value.find((option) => option.bucket === bucket)
+    if (selected) formData.region = selected.region
+  }
+
+  const handleLoadBuckets = async () => {
+    await formRef.value?.validateField(['secretId', 'secretKey'])
+    loadingBuckets.value = true
+    try {
+      const secretId = String(formData.secretId || '').trim()
+      const secretKey = String(formData.secretKey || '').trim()
+      bucketOptions.value = await fetchStorageBuckets({
+        ...(secretId ? { secretId } : {}),
+        ...(secretKey ? { secretKey } : {})
+      })
+      if (bucketOptions.value.length === 0) {
+        ElMessage.warning('当前账号没有可列出的存储桶，也可以手动填写')
+        return
+      }
+      ElMessage.success(`已获取 ${bucketOptions.value.length} 个存储桶`)
+    } finally {
+      loadingBuckets.value = false
+    }
+  }
+
   const loadConfig = async () => {
     loading.value = true
     try {
@@ -238,6 +289,7 @@
       if (secretKey) payload.secretKey = secretKey
       config.value = await updateStorageConfig(payload)
       fillForm(config.value)
+      ElMessage.success('COS 存储桶验证通过，配置已保存')
     } finally {
       saving.value = false
     }
@@ -280,5 +332,15 @@
 
   .storage-form {
     max-width: 820px;
+  }
+
+  .field-with-action {
+    display: flex;
+    width: 100%;
+    gap: 8px;
+
+    :deep(.el-select) {
+      flex: 1;
+    }
   }
 </style>

@@ -65,7 +65,7 @@
 
 <script setup lang="ts">
   import { computed, onMounted, reactive, ref } from 'vue'
-  import { type FormInstance, type FormRules } from 'element-plus'
+  import { ElMessage, type FormInstance, type FormRules } from 'element-plus'
   import { fetchWechatPlatformConfig, updateWechatPlatformConfig } from '@/api/wechat-platform'
   import {
     buildWechatPlatformUpdate,
@@ -145,6 +145,7 @@
         buildWechatPlatformUpdate(config.value, formData)
       )
       fillForm(config.value)
+      ElMessage.success('微信平台凭据验证通过，配置已保存')
     } finally {
       saving.value = false
     }

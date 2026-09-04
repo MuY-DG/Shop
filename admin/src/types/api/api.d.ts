@@ -722,6 +722,16 @@ declare namespace Api {
       secretKey?: string
     }
 
+    interface BucketOption {
+      bucket: string
+      region: string
+    }
+
+    interface BucketListRequest {
+      secretId?: string
+      secretKey?: string
+    }
+
     type AssetScope = 'LIBRARY' | 'ATTACHMENT' | 'SECRET'
     type MediaKind = 'IMAGE' | 'VIDEO' | 'DOCUMENT'
     type Visibility = 'PUBLIC' | 'PRIVATE'

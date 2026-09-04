@@ -9,9 +9,11 @@ import org.muybaby.shopserver.auth.token.OpaqueTokenService;
 import org.muybaby.shopserver.auth.token.TokenKind;
 import org.muybaby.shopserver.auth.token.TokenSession;
 import org.muybaby.shopserver.common.error.ErrorCode;
+import org.muybaby.shopserver.common.error.BusinessException;
 import org.muybaby.shopserver.payment.config.PaymentConfigResolver;
 import org.muybaby.shopserver.payment.config.PaymentSecretCipher;
 import org.muybaby.shopserver.payment.config.ResolvedPaymentConfig;
+import org.muybaby.shopserver.payment.service.PaymentConfigVerifier;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -19,6 +21,7 @@ import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.test.annotation.DirtiesContext;
 import org.springframework.test.context.ActiveProfiles;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
 import java.security.KeyPair;
@@ -38,6 +41,8 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.doThrow;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -79,6 +84,9 @@ class AdminPaymentConfigControllerTest {
 
     @Autowired
     private PaymentConfigResolver paymentConfigResolver;
+
+    @MockitoBean
+    private PaymentConfigVerifier paymentConfigVerifier;
 
     @BeforeEach
     void clearPaymentConfigState() {
@@ -365,6 +373,28 @@ class AdminPaymentConfigControllerTest {
                         .header("Authorization", "Bearer " + readToken))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.code").value(ErrorCode.PAYMENT_CONFIGURATION_CHANGED.code()));
+    }
+
+    @Test
+    void failedProviderVerificationKeepsThePreviouslyEnabledConfigActive() throws Exception {
+        String writeToken = limitedAdminToken(List.of("payment:config:write"));
+        String enableToken = limitedAdminToken(List.of("payment:config:enable"));
+        long activeConfigId = createConfig(writeToken, "Active DB Pay");
+        long candidateConfigId = createConfig(writeToken, "Unverified DB Pay");
+        mockMvc.perform(post("/admin/pay/configs/{configId}/enable", activeConfigId)
+                        .header("Authorization", "Bearer " + enableToken))
+                .andExpect(status().isOk());
+        doThrow(new BusinessException(ErrorCode.PAYMENT_CONFIG_VERIFICATION_FAILED))
+                .when(paymentConfigVerifier).requireUsable(any());
+
+        mockMvc.perform(post("/admin/pay/configs/{configId}/enable", candidateConfigId)
+                        .header("Authorization", "Bearer " + enableToken))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code")
+                        .value(ErrorCode.PAYMENT_CONFIG_VERIFICATION_FAILED.code()));
+
+        assertThat(deletedConfigRow(activeConfigId).enabled()).isTrue();
+        assertThat(deletedConfigRow(candidateConfigId).enabled()).isFalse();
     }
 
     @Test

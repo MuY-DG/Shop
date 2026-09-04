@@ -8,7 +8,9 @@ import org.muybaby.shopserver.auth.token.OpaqueTokenService;
 import org.muybaby.shopserver.common.error.BusinessException;
 import org.muybaby.shopserver.common.error.ErrorCode;
 import org.muybaby.shopserver.storage.config.CosCustomDomainVerifier;
+import org.muybaby.shopserver.storage.config.CosStorageConfigVerifier;
 import org.muybaby.shopserver.storage.config.StorageRuntimeConfigService;
+import org.muybaby.shopserver.storage.config.ResolvedStorageConfig;
 import org.muybaby.shopserver.storage.dto.AdminStorageConfigRequest;
 import org.muybaby.shopserver.storage.dto.AdminStorageConfigResponse;
 import org.muybaby.shopserver.support.AdminTokenTestSupport;
@@ -34,9 +36,12 @@ import static org.hamcrest.Matchers.not;
 import static org.hamcrest.Matchers.stringContainsInOrder;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.when;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -67,6 +72,9 @@ class AdminStorageConfigControllerTest {
 
     @MockitoBean
     private CosCustomDomainVerifier customDomainVerifier;
+
+    @MockitoBean
+    private CosStorageConfigVerifier storageConfigVerifier;
 
     @BeforeEach
     void clearStorageConfig() {
@@ -99,6 +107,66 @@ class AdminStorageConfigControllerTest {
         assertThatThrownBy(storageRuntimeConfigService::effective)
                 .isInstanceOfSatisfying(BusinessException.class, ex ->
                         assertThat(ex.errorCode()).isEqualTo(ErrorCode.STORAGE_NOT_CONFIGURED));
+    }
+
+    @Test
+    void listsBucketsWithRegionsUsingDraftCredentialsAndWriteAuthority() throws Exception {
+        String writeToken = token(List.of("storage:config:write"));
+        when(storageConfigVerifier.listBuckets("draft-id", "draft-key"))
+                .thenReturn(List.of(
+                        new CosStorageConfigVerifier.BucketLocation(
+                                "shop-a-1250000000", "ap-guangzhou"),
+                        new CosStorageConfigVerifier.BucketLocation(
+                                "shop-b-1250000000", "ap-shanghai")
+                ));
+
+        mockMvc.perform(post("/admin/storage/config/buckets")
+                        .header("Authorization", "Bearer " + writeToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"secretId\":\"draft-id\",\"secretKey\":\"draft-key\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data[0].bucket").value("shop-a-1250000000"))
+                .andExpect(jsonPath("$.data[0].region").value("ap-guangzhou"))
+                .andExpect(jsonPath("$.data[1].bucket").value("shop-b-1250000000"))
+                .andExpect(jsonPath("$.data[1].region").value("ap-shanghai"));
+    }
+
+    @Test
+    void failedBucketProbeDoesNotOverwriteTheStoredConfiguration() throws Exception {
+        String writeToken = token(List.of("storage:config:write"));
+        mockMvc.perform(put("/admin/storage/config")
+                        .header("Authorization", "Bearer " + writeToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "region":"ap-guangzhou",
+                                  "bucket":"shop-assets-1250000000",
+                                  "secretId":"stored-id",
+                                  "secretKey":"stored-key"
+                                }
+                                """))
+                .andExpect(status().isOk());
+        doThrow(new BusinessException(ErrorCode.STORAGE_CONFIG_VERIFICATION_FAILED))
+                .when(storageConfigVerifier).requireWritable(any(ResolvedStorageConfig.class));
+
+        mockMvc.perform(put("/admin/storage/config")
+                        .header("Authorization", "Bearer " + writeToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "region":"ap-shanghai",
+                                  "bucket":"shop-replacement-1250000000",
+                                  "secretId":"replacement-id",
+                                  "secretKey":"replacement-key"
+                                }
+                                """))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code")
+                        .value(ErrorCode.STORAGE_CONFIG_VERIFICATION_FAILED.code()));
+
+        assertThat(storageRuntimeConfigService.current().region()).isEqualTo("ap-guangzhou");
+        assertThat(storageRuntimeConfigService.current().bucket())
+                .isEqualTo("shop-assets-1250000000");
     }
 
     @Test

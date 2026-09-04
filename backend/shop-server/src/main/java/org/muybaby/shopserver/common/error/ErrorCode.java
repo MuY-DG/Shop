@@ -60,6 +60,12 @@ public enum ErrorCode {
     PAYMENT_CONFIG_UNAVAILABLE(500003, "支付配置不存在或已删除"),
     PAYMENT_CONFIG_ENABLED_DELETE_FORBIDDEN(500004, "当前启用的支付配置不能删除，请先启用其他配置"),
     PAYMENT_CONFIG_CONFLICT(500006, "支付配置已被其他管理员修改，请刷新后重试"),
+    PAYMENT_CONFIG_APP_ID_MISMATCH(500007, "支付 AppID 与微信小程序平台 AppID 不一致，未启用该配置"),
+    PAYMENT_CONFIG_VERIFICATION_FAILED(
+            500008,
+            "微信支付接口验证失败，请检查商户号、证书序列号和商户私钥"
+    ),
+    PAYMENT_CONFIG_VERIFICATION_UNAVAILABLE(500009, "微信支付验证服务暂不可用，请稍后重试"),
     WECHAT_SHIPPING_UPLOAD_FAILED(600001, "WeChat shipping upload failed"),
     WECHAT_RECEIPT_NOT_CONFIRMED(600002, "微信尚未确认收货，请完成确认后重试"),
     WECHAT_RECEIPT_STATUS_UNAVAILABLE(600003, "微信收货状态暂时无法确认，请稍后重试"),
@@ -70,6 +76,8 @@ public enum ErrorCode {
     WECHAT_SHIPPING_RUNTIME_CONFLICT(600009, "微信发货运行配置已被其他管理员修改，请刷新后重试"),
     WECHAT_PLATFORM_CONFIG_UNAVAILABLE(600010, "微信平台配置不可用"),
     WECHAT_PLATFORM_CONFIG_CONFLICT(600011, "微信平台配置已被其他管理员修改，请刷新后重试"),
+    WECHAT_PLATFORM_CREDENTIAL_INVALID(600012, "微信平台凭据验证失败，请检查 AppID 和 AppSecret"),
+    WECHAT_PLATFORM_VERIFICATION_UNAVAILABLE(600013, "微信平台验证服务暂不可用，请稍后重试"),
     WECHAT_REFUND_FAILED(700001, "WeChat refund failed"),
     WECHAT_REFUND_BALANCE_INSUFFICIENT(
             700002,
@@ -108,6 +116,9 @@ public enum ErrorCode {
     STORAGE_CUSTOM_DOMAIN_NOT_BOUND(800011, "COS 自定义域名未在当前存储桶中启用为默认源站"),
     STORAGE_CUSTOM_DOMAIN_VERIFICATION_FAILED(800012, "COS 自定义域名验证失败，请检查存储桶、地域、密钥及 GetBucketDomain 权限"),
     STORAGE_CUSTOM_DOMAIN_VERIFICATION_UNAVAILABLE(800013, "COS 自定义域名验证服务暂时不可用，请稍后重试"),
+    STORAGE_BUCKET_LIST_FAILED(800014, "无法获取存储桶，请检查密钥及 cos:GetService 权限；也可手动填写"),
+    STORAGE_CONFIG_VERIFICATION_FAILED(800015, "COS 存储桶验证失败，请检查存储桶、地域、密钥及上传、读取、删除权限"),
+    STORAGE_CONFIG_VERIFICATION_UNAVAILABLE(800016, "COS 存储桶验证服务暂不可用，请稍后重试"),
     CUSTOMER_SERVICE_CONVERSATION_UNAVAILABLE(900001, "Customer service conversation unavailable"),
     CUSTOMER_SERVICE_STATE_CONFLICT(900002, "Customer service conversation state conflict"),
     CUSTOMER_SERVICE_ASSIGNMENT_REQUIRED(900003, "Customer service assignment required"),

@@ -529,7 +529,7 @@
         saveFirst || !selectedConfig.value ? await persistCurrent(false) : selectedConfig.value
       await enablePaymentConfig(target.id, false)
       await loadData(target.id)
-      ElMessage.success(`已开始使用「${target.configName}」`)
+      ElMessage.success(`微信支付接口验证通过，已开始使用「${target.configName}」`)
     } finally {
       using.value = false
     }

@@ -48,6 +48,9 @@ SecretKey 不会下发客户端。
 - `cos:DeleteObject`
 - `cos:GetBucketDomain`
 
+如需在 Admin 中自动列出账号下的存储桶，还需额外授予账号级
+`cos:GetService`；没有该权限时仍可手动填写存储桶和地域。
+
 `GetBucketDomain` 用于校验自定义客户端域名确实绑定当前地域和存储桶；它不能代替
 DNS、HTTPS、CORS 或真实上传检查。
 
@@ -89,7 +92,7 @@ downloadFile:
 ### 临时对象
 
 应用会清理失败和过期会话。COS 生命周期可再清理
-`private/direct-upload/` 下超过 1 天的临时对象，但不能扩大到 `public/` 或其他
+`private/direct-upload/` 与 `private/config-check/` 下超过 1 天的临时对象，但不能扩大到 `public/` 或其他
 `private/` 前缀。
 
 直传依赖 `x-cos-forbid-overwrite=true`。目标桶不能处于已启用版本控制而导致该约束
@@ -106,6 +109,9 @@ downloadFile:
 
 自定义域名保存时，后端会校验其绑定关系并保存指纹。换域名的顺序是：先添加 CNAME、
 证书、CORS 和微信合法域名，再修改 Admin 配置。
+
+保存前，后端会在 `private/config-check/` 下上传一个专用探测对象、读取元数据并删除，
+用于确认存储桶、地域、凭据和最小读写权限；该探测不覆盖浏览器 CORS 和真实直传验收。
 
 ## 验收
 

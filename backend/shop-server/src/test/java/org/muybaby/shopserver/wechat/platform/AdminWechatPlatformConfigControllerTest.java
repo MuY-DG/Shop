@@ -17,6 +17,7 @@ import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.test.annotation.DirtiesContext;
 import org.springframework.test.context.ActiveProfiles;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
 import java.time.Duration;
@@ -24,6 +25,8 @@ import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.doThrow;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -49,6 +52,9 @@ class AdminWechatPlatformConfigControllerTest {
 
     @Autowired
     private WechatPlatformConfigRepository repository;
+
+    @MockitoBean
+    private WechatPlatformConfigVerifier configVerifier;
 
     @BeforeEach
     void clearConfig() {
@@ -128,6 +134,27 @@ class AdminWechatPlatformConfigControllerTest {
                 .andExpect(jsonPath("$.data.appSecret").doesNotExist());
 
         assertThat(secretRow().ciphertext()).doesNotContain("api-created-secret");
+    }
+
+    @Test
+    void failedWechatVerificationDoesNotPersistTheCandidateCredentials() throws Exception {
+        String writeToken = token(List.of("wechat-platform:config:write"));
+        doThrow(new BusinessException(ErrorCode.WECHAT_PLATFORM_CREDENTIAL_INVALID))
+                .when(configVerifier).requireUsable(any());
+
+        mockMvc.perform(put("/admin/wechat/platform-config")
+                        .header("Authorization", "Bearer " + writeToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"appId":"wx-invalid","appSecret":"wrong-secret","version":0}
+                                """))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code")
+                        .value(ErrorCode.WECHAT_PLATFORM_CREDENTIAL_INVALID.code()));
+
+        assertThat(jdbcClient.sql("select count(*) from wechat_platform_config")
+                .query(Integer.class)
+                .single()).isZero();
     }
 
     @Test

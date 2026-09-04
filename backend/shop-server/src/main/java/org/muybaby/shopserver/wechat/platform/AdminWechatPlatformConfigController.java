@@ -17,9 +17,14 @@ import org.springframework.web.bind.annotation.RestController;
 public class AdminWechatPlatformConfigController {
 
     private final WechatPlatformConfigService configService;
+    private final WechatPlatformConfigVerifier configVerifier;
 
-    public AdminWechatPlatformConfigController(WechatPlatformConfigService configService) {
+    public AdminWechatPlatformConfigController(
+            WechatPlatformConfigService configService,
+            WechatPlatformConfigVerifier configVerifier
+    ) {
         this.configService = configService;
+        this.configVerifier = configVerifier;
     }
 
     @GetMapping
@@ -34,6 +39,7 @@ public class AdminWechatPlatformConfigController {
             @AuthenticationPrincipal AuthenticatedPrincipal principal,
             @RequestBody AdminWechatPlatformConfigUpdateRequest request
     ) {
+        configVerifier.requireUsable(configService.candidate(request));
         return ApiResponse.success(configService.update(request, principal.subjectId()));
     }
 }
