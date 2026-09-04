@@ -1517,7 +1517,6 @@ declare namespace Api {
       deliveryEnabled: boolean
       receiptReconciliationEnabled: boolean
       version: number
-      reason: string
     }
 
     interface WechatDeliveryCompany {

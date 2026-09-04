@@ -136,9 +136,9 @@ class WechatWaybillRegistrationCoordinatorTest {
         );
         coordinator.attemptInitial(electronic.shipmentId());
 
-        assertThat(provider.traceRequests).hasSize(1);
-        assertThat(provider.followRequests).isEmpty();
-        assertRegistration(electronic.shipmentId(), "TRACE", "REGISTERED", "token-" + electronic.shipmentId(), 1);
+        assertThat(provider.traceRequests).isEmpty();
+        assertThat(provider.followRequests).hasSize(1);
+        assertRegistration(electronic.shipmentId(), "FOLLOW", "REGISTERED", "token-" + electronic.shipmentId(), 1);
     }
 
     @Test
@@ -331,6 +331,33 @@ class WechatWaybillRegistrationCoordinatorTest {
     }
 
     @Test
+    void retryUpgradesLegacyProductionElectronicRegistrationToFollow() {
+        ShipmentSeed electronic = insertExistingShipment(
+                LogisticsType.EXPRESS, ShipmentSource.WECHAT_WAYBILL, true, true
+        );
+        jdbcClient.sql("""
+                        insert into shipment_waybill_registration(
+                            shipment_id, registration_kind, status,
+                            last_error_code, last_error_message, attempt_count
+                        ) values (
+                            :shipmentId, 'TRACE', 'FAILED',
+                            'WECHAT_930561', 'legacy trace rejection', 1
+                        )
+                        """)
+                .param("shipmentId", electronic.shipmentId())
+                .update();
+
+        coordinator.attemptInitial(electronic.shipmentId());
+
+        assertThat(provider.traceRequests).isEmpty();
+        assertThat(provider.followRequests).hasSize(1);
+        assertRegistration(
+                electronic.shipmentId(), "FOLLOW", "REGISTERED",
+                "token-" + electronic.shipmentId(), 2
+        );
+    }
+
+    @Test
     void manualAndElectronicShipmentCommitBeforeIndependentRegistrationAttempt() {
         long manualOrderId = insertPaidOrder();
         provider.nextResult = WechatWaybillRegistrationResult.failure(
@@ -358,9 +385,10 @@ class WechatWaybillRegistrationCoordinatorTest {
 
         assertThat(electronic.localShipmentStatus()).isEqualTo("SHIPPED");
         assertThat(electronic.shipmentSource()).isEqualTo(ShipmentSource.WECHAT_WAYBILL);
+        assertThat(electronic.waybillRegistrationKind()).isEqualTo(WaybillRegistrationKind.FOLLOW);
         assertThat(electronic.waybillRegistrationStatus()).isEqualTo(WaybillRegistrationStatus.REGISTERED);
-        assertThat(provider.traceRequests).hasSize(1);
-        assertThat(provider.followRequests).isEmpty();
+        assertThat(provider.traceRequests).isEmpty();
+        assertThat(provider.followRequests).hasSize(1);
         assertThat(provider.transactionActive).isFalse();
     }
 

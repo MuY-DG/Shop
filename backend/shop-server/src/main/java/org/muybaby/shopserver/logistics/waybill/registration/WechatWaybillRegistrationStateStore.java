@@ -236,7 +236,8 @@ public class WechatWaybillRegistrationStateStore {
         String claimToken = UUID.randomUUID().toString();
         int claimed = jdbcClient.sql("""
                         update shipment_waybill_registration
-                        set status = :registering,
+                        set registration_kind = :registrationKind,
+                            status = :registering,
                             waybill_token = '',
                             last_error_code = '',
                             last_error_message = '',
@@ -254,6 +255,7 @@ public class WechatWaybillRegistrationStateStore {
                               )
                           )
                         """)
+                .param("registrationKind", initialKind.name())
                 .param("registering", WaybillRegistrationStatus.REGISTERING.name())
                 .param("claimToken", claimToken)
                 .param("claimedAt", now)
@@ -286,7 +288,7 @@ public class WechatWaybillRegistrationStateStore {
                 goods
         );
         return Optional.of(new WaybillRegistrationClaim(
-                shipmentId, claimToken, row.kind(), request
+                shipmentId, claimToken, initialKind, request
         ));
     }
 
@@ -420,7 +422,7 @@ public class WechatWaybillRegistrationStateStore {
 
     private WaybillRegistrationKind sourcePolicy(RegistrationContext context) {
         if (context.shipmentSource() == ShipmentSource.WECHAT_WAYBILL) {
-            return WaybillRegistrationKind.TRACE;
+            return WaybillRegistrationKind.FOLLOW;
         }
         return context.messageEnabled()
                 ? WaybillRegistrationKind.FOLLOW

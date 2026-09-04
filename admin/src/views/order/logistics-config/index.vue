@@ -384,7 +384,7 @@
 
   const emptyForm = (): Api.Waybill.WechatExpressConfigForm => ({
     mode: 'DISABLED',
-    messageEnabled: false,
+    messageEnabled: true,
     sender: {
       name: '',
       mobile: '',

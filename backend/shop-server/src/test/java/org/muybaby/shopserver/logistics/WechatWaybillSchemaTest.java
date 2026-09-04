@@ -61,7 +61,7 @@ class WechatWaybillSchemaTest {
     }
 
     @Test
-    void migrationCreatesDisabledExpressSettingAndWaybillTables() {
+    void migrationCreatesExpressSettingWithManualMessagesEnabledByDefaultAndWaybillTables() {
         Map<String, Object> setting = jdbcClient.sql("""
                         select mode, message_enabled, sender_name, sender_mobile,
                                delivery_id, biz_id, service_type, service_name,
@@ -74,7 +74,7 @@ class WechatWaybillSchemaTest {
                 .singleRow();
 
         assertThat(setting.get("MODE")).isEqualTo("DISABLED");
-        assertThat(setting.get("MESSAGE_ENABLED")).isEqualTo(false);
+        assertThat(setting.get("MESSAGE_ENABLED")).isEqualTo(true);
         assertThat(setting.get("SENDER_NAME")).isEqualTo("");
         assertThat(setting.get("SENDER_MOBILE")).isEqualTo("");
         assertThat(setting.get("DELIVERY_ID")).isEqualTo("");

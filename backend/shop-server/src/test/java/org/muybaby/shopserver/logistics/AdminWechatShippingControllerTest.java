@@ -190,8 +190,7 @@ class AdminWechatShippingControllerTest {
                   "uploadEnabled": true,
                   "deliveryEnabled": true,
                   "receiptReconciliationEnabled": true,
-                  "version": %d,
-                  "reason": "启用微信发货运行链路"
+                  "version": %d
                 }
                 """.formatted(version);
     }

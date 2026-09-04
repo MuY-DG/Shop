@@ -39,7 +39,7 @@ class WechatShippingRuntimeSettingServiceTest {
         assertThat(defaults.uploadEnabled()).isFalse();
 
         WechatShippingRuntimeSettingService.RuntimeSetting saved = service.update(
-                request(true, true, true, 0, "启用微信发货链路"),
+                request(true, true, true, 0),
                 1L
         );
 
@@ -48,7 +48,7 @@ class WechatShippingRuntimeSettingServiceTest {
         assertThat(saved.uploadEnabled()).isTrue();
         assertThat(saved.deliveryEnabled()).isTrue();
         assertThat(saved.receiptReconciliationEnabled()).isTrue();
-        assertThat(saved.reason()).isEqualTo("启用微信发货链路");
+        assertThat(saved.reason()).isEqualTo("管理员调整微信订单同步设置");
         assertThat(saved.updatedBy()).isEqualTo(1L);
         assertThat(jdbcClient.sql("select count(*) from wechat_shipping_runtime_audit")
                 .query(Integer.class).single()).isEqualTo(1);
@@ -56,7 +56,7 @@ class WechatShippingRuntimeSettingServiceTest {
 
     @Test
     void databaseSettingOverridesSafeDefault() {
-        service.update(request(false, false, false, 0, "数据库关闭外部调用"), 1L);
+        service.update(request(false, false, false, 0), 1L);
 
         assertThat(service.uploadEnabledFailClosed()).isFalse();
         assertThat(service.deliveryEnabledFailClosed()).isFalse();
@@ -66,14 +66,14 @@ class WechatShippingRuntimeSettingServiceTest {
     @Test
     void rejectsDependentWorkersWithoutUploadAndStaleVersion() {
         assertThatThrownBy(() -> service.update(
-                request(false, true, false, 0, "非法开关组合"), 1L
+                request(false, true, false, 0), 1L
         )).isInstanceOfSatisfying(BusinessException.class, error ->
                 assertThat(error.errorCode()).isEqualTo(ErrorCode.VALIDATION_FAILED));
 
-        service.update(request(true, false, false, 0, "仅启用上传"), 1L);
+        service.update(request(true, false, false, 0), 1L);
 
         assertThatThrownBy(() -> service.update(
-                request(false, false, false, 0, "使用过期版本"), 1L
+                request(false, false, false, 0), 1L
         )).isInstanceOfSatisfying(BusinessException.class, error ->
                 assertThat(error.errorCode())
                         .isEqualTo(ErrorCode.WECHAT_SHIPPING_RUNTIME_CONFLICT));
@@ -83,11 +83,10 @@ class WechatShippingRuntimeSettingServiceTest {
             boolean uploadEnabled,
             boolean deliveryEnabled,
             boolean receiptEnabled,
-            long version,
-            String reason
+            long version
     ) {
         return new AdminWechatShippingRuntimeUpdateRequest(
-                uploadEnabled, deliveryEnabled, receiptEnabled, version, reason
+                uploadEnabled, deliveryEnabled, receiptEnabled, version
         );
     }
 }

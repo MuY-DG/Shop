@@ -9,7 +9,6 @@ import org.springframework.dao.DuplicateKeyException;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.util.StringUtils;
 
 import java.sql.ResultSet;
 import java.sql.SQLException;
@@ -22,6 +21,7 @@ public class WechatShippingRuntimeSettingService {
             WechatShippingRuntimeSettingService.class
     );
     private static final long SETTING_ID = 1L;
+    private static final String AUTOMATIC_CHANGE_REASON = "管理员调整微信订单同步设置";
 
     private final JdbcClient jdbcClient;
 
@@ -110,12 +110,7 @@ public class WechatShippingRuntimeSettingService {
         if (request == null || request.uploadEnabled() == null
                 || request.deliveryEnabled() == null
                 || request.receiptReconciliationEnabled() == null
-                || request.version() == null || request.version() < 0
-                || !StringUtils.hasText(request.reason())) {
-            throw validation();
-        }
-        String reason = request.reason().trim();
-        if (reason.length() < 2 || reason.length() > 200 || hasControlCharacter(reason)) {
+                || request.version() == null || request.version() < 0) {
             throw validation();
         }
         boolean uploadEnabled = request.uploadEnabled();
@@ -125,7 +120,7 @@ public class WechatShippingRuntimeSettingService {
             throw validation();
         }
         return new NormalizedUpdate(
-                uploadEnabled, deliveryEnabled, receiptEnabled, reason
+                uploadEnabled, deliveryEnabled, receiptEnabled, AUTOMATIC_CHANGE_REASON
         );
     }
 
@@ -241,13 +236,6 @@ public class WechatShippingRuntimeSettingService {
                 false, false, false,
                 false, 0L, "", null, null,
                 false, false, false
-        );
-    }
-
-    private static boolean hasControlCharacter(String value) {
-        return value.codePoints().anyMatch(codePoint ->
-                Character.isISOControl(codePoint)
-                        || Character.getType(codePoint) == Character.FORMAT
         );
     }
 

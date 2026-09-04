@@ -2,16 +2,8 @@
   <ElCard v-if="canRead" shadow="never" class="runtime-card">
     <template #header>
       <div class="runtime-header">
-        <div>
-          <div class="runtime-title">微信发货运行控制</div>
-          <div class="runtime-subtitle">
-            数据库配置优先；开关在每次外呼前读取，数据库异常时自动停止外呼
-          </div>
-        </div>
+        <div class="runtime-title">微信订单同步设置</div>
         <div class="runtime-actions">
-          <ElTag :type="runtime?.runtimePersisted ? 'success' : 'warning'" effect="plain">
-            {{ runtime?.runtimePersisted ? '数据库已接管' : '等待写入数据库' }}
-          </ElTag>
           <ElButton :disabled="loading || saving" @click="loadRuntime">刷新</ElButton>
           <ElButton
             v-auth="'wechat-shipping:runtime:write'"
@@ -20,7 +12,7 @@
             :disabled="loading || !canSave"
             @click="saveRuntime"
           >
-            {{ runtime?.runtimePersisted ? '保存运行配置' : '写入数据库并接管' }}
+            保存设置
           </ElButton>
         </div>
       </div>
@@ -28,65 +20,79 @@
 
     <ElAlert
       v-if="runtime && !runtime.runtimePersisted"
-      title="当前仍使用部署时默认值"
-      description="运行开关持久化在数据库并记录版本；启用前先完成配置与真实能力核验。"
+      title="运行设置尚未保存"
+      description="当前按安全模式暂停微信订单同步；保存后立即生效。"
       type="warning"
       :closable="false"
       show-icon
       class="runtime-alert"
     />
 
-    <ElForm v-loading="loading" label-position="top" class="runtime-form">
+    <div v-loading="loading" class="runtime-form">
       <div class="runtime-switches">
         <div class="runtime-switch-row">
-          <div>
-            <div class="runtime-switch-title">微信发货上传</div>
-            <div class="runtime-switch-tip">控制新发货记录和管理员手动重试是否调用微信。</div>
+          <div class="runtime-switch-title">
+            <span>同步发货信息到微信</span>
+            <ElPopover placement="top" :width="300" trigger="click">
+              <template #reference>
+                <button type="button" class="runtime-help" aria-label="同步发货信息到微信说明">
+                  <ArtSvgIcon icon="ri:question-line" />
+                </button>
+              </template>
+              开启后，发货时会将配送方式、快递公司和运单号同步到微信订单。关闭不影响商城本地发货和物流查询。
+            </ElPopover>
           </div>
           <ElSwitch
             :model-value="draft.uploadEnabled"
             :disabled="!canWrite || saving"
+            aria-label="同步发货信息到微信"
             @change="handleUploadChange"
           />
         </div>
         <div class="runtime-switch-row">
-          <div>
-            <div class="runtime-switch-title">可靠投递 Worker</div>
-            <div class="runtime-switch-tip">扫描待上传及结果未知记录；开启时会自动启用总开关。</div>
+          <div class="runtime-switch-title">
+            <span>自动补传失败记录</span>
+            <ElPopover placement="top" :width="300" trigger="click">
+              <template #reference>
+                <button type="button" class="runtime-help" aria-label="自动补传失败记录说明">
+                  <ArtSvgIcon icon="ri:question-line" />
+                </button>
+              </template>
+              开启后，系统会自动重试待上传或暂时失败的记录，并核对结果未知的记录；同时自动开启发货信息同步。
+            </ElPopover>
           </div>
           <ElSwitch
             :model-value="draft.deliveryEnabled"
             :disabled="!canWrite || saving"
+            aria-label="自动补传失败记录"
             @change="handleDeliveryChange"
           />
         </div>
         <div class="runtime-switch-row">
-          <div>
-            <div class="runtime-switch-title">微信收货对账</div>
-            <div class="runtime-switch-tip">定期查询微信收货状态；开启时会自动启用总开关。</div>
+          <div class="runtime-switch-title">
+            <span>自动同步微信收货状态</span>
+            <ElPopover placement="top" :width="300" trigger="click">
+              <template #reference>
+                <button type="button" class="runtime-help" aria-label="自动同步微信收货状态说明">
+                  <ArtSvgIcon icon="ri:question-line" />
+                </button>
+              </template>
+              开启后，系统会定期查询微信订单的收货状态；微信确认收货后，本地订单会自动完成，同时自动开启发货信息同步。
+            </ElPopover>
           </div>
           <ElSwitch
             :model-value="draft.receiptReconciliationEnabled"
             :disabled="!canWrite || saving"
+            aria-label="自动同步微信收货状态"
             @change="handleReceiptChange"
           />
         </div>
       </div>
 
-      <ElFormItem label="变更原因" required class="runtime-reason">
-        <ElInput
-          v-model="draft.reason"
-          maxlength="200"
-          show-word-limit
-          :disabled="!canWrite || saving"
-          placeholder="请输入 2–200 个字符，写入追加审计"
-        />
-      </ElFormItem>
-
       <div v-if="runtime?.updatedAt" class="runtime-meta">
-        最近保存：{{ formatDateTime(runtime.updatedAt) }} · revision {{ runtime.version }}
+        上次保存：{{ formatDateTime(runtime.updatedAt) }}
       </div>
-    </ElForm>
+    </div>
   </ElCard>
 </template>
 
@@ -107,8 +113,7 @@
   const draft = reactive({
     uploadEnabled: false,
     deliveryEnabled: false,
-    receiptReconciliationEnabled: false,
-    reason: ''
+    receiptReconciliationEnabled: false
   })
 
   const changed = computed(
@@ -118,16 +123,9 @@
         draft.deliveryEnabled !== runtime.value.deliveryEnabled ||
         draft.receiptReconciliationEnabled !== runtime.value.receiptReconciliationEnabled)
   )
-  const reasonValid = computed(() => {
-    const length = Array.from(draft.reason.trim()).length
-    return length >= 2 && length <= 200
-  })
   const canSave = computed(
     () =>
-      canWrite.value &&
-      runtime.value !== null &&
-      reasonValid.value &&
-      (changed.value || !runtime.value.runtimePersisted)
+      canWrite.value && runtime.value !== null && (changed.value || !runtime.value.runtimePersisted)
   )
 
   const fill = (value: Api.Order.WechatShippingRuntime) => {
@@ -135,7 +133,6 @@
     draft.uploadEnabled = value.uploadEnabled
     draft.deliveryEnabled = value.deliveryEnabled
     draft.receiptReconciliationEnabled = value.receiptReconciliationEnabled
-    draft.reason = ''
   }
 
   const loadRuntime = async () => {
@@ -174,11 +171,10 @@
         uploadEnabled: draft.uploadEnabled,
         deliveryEnabled: draft.deliveryEnabled,
         receiptReconciliationEnabled: draft.receiptReconciliationEnabled,
-        version: runtime.value.version,
-        reason: draft.reason.trim()
+        version: runtime.value.version
       })
       fill(updated)
-      ElMessage.success('微信发货运行配置已写入数据库')
+      ElMessage.success('微信订单同步设置已保存')
     } catch (error) {
       if (isHttpError(error) && error.httpStatus === 409) {
         ElMessage.warning('运行配置已被其他管理员修改，已刷新为最新状态')
@@ -212,8 +208,6 @@
     color: var(--el-text-color-primary);
   }
 
-  .runtime-subtitle,
-  .runtime-switch-tip,
   .runtime-meta {
     margin-top: 3px;
     font-size: 12px;
@@ -235,8 +229,34 @@
     border-radius: 8px;
   }
 
-  .runtime-reason {
-    margin-top: 16px;
+  .runtime-switch-title {
+    display: inline-flex;
+    gap: 5px;
+    align-items: center;
+  }
+
+  .runtime-help {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 2px;
+    margin: 0;
+    font-size: 15px;
+    color: var(--el-text-color-secondary);
+    cursor: pointer;
+    background: transparent;
+    border: 0;
+    border-radius: 4px;
+
+    &:hover {
+      color: var(--el-color-primary);
+    }
+
+    &:focus-visible {
+      color: var(--el-color-primary);
+      outline: 2px solid var(--el-color-primary-light-5);
+      outline-offset: 1px;
+    }
   }
 
   @media (max-width: 760px) {
