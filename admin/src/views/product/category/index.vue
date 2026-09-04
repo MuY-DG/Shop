@@ -82,6 +82,15 @@
                   >
                     编辑
                   </ElButton>
+                  <ElButton
+                    v-if="canDeleteCategory"
+                    link
+                    type="danger"
+                    :loading="categoryDeletingIds.has(data.id)"
+                    @click.stop="requestCategoryDelete(data)"
+                  >
+                    删除
+                  </ElButton>
                 </div>
               </div>
             </template>
@@ -116,15 +125,25 @@
 <script setup lang="ts">
   import { computed, onMounted, ref } from 'vue'
   import { FolderOpened, Plus, Rank, Refresh } from '@element-plus/icons-vue'
-  import { ElImage, ElMessage, type AllowDropFunction, type NodeDropType } from 'element-plus'
+  import {
+    ElImage,
+    ElMessage,
+    ElMessageBox,
+    type AllowDropFunction,
+    type NodeDropType
+  } from 'element-plus'
   import {
     createProductCategory,
+    deleteProductCategory,
     fetchProductCategories,
+    fetchProductCategoryDeleteImpact,
     updateProductCategory,
     updateProductCategoryPosition
   } from '@/api/product'
   import { useAuth } from '@/hooks'
+  import { isHttpError } from '@/utils/http/error'
   import CategoryDialog from './modules/category-dialog.vue'
+  import { buildCategoryDeleteBlockedMessage } from './category-delete'
 
   defineOptions({ name: 'ProductCategory' })
 
@@ -138,6 +157,7 @@
   const saving = ref(false)
   const categorySorting = ref(false)
   const categoryStatusUpdatingIds = ref(new Set<number>())
+  const categoryDeletingIds = ref(new Set<number>())
   const categories = ref<Api.Product.Category[]>([])
   const dialogVisible = ref(false)
   const currentCategory = ref<Api.Product.Category | null>(null)
@@ -147,6 +167,7 @@
   const { hasAuth } = useAuth()
   const canCreateCategory = computed(() => hasAuth('product:category:create'))
   const canUpdateCategory = computed(() => hasAuth('product:category:update'))
+  const canDeleteCategory = computed(() => hasAuth('product:category:delete'))
   const canSortCategories = computed(() => canUpdateCategory.value && !categorySorting.value)
 
   const collectNodeIds = (category: Api.Product.Category): number[] => {
@@ -279,6 +300,55 @@
     }
   }
 
+  const isMessageBoxCancel = (error: unknown) => error === 'cancel' || error === 'close'
+
+  const showCategoryDeleteBlockers = async (impact: Api.Product.CategoryDeleteImpact) => {
+    await ElMessageBox.alert(buildCategoryDeleteBlockedMessage(impact), '无法删除商品分类', {
+      type: 'warning',
+      confirmButtonText: '我知道了',
+      customClass: 'category-delete-blocked-dialog'
+    }).catch(() => undefined)
+  }
+
+  const requestCategoryDelete = async (category: Api.Product.Category) => {
+    if (!canDeleteCategory.value || categoryDeletingIds.value.has(category.id)) return
+
+    categoryDeletingIds.value.add(category.id)
+    try {
+      const impact = await fetchProductCategoryDeleteImpact(category.id)
+      if (!impact.deletable) {
+        await showCategoryDeleteBlockers(impact)
+        return
+      }
+      await ElMessageBox.confirm(
+        `确定永久删除商品分类“${category.name}”吗？删除后不可恢复。`,
+        '删除商品分类',
+        {
+          type: 'warning',
+          confirmButtonText: '确定删除',
+          cancelButtonText: '取消'
+        }
+      )
+      await deleteProductCategory(category.id)
+      ElMessage.success('商品分类已删除')
+      await loadCategories()
+    } catch (error) {
+      if (isMessageBoxCancel(error)) return
+      if (isHttpError(error) && error.code === 200009) {
+        try {
+          const latestImpact = await fetchProductCategoryDeleteImpact(category.id)
+          await showCategoryDeleteBlockers(latestImpact)
+        } catch (impactError) {
+          ElMessage.error(isHttpError(impactError) ? impactError.message : '获取分类占用情况失败')
+        }
+        return
+      }
+      ElMessage.error(isHttpError(error) ? error.message : '删除失败，商品分类未被删除')
+    } finally {
+      categoryDeletingIds.value.delete(category.id)
+    }
+  }
+
   const loadCategories = async () => {
     loading.value = true
     try {
@@ -368,9 +438,14 @@
   .category-manager__table-header,
   .category-manager__tree-row {
     display: grid;
-    grid-template-columns: minmax(220px, 1fr) 90px 100px 180px;
+    grid-template-columns: minmax(220px, 1fr) 90px 100px 210px;
     gap: 12px;
     align-items: center;
+  }
+
+  :global(.category-delete-blocked-dialog .el-message-box__message) {
+    line-height: 1.75;
+    white-space: pre-line;
   }
 
   .category-manager__table-header {

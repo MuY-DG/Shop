@@ -5,8 +5,10 @@ import org.muybaby.shopserver.common.api.ApiResponse;
 import org.muybaby.shopserver.product.dto.AdminCategoryRequest;
 import org.muybaby.shopserver.product.dto.AdminCategoryResponse;
 import org.muybaby.shopserver.product.dto.AdminCategoryPositionRequest;
+import org.muybaby.shopserver.product.dto.AdminCategoryDeleteImpactResponse;
 import org.muybaby.shopserver.product.service.AdminProductService;
 import org.muybaby.shopserver.product.service.ProductReadMapper;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -25,6 +27,7 @@ public class AdminProductCategoryController {
     private static final String READ_AUTHORITIES = "hasAnyAuthority(" +
             "'product:category:create', " +
             "'product:category:update', " +
+            "'product:category:delete', " +
             "'product:spu:create', " +
             "'product:spu:update', " +
             "'product:spu:publish', " +
@@ -72,6 +75,19 @@ public class AdminProductCategoryController {
             @Valid @RequestBody AdminCategoryPositionRequest request
     ) {
         adminProductService.updateCategoryPosition(categoryId, request);
+        return ApiResponse.success();
+    }
+
+    @GetMapping("/{categoryId}/delete-impact")
+    @PreAuthorize("hasAuthority('product:category:delete')")
+    public ApiResponse<AdminCategoryDeleteImpactResponse> deleteImpact(@PathVariable Long categoryId) {
+        return ApiResponse.success(adminProductService.categoryDeleteImpact(categoryId));
+    }
+
+    @DeleteMapping("/{categoryId}")
+    @PreAuthorize("hasAuthority('product:category:delete')")
+    public ApiResponse<Void> delete(@PathVariable Long categoryId) {
+        adminProductService.deleteCategory(categoryId);
         return ApiResponse.success();
     }
 }

@@ -46,6 +46,7 @@ public enum ErrorCode {
     PRODUCT_PURGE_HAS_ACTIVE_BANNER(200006, "Product is referenced by an enabled banner and cannot be permanently deleted"),
     PRODUCT_PURGE_HAS_ACTIVE_HOME_ITEM(200007, "Product is referenced by an enabled home placement and cannot be permanently deleted"),
     PRODUCT_CATEGORY_CYCLE(200008, "Product category cycle is not allowed"),
+    PRODUCT_CATEGORY_IN_USE(200009, "商品分类正在被引用，请先处理占用项"),
     PRODUCT_REVIEW_NOT_FOUND(200200, "Product review not found"),
     PRODUCT_REVIEW_NOT_ELIGIBLE(200201, "Only completed purchases can be reviewed"),
     PRODUCT_REVIEW_ALREADY_EXISTS(200202, "This order item has already been reviewed"),

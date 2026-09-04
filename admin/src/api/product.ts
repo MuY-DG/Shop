@@ -34,6 +34,20 @@ export function updateProductCategoryPosition(
   })
 }
 
+export function fetchProductCategoryDeleteImpact(categoryId: number) {
+  return request.get<Api.Product.CategoryDeleteImpact>({
+    url: `/admin/product/categories/${categoryId}/delete-impact`,
+    showErrorMessage: false
+  })
+}
+
+export function deleteProductCategory(categoryId: number) {
+  return request.del<void>({
+    url: `/admin/product/categories/${categoryId}`,
+    showErrorMessage: false
+  })
+}
+
 export function fetchProductSpus(params: Api.Product.SpuSearchParams) {
   return request.get<Api.Product.SpuList>({
     url: '/admin/product/spus',

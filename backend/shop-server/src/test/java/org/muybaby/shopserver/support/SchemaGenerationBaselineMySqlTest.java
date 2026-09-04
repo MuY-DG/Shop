@@ -49,8 +49,8 @@ class SchemaGenerationBaselineMySqlTest {
         Flyway flyway = MigrationTestSupport.migrateToLatest(
                 MYSQL.getJdbcUrl(), MYSQL.getUsername(), MYSQL.getPassword());
 
-        assertThat(flyway.info().current().getVersion().getVersion()).isEqualTo("16");
-        assertThat(flyway.info().applied()).hasSize(16);
+        assertThat(flyway.info().current().getVersion().getVersion()).isEqualTo("17");
+        assertThat(flyway.info().applied()).hasSize(17);
         assertThat(jdbc.sql("select compliance_type from product_spu order by id")
                 .query(String.class).list()).containsExactly("NON_FOOD", "FOOD", "NON_FOOD");
         assertThat(jdbc.sql("select icon from admin_menu where id = 105")

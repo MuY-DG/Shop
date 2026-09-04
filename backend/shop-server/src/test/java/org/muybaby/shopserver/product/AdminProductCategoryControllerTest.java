@@ -19,6 +19,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.hasItem;
 import static org.hamcrest.Matchers.startsWith;
 import static org.muybaby.shopserver.support.TestHashSupport.sha256;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
@@ -246,6 +247,105 @@ class AdminProductCategoryControllerTest {
     }
 
     @Test
+    void adminCanDeleteUnreferencedLeafCategoryAndReleaseItsIconUsage() throws Exception {
+        String token = loginAndExtractToken();
+        long firstCategoryId = createCategory(token, 0, "删除排序分类一", 0);
+        long categoryId = createCategory(token, 0, "待删除空分类", 0);
+        long thirdCategoryId = createCategory(token, 0, "删除排序分类三", 0);
+        StoredFile iconFile = insertStorageFile("category-icon-delete.png");
+
+        mockMvc.perform(put("/admin/product/categories/{categoryId}", categoryId)
+                        .header("Authorization", "Bearer " + token)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"parentId":0,"name":"待删除空分类","icon":"%s","iconFileId":%d,"sortOrder":1,"status":"DISABLED"}
+                                """.formatted(iconFile.publicUrl(), iconFile.id())))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(get("/admin/product/categories/{categoryId}/delete-impact", categoryId)
+                        .header("Authorization", "Bearer " + token))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.categoryName").value("待删除空分类"))
+                .andExpect(jsonPath("$.data.deletable").value(true))
+                .andExpect(jsonPath("$.data.blockers").isEmpty());
+
+        mockMvc.perform(delete("/admin/product/categories/{categoryId}", categoryId)
+                        .header("Authorization", "Bearer " + token))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(200));
+
+        assertThat(categoryExists(categoryId)).isFalse();
+        assertThat(activeUsageCount(iconFile.id(), "PRODUCT_CATEGORY_ICON", "PRODUCT_CATEGORY", categoryId)).isZero();
+        assertThat(removedUsageCount(iconFile.id(), "PRODUCT_CATEGORY_ICON", "PRODUCT_CATEGORY", categoryId)).isEqualTo(1);
+        assertThat(categoryIds(0)).containsSubsequence(firstCategoryId, thirdCategoryId);
+        assertThat(categorySortOrders(0)).containsExactly(0, 1);
+    }
+
+    @Test
+    void deleteImpactExplainsEveryCategoryReferenceAndDeleteIsRejected() throws Exception {
+        String token = loginAndExtractToken();
+        long categoryId = createCategory(token, 0, "被占用分类", 0);
+        createCategory(token, categoryId, "占用子分类", 0);
+
+        jdbcClient.sql("""
+                        insert into product_spu (category_id, title, selling_points, detail_html, status)
+                        values (:categoryId, '占用商品', '', '', 'DRAFT')
+                        """)
+                .param("categoryId", categoryId)
+                .update();
+        jdbcClient.sql("""
+                        insert into product_parameter_definition
+                            (parameter_code, parameter_name, value_type, status)
+                        values ('DELETE_CATEGORY_PARAM', '占用参数', 'TEXT', 'ENABLED')
+                        """).update();
+        Long parameterId = jdbcClient.sql("""
+                        select id from product_parameter_definition
+                        where parameter_code = 'DELETE_CATEGORY_PARAM'
+                        """).query(Long.class).single();
+        jdbcClient.sql("""
+                        insert into product_category_parameter (category_id, parameter_id)
+                        values (:categoryId, :parameterId)
+                        """)
+                .param("categoryId", categoryId)
+                .param("parameterId", parameterId)
+                .update();
+        jdbcClient.sql("""
+                        insert into home_category_item (category_id, image_file_id, status)
+                        values (:categoryId, 999999, 'DISABLED')
+                        """)
+                .param("categoryId", categoryId)
+                .update();
+        jdbcClient.sql("""
+                        insert into home_banner (title, jump_type, jump_target_id, status)
+                        values ('占用轮播图', 'CATEGORY', :categoryId, 'DISABLED')
+                        """)
+                .param("categoryId", categoryId)
+                .update();
+
+        mockMvc.perform(get("/admin/product/categories/{categoryId}/delete-impact", categoryId)
+                        .header("Authorization", "Bearer " + token))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.deletable").value(false))
+                .andExpect(jsonPath("$.data.blockers[*].type", org.hamcrest.Matchers.contains(
+                        "CHILD_CATEGORY", "PRODUCT", "HOME_CATEGORY", "PRODUCT_PARAMETER", "HOME_BANNER"
+                )))
+                .andExpect(jsonPath("$.data.blockers[*].count", org.hamcrest.Matchers.everyItem(org.hamcrest.Matchers.is(1))))
+                .andExpect(jsonPath("$.data.blockers[0].examples[0]", startsWith("占用子分类 (#")))
+                .andExpect(jsonPath("$.data.blockers[1].examples[0]", startsWith("占用商品 (#")))
+                .andExpect(jsonPath("$.data.blockers[2].examples[0]", startsWith("配置 #")))
+                .andExpect(jsonPath("$.data.blockers[3].examples[0]", startsWith("占用参数 (#")))
+                .andExpect(jsonPath("$.data.blockers[4].examples[0]", startsWith("占用轮播图 (#")));
+
+        mockMvc.perform(delete("/admin/product/categories/{categoryId}", categoryId)
+                        .header("Authorization", "Bearer " + token))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value(ErrorCode.PRODUCT_CATEGORY_IN_USE.code()))
+                .andExpect(jsonPath("$.msg").value(ErrorCode.PRODUCT_CATEGORY_IN_USE.message()));
+
+        assertThat(categoryExists(categoryId)).isTrue();
+    }
+
+    @Test
     void appTokenCannotCallAdminCategoryApi() throws Exception {
         String appToken = appLoginAndExtractToken();
 
@@ -327,6 +427,14 @@ class AdminProductCategoryControllerTest {
                 .param("categoryId", categoryId)
                 .query(Long.class)
                 .single();
+    }
+
+    private boolean categoryExists(long categoryId) {
+        Long count = jdbcClient.sql("select count(*) from product_category where id = :categoryId")
+                .param("categoryId", categoryId)
+                .query(Long.class)
+                .single();
+        return count != null && count == 1L;
     }
 
     private int activeUsageCount(long fileId, String usageType, String ownerType, long ownerId) {

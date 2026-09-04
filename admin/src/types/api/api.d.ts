@@ -280,6 +280,20 @@ declare namespace Api {
       index: number
     }
 
+    interface CategoryDeleteBlocker {
+      type: 'CHILD_CATEGORY' | 'PRODUCT' | 'HOME_CATEGORY' | 'PRODUCT_PARAMETER' | 'HOME_BANNER'
+      label: string
+      count: number
+      examples: string[]
+    }
+
+    interface CategoryDeleteImpact {
+      categoryId: number
+      categoryName: string
+      deletable: boolean
+      blockers: CategoryDeleteBlocker[]
+    }
+
     type SpuList = Api.Common.PaginatedResponse<SpuListItem>
 
     interface SpuListItem {

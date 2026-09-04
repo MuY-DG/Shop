@@ -99,7 +99,8 @@ class AdminMenuControllerTest {
                 )))
                 .andExpect(jsonPath("$.data[1].children[0].meta.authList[*].authMark", containsInAnyOrder(
                         "product:category:create",
-                        "product:category:update"
+                        "product:category:update",
+                        "product:category:delete"
                 )))
                 .andExpect(jsonPath("$.data[1].children[1].meta.authList[*].authMark", containsInAnyOrder(
                         "product:spu:create",

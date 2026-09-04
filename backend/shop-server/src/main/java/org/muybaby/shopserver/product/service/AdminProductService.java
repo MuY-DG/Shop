@@ -14,6 +14,8 @@ import org.muybaby.shopserver.product.SkuStatus;
 import org.muybaby.shopserver.product.StockChangeType;
 import org.muybaby.shopserver.product.dto.AdminCategoryPositionRequest;
 import org.muybaby.shopserver.product.dto.AdminCategoryRequest;
+import org.muybaby.shopserver.product.dto.AdminCategoryDeleteBlockerResponse;
+import org.muybaby.shopserver.product.dto.AdminCategoryDeleteImpactResponse;
 import org.muybaby.shopserver.product.dto.AdminProductImageUpsertRequest;
 import org.muybaby.shopserver.product.dto.AdminSkuUpsertRequest;
 import org.muybaby.shopserver.product.dto.AdminSpuUpsertRequest;
@@ -211,6 +213,141 @@ public class AdminProductService {
         }
         updateCategoryOrder(targetOrder);
         publishHomeChanged();
+    }
+
+    public AdminCategoryDeleteImpactResponse categoryDeleteImpact(Long categoryId) {
+        ProductCategory category = findCategory(categoryId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.PRODUCT_CATEGORY_UNAVAILABLE));
+        return buildCategoryDeleteImpact(category);
+    }
+
+    @Transactional
+    public void deleteCategory(Long categoryId) {
+        lockCategoryTree();
+        ProductCategory category = findCategoryForUpdate(categoryId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.PRODUCT_CATEGORY_UNAVAILABLE));
+        AdminCategoryDeleteImpactResponse impact = buildCategoryDeleteImpact(category);
+        if (!impact.deletable()) {
+            throw new BusinessException(ErrorCode.PRODUCT_CATEGORY_IN_USE);
+        }
+
+        List<Long> siblingOrder = siblingCategoryIds(category.parentId(), categoryId);
+        int deletedRows = jdbcClient.sql("DELETE FROM product_category WHERE id = :categoryId")
+                .param("categoryId", categoryId)
+                .update();
+        if (deletedRows != 1) {
+            throw new BusinessException(ErrorCode.PRODUCT_CATEGORY_UNAVAILABLE);
+        }
+        storageUsageService.removeOwnerUsages(StorageUsageOwnerType.PRODUCT_CATEGORY, categoryId);
+        updateCategoryOrder(siblingOrder);
+        publishHomeChanged();
+    }
+
+    private AdminCategoryDeleteImpactResponse buildCategoryDeleteImpact(ProductCategory category) {
+        List<AdminCategoryDeleteBlockerResponse> blockers = new ArrayList<>();
+        addCategoryDeleteBlocker(
+                blockers,
+                "CHILD_CATEGORY",
+                "子分类",
+                "SELECT COUNT(*) FROM product_category WHERE parent_id = :categoryId",
+                """
+                        SELECT CONCAT(name, ' (#', id, ')')
+                        FROM product_category
+                        WHERE parent_id = :categoryId
+                        ORDER BY sort_order, id
+                        LIMIT 3
+                        """,
+                category.id()
+        );
+        addCategoryDeleteBlocker(
+                blockers,
+                "PRODUCT",
+                "商品（含回收站和已清理记录）",
+                "SELECT COUNT(*) FROM product_spu WHERE category_id = :categoryId",
+                """
+                        SELECT CONCAT(title, ' (#', id, ')')
+                        FROM product_spu
+                        WHERE category_id = :categoryId
+                        ORDER BY id
+                        LIMIT 3
+                        """,
+                category.id()
+        );
+        addCategoryDeleteBlocker(
+                blockers,
+                "HOME_CATEGORY",
+                "首页分类导航",
+                "SELECT COUNT(*) FROM home_category_item WHERE category_id = :categoryId",
+                """
+                        SELECT CONCAT('配置 #', id, '（', status, '）')
+                        FROM home_category_item
+                        WHERE category_id = :categoryId
+                        ORDER BY id
+                        LIMIT 3
+                        """,
+                category.id()
+        );
+        addCategoryDeleteBlocker(
+                blockers,
+                "PRODUCT_PARAMETER",
+                "商品参数配置",
+                "SELECT COUNT(*) FROM product_category_parameter WHERE category_id = :categoryId",
+                """
+                        SELECT CONCAT(d.parameter_name, ' (#', d.id, ')')
+                        FROM product_category_parameter cp
+                        JOIN product_parameter_definition d ON d.id = cp.parameter_id
+                        WHERE cp.category_id = :categoryId
+                        ORDER BY d.sort_order, d.id
+                        LIMIT 3
+                        """,
+                category.id()
+        );
+        addCategoryDeleteBlocker(
+                blockers,
+                "HOME_BANNER",
+                "首页轮播图跳转",
+                """
+                        SELECT COUNT(*)
+                        FROM home_banner
+                        WHERE jump_type = 'CATEGORY' AND jump_target_id = :categoryId
+                        """,
+                """
+                        SELECT CONCAT(title, ' (#', id, ')')
+                        FROM home_banner
+                        WHERE jump_type = 'CATEGORY' AND jump_target_id = :categoryId
+                        ORDER BY id
+                        LIMIT 3
+                        """,
+                category.id()
+        );
+        return new AdminCategoryDeleteImpactResponse(
+                category.id(),
+                category.name(),
+                blockers.isEmpty(),
+                List.copyOf(blockers)
+        );
+    }
+
+    private void addCategoryDeleteBlocker(
+            List<AdminCategoryDeleteBlockerResponse> blockers,
+            String type,
+            String label,
+            String countSql,
+            String examplesSql,
+            Long categoryId
+    ) {
+        Long count = jdbcClient.sql(countSql)
+                .param("categoryId", categoryId)
+                .query(Long.class)
+                .single();
+        if (count == null || count == 0L) {
+            return;
+        }
+        List<String> examples = jdbcClient.sql(examplesSql)
+                .param("categoryId", categoryId)
+                .query(String.class)
+                .list();
+        blockers.add(new AdminCategoryDeleteBlockerResponse(type, label, count, List.copyOf(examples)));
     }
 
     @Transactional

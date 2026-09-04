@@ -24,8 +24,8 @@ class SchemaGenerationBaselineTest {
         Flyway flyway = MigrationTestSupport.migrateToLatest(jdbcUrl, "sa", "");
         JdbcClient jdbc = JdbcClient.create(new DriverManagerDataSource(jdbcUrl, "sa", ""));
 
-        assertThat(flyway.info().current().getVersion().getVersion()).isEqualTo("16");
-        assertThat(flyway.info().applied()).hasSize(16);
+        assertThat(flyway.info().current().getVersion().getVersion()).isEqualTo("17");
+        assertThat(flyway.info().applied()).hasSize(17);
         assertThat(tableCount(jdbc)).isEqualTo(124);
 
         assertThat(tableExists(jdbc, "payment_config_snapshot")).isFalse();
@@ -168,7 +168,7 @@ class SchemaGenerationBaselineTest {
 
     private void assertReferenceData(JdbcClient jdbc) {
         assertThat(jdbc.sql("select count(*) from admin_role").query(Long.class).single()).isEqualTo(5);
-        assertThat(jdbc.sql("select count(*) from admin_permission").query(Long.class).single()).isEqualTo(122);
+        assertThat(jdbc.sql("select count(*) from admin_permission").query(Long.class).single()).isEqualTo(123);
         assertThat(jdbc.sql("select count(*) from admin_menu").query(Long.class).single()).isEqualTo(61);
         assertThat(jdbc.sql("select count(*) from admin_permission where auth_mark like 'wechat-service-card:%'")
                 .query(Long.class).single()).isZero();
@@ -177,7 +177,7 @@ class SchemaGenerationBaselineTest {
         assertThat(jdbc.sql("select icon from admin_menu where id = 105")
                 .query(String.class).single()).isEqualTo("ri:route-line");
         assertThat(jdbc.sql("select count(*) from admin_role_permission where role_id = 1")
-                .query(Long.class).single()).isEqualTo(122);
+                .query(Long.class).single()).isEqualTo(123);
         assertThat(jdbc.sql("select count(*) from admin_user_role where user_id = 1 and role_id = 1")
                 .query(Long.class).single()).isEqualTo(1);
         assertThat(jdbc.sql("select checkpoint_name from payment_secret_rotation_checkpoint order by checkpoint_name")

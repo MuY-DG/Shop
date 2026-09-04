@@ -97,6 +97,7 @@ class AdminAuthControllerTest {
                         "system:log:read",
                         "product:category:create",
                         "product:category:update",
+                        "product:category:delete",
                         "product:spu:create",
                         "product:spu:update",
                         "product:spu:publish",
