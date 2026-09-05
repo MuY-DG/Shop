@@ -66,6 +66,7 @@ export interface AfterSaleEligibilityItem {
   purchasedQuantity: number
   refundedQuantity: number
   availableQuantity: number
+  returnableQuantity: number
   paidAmountBasisCent: number
 }
 

@@ -31,19 +31,22 @@ public class RefundFinalizationService {
     private final PaymentConfigIdentityValidator paymentConfigIdentityValidator;
     private final RefundInventoryRestockService refundInventoryRestockService;
     private final AfterSaleStatusLogService afterSaleStatusLogService;
+    private final RefundFulfillmentCompletionService fulfillmentCompletionService;
 
     public RefundFinalizationService(
             JdbcClient jdbcClient,
             OrderStatusLogService orderStatusLogService,
             PaymentConfigIdentityValidator paymentConfigIdentityValidator,
             RefundInventoryRestockService refundInventoryRestockService,
-            AfterSaleStatusLogService afterSaleStatusLogService
+            AfterSaleStatusLogService afterSaleStatusLogService,
+            RefundFulfillmentCompletionService fulfillmentCompletionService
     ) {
         this.jdbcClient = jdbcClient;
         this.orderStatusLogService = orderStatusLogService;
         this.paymentConfigIdentityValidator = paymentConfigIdentityValidator;
         this.refundInventoryRestockService = refundInventoryRestockService;
         this.afterSaleStatusLogService = afterSaleStatusLogService;
+        this.fulfillmentCompletionService = fulfillmentCompletionService;
     }
 
     @Transactional
@@ -456,8 +459,13 @@ public class RefundFinalizationService {
             throw new BusinessException(ErrorCode.ORDER_STATE_CONFLICT);
         }
         boolean fullyRefunded = refundedAmountCent == refund.paidAmountCent();
+        LocalDateTime completedShipmentAt = !fullyRefunded
+                && OrderStatus.PARTIALLY_SHIPPED.name().equals(refund.orderStatus())
+                ? fulfillmentCompletionService.markFinalShipmentIfFulfilled(refund.orderId(), now).orElse(null)
+                : null;
         String targetOrderStatus = fullyRefunded
-                ? OrderStatus.REFUNDED.name() : refund.orderStatus();
+                ? OrderStatus.REFUNDED.name()
+                : completedShipmentAt != null ? OrderStatus.SHIPPED.name() : refund.orderStatus();
         int orderRows = jdbcClient.sql("""
                             update shop_order
                             set status = :status,
@@ -465,6 +473,7 @@ public class RefundFinalizationService {
                                 refunded_amount_cent = :refundedAmountCent,
                                 last_refund_success_at = :successAt,
                                 refunded_at = case when :fullyRefunded then :successAt else refunded_at end,
+                                shipped_at = coalesce(:completedShipmentAt, shipped_at),
                                 updated_at = :updatedAt
                             where id = :orderId
                               and status = :expectedStatus
@@ -477,6 +486,7 @@ public class RefundFinalizationService {
                     .param("refundedAmountCent", refundedAmountCent)
                     .param("successAt", successAt)
                     .param("fullyRefunded", fullyRefunded)
+                    .param("completedShipmentAt", completedShipmentAt)
                     .param("updatedAt", now)
                     .param("orderId", refund.orderId())
                     .param("expectedStatus", refund.orderStatus())

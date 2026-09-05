@@ -218,7 +218,8 @@ public class AppOrderService {
         if (allocatedPayableAmountCent != payableAmountCent) {
             throw new IllegalStateException("Order item paid allocation does not balance");
         }
-        List<Long> orderItemIds = insertOrderItems(orderId, selection.previewItems(), operatingSnapshots, now);
+        List<Long> orderItemIds = insertOrderItems(
+                orderId, selection.previewItems(), operatingSnapshots, selection.categorySnapshots(), now);
         applyStockLocks(userId, orderId, orderItemIds, selection.previewItems(), now);
         if (coupon.userCouponId() != null) {
             lockCoupon(userId, coupon.userCouponId(), orderId, now);
@@ -1113,19 +1114,22 @@ public class AppOrderService {
             Long orderId,
             List<OrderPreviewItemResponse> items,
             List<OrderItemOperatingSnapshot> operatingSnapshots,
+            List<CheckoutSelection.CategorySnapshot> categorySnapshots,
             LocalDateTime now
     ) {
-        if (items.size() != operatingSnapshots.size()) {
+        if (items.size() != operatingSnapshots.size() || items.size() != categorySnapshots.size()) {
             throw new IllegalArgumentException("Operating snapshots must align with order items");
         }
         List<Long> orderItemIds = new ArrayList<>(items.size());
         for (int index = 0; index < items.size(); index++) {
             OrderPreviewItemResponse item = items.get(index);
             OrderItemOperatingSnapshot snapshot = operatingSnapshots.get(index);
+            CheckoutSelection.CategorySnapshot category = categorySnapshots.get(index);
             KeyHolder keyHolder = new GeneratedKeyHolder();
             namedParameterJdbcTemplate.update("""
                             insert into order_item (
                                 order_id, sku_id, spu_id, product_title, product_subtitle, main_image,
+                                category_id_snapshot, category_name_snapshot,
                                 main_image_file_id, sku_image, sku_image_file_id, display_image, display_image_file_id,
                                 sku_code, spec_text, original_price_cent,
                                 unit_price_cent, retail_unit_price_cent, wholesale_tier_min_quantity,
@@ -1135,6 +1139,7 @@ public class AppOrderService {
                             )
                             values (
                                 :orderId, :skuId, :spuId, :productTitle, :productSubtitle, :mainImage,
+                                :categoryIdSnapshot, :categoryNameSnapshot,
                                 :mainImageFileId, :skuImage, :skuImageFileId, :displayImage, :displayImageFileId, :skuCode, :specText, :originalPriceCent,
                                 :unitPriceCent, :retailUnitPriceCent, :wholesaleTierMinQuantity,
                                 :quantity, :lineOriginalAmountCent, :lineAmountCent,
@@ -1146,6 +1151,8 @@ public class AppOrderService {
                             .addValue("orderId", orderId)
                             .addValue("skuId", item.skuId())
                             .addValue("spuId", item.spuId())
+                            .addValue("categoryIdSnapshot", category.categoryId())
+                            .addValue("categoryNameSnapshot", category.categoryName())
                             .addValue("productTitle", item.productTitle())
                             .addValue("productSubtitle", defaultString(item.productSubtitle()))
                             .addValue("mainImage", defaultString(item.mainImage()))

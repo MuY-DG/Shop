@@ -1,5 +1,16 @@
 <template>
   <div class="specification-tab">
+    <ElAlert
+      v-if="modelValue.skus.some((sku) => sku.id != null)"
+      type="info"
+      :closable="false"
+      show-icon
+      :title="
+        canAdjustStock
+          ? '已保存规格的库存仅供查看；如需调整，请在商品列表点击「调库存」。新增规格可设置初始库存。'
+          : '库存仅供查看；如需调整，请联系有库存管理权限的管理员。'
+      "
+    />
     <section class="editor-section editor-section--type">
       <div class="spec-type-row">
         <span class="spec-type-row__label">规格类型</span>
@@ -112,8 +123,13 @@
               @update:model-value="updateSingleMoney('originalPriceCent', $event)"
             />
           </ElFormItem>
-          <ElFormItem class="single-sku-form__number" label="库存">
+          <ElFormItem
+            class="single-sku-form__number"
+            :label="singleSku.id == null ? '初始库存' : '库存（只读）'"
+          >
+            <span v-if="singleSku.id != null">{{ singleSku.stockAvailable }}</span>
             <ElInputNumber
+              v-else
               :model-value="singleSku.stockAvailable"
               :min="0"
               :precision="0"

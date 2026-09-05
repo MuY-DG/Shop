@@ -1,6 +1,7 @@
 package org.muybaby.shopserver.aftersale;
 
 import org.junit.jupiter.api.Test;
+import org.muybaby.shopserver.common.error.ErrorCode;
 import org.muybaby.shopserver.payment.PaymentTestSupport;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -30,6 +31,132 @@ class AppAfterSaleControllerTest extends PaymentTestSupport {
     private static final byte[] TINY_PNG = Base64.getDecoder().decode(
             "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a4x8AAAAASUVORK5CYII="
     );
+
+    @Test
+    void unshippedOrderOffersRefundOnlyAndRejectsReturnQuoteAndApplication() throws Exception {
+        seedEnabledPaymentConfig();
+        AppLoginSession session = appLogin("return-before-shipment");
+        SeedPaidOrder order = seedPaidOrder(session, 2000L, "PAID", "wx-return-before-shipment");
+        long itemId = jdbcClient.sql("select id from order_item where order_id = :id")
+                .param("id", order.orderId()).query(Long.class).single();
+
+        mockMvc.perform(get("/app/orders/{orderId}/after-sales/eligibility", order.orderId())
+                        .header("Authorization", "Bearer " + session.token()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.availableTypes.length()").value(1))
+                .andExpect(jsonPath("$.data.availableTypes[0]").value("REFUND_ONLY"))
+                .andExpect(jsonPath("$.data.items[0].returnableQuantity").value(0));
+        mockMvc.perform(post("/app/orders/{orderId}/after-sales/quote", order.orderId())
+                        .header("Authorization", "Bearer " + session.token())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"afterSaleType":"RETURN_REFUND","items":[{"orderItemId":%d,"quantity":1}]}
+                                """.formatted(itemId)))
+                .andExpect(status().isBadRequest());
+        mockMvc.perform(post("/app/orders/{orderId}/after-sales", order.orderId())
+                        .header("Authorization", "Bearer " + session.token())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"afterSaleType\":\"RETURN_REFUND\",\"reason\":\"退货退款\"}"))
+                .andExpect(status().isBadRequest());
+        assertThat(jdbcClient.sql("select count(*) from after_sale_request where order_id = :id")
+                .param("id", order.orderId()).query(Integer.class).single()).isZero();
+
+        jdbcClient.sql("update shop_order set status = 'PARTIALLY_SHIPPED' where id = :id")
+                .param("id", order.orderId()).update();
+        jdbcClient.sql("update order_item set refunded_quantity = 1 where id = :id")
+                .param("id", itemId).update();
+        mockMvc.perform(get("/app/orders/{orderId}/after-sales/eligibility", order.orderId())
+                        .header("Authorization", "Bearer " + session.token()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.items[0].availableQuantity").value(0))
+                .andExpect(jsonPath("$.data.items[0].returnableQuantity").value(0));
+        for (String endpoint : new String[]{"/after-sales/quote", "/after-sales"}) {
+            mockMvc.perform(post("/app/orders/" + order.orderId() + endpoint)
+                            .header("Authorization", "Bearer " + session.token())
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content("""
+                                    {"afterSaleType":"REFUND_ONLY","reason":"再次退款",
+                                     "items":[{"orderItemId":%d,"quantity":1}]}
+                                    """.formatted(itemId)))
+                    .andExpect(status().isConflict())
+                    .andExpect(jsonPath("$.code").value(ErrorCode.ORDER_FULFILLMENT_UNRESOLVED.code()));
+        }
+    }
+
+    @Test
+    void partialShipmentLimitsReturnQuoteAndDefaultApplicationToShippedUnits() throws Exception {
+        seedEnabledPaymentConfig();
+        AppLoginSession session = appLogin("return-partial-shipment");
+        SeedPaidOrder order = seedPaidOrder(session, 2000L, "PARTIALLY_SHIPPED", "wx-return-partial-shipment");
+        long itemId = jdbcClient.sql("select id from order_item where order_id = :id")
+                .param("id", order.orderId()).query(Long.class).single();
+        long shipmentId = order.orderId() + 70_000_000L;
+        jdbcClient.sql("""
+                        insert into order_shipment (id, order_id, status, wechat_upload_status, shipped_at)
+                        values (:id, :orderId, 'SHIPPED', 'SKIPPED', current_timestamp)
+                        """).param("id", shipmentId).param("orderId", order.orderId()).update();
+        jdbcClient.sql("""
+                        insert into order_shipment_item (shipment_id, order_item_id, quantity)
+                        values (:shipmentId, :itemId, 1)
+                        """).param("shipmentId", shipmentId).param("itemId", itemId).update();
+
+        mockMvc.perform(get("/app/orders/{orderId}/after-sales/eligibility", order.orderId())
+                        .header("Authorization", "Bearer " + session.token()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.availableTypes.length()").value(2))
+                .andExpect(jsonPath("$.data.items[0].availableQuantity").value(2))
+                .andExpect(jsonPath("$.data.items[0].returnableQuantity").value(1));
+        mockMvc.perform(post("/app/orders/{orderId}/after-sales/quote", order.orderId())
+                        .header("Authorization", "Bearer " + session.token())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"afterSaleType":"RETURN_REFUND","items":[{"orderItemId":%d,"quantity":2}]}
+                                """.formatted(itemId)))
+                .andExpect(status().isBadRequest());
+        mockMvc.perform(post("/app/orders/{orderId}/after-sales/quote", order.orderId())
+                        .header("Authorization", "Bearer " + session.token())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"afterSaleType":"RETURN_REFUND","items":[{"orderItemId":%d,"quantity":1}]}
+                                """.formatted(itemId)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.requestedAmountCent").value(1000));
+        String defaultApplication = """
+                {"requestKey":"default-return-replay","afterSaleType":"RETURN_REFUND","reason":"已发商品退货"}
+                """;
+        String applied = mockMvc.perform(post("/app/orders/{orderId}/after-sales", order.orderId())
+                        .header("Authorization", "Bearer " + session.token())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(defaultApplication))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.items[0].requestedQuantity").value(1))
+                .andExpect(jsonPath("$.data.requestedAmountCent").value(1000))
+                .andReturn().getResponse().getContentAsString();
+        long afterSaleId = objectMapper.readTree(applied).path("data").path("id").asLong();
+        String admin = adminLogin();
+        String address = mockMvc.perform(post("/admin/after-sale-return-addresses")
+                        .header("Authorization", "Bearer " + admin)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"contactName":"售后仓","contactPhone":"13800138000",
+                                 "province":"广东省","city":"深圳市","district":"南山区",
+                                 "detailAddress":"科技园 1 号","enabled":true,"defaultAddress":true}
+                                """))
+                .andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
+        long addressId = objectMapper.readTree(address).path("data").path("id").asLong();
+        mockMvc.perform(post("/admin/after-sales/{id}/approve", afterSaleId)
+                        .header("Authorization", "Bearer " + admin)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"returnAddressId\":%d,\"auditNote\":\"同意退货\"}".formatted(addressId)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.status").value("WAITING_RETURN"));
+        mockMvc.perform(post("/app/orders/{orderId}/after-sales", order.orderId())
+                        .header("Authorization", "Bearer " + session.token())
+                        .contentType(MediaType.APPLICATION_JSON).content(defaultApplication))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.id").value(afterSaleId))
+                .andExpect(jsonPath("$.data.status").value("WAITING_RETURN"));
+    }
 
     @Test
     void appUploadsOrderScopedPrivateEvidenceThroughTheAfterSaleEndpoint() throws Exception {
@@ -241,6 +368,10 @@ class AppAfterSaleControllerTest extends PaymentTestSupport {
                 session, 8980L, "SHIPPED", "wx-return-refund-app-shipped");
         SeedPaidOrder refundOnlyOrder = seedPaidOrder(
                 session, 7980L, "SHIPPED", "wx-refund-only-app-shipped");
+        mockMvc.perform(get("/app/orders/{orderId}/after-sales/eligibility", returnOrder.orderId())
+                        .header("Authorization", "Bearer " + session.token()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.items[0].returnableQuantity").value(2));
         long returnEvidenceFileId = insertAppEvidenceFile(
                 session.userId(), returnOrder.orderId());
         long refundEvidenceFileId = insertAppEvidenceFile(

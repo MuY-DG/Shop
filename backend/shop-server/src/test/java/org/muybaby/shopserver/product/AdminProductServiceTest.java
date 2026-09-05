@@ -237,7 +237,7 @@ class AdminProductServiceTest {
     }
 
     @Test
-    void updateSpuWritesAdjustmentLogWhenExistingSkuStockChanges() {
+    void updateSpuIgnoresExistingSkuStockAndDoesNotWriteAdjustmentLog() {
         Long categoryId = adminProductService.createCategory(new AdminCategoryRequest(0L, "Update Stock Category", "", null, 1, "ENABLED"));
         Long spuId = adminProductService.createSpu(new AdminSpuUpsertRequest(
                 categoryId,
@@ -269,22 +269,18 @@ class AdminProductServiceTest {
                 List.of(new AdminSkuUpsertRequest(skuId, "UPDATE-STOCK-SKU", "{}", "默认", 1990L, 0L, 11, 100, "", null, "ENABLED", 1))
         ), 7L);
 
-        Map<String, Object> adjustmentLog = jdbcClient.sql("""
-                        select change_type, quantity_before, quantity_delta, quantity_after, operator_type, operator_id
+        Integer adjustmentLogCount = jdbcClient.sql("""
+                        select count(*)
                         from stock_log
                         where sku_id = :skuId and change_type = 'ADJUST'
                         """)
                 .param("skuId", skuId)
-                .query()
-                .singleRow();
+                .query(Integer.class)
+                .single();
 
-        assertThat(adjustmentLog)
-                .containsEntry("CHANGE_TYPE", "ADJUST")
-                .containsEntry("QUANTITY_BEFORE", 5)
-                .containsEntry("QUANTITY_DELTA", 6)
-                .containsEntry("QUANTITY_AFTER", 11)
-                .containsEntry("OPERATOR_TYPE", "ADMIN")
-                .containsEntry("OPERATOR_ID", 7L);
+        assertThat(adjustmentLogCount).isZero();
+        assertThat(jdbcClient.sql("select stock_available from product_sku where id = :skuId")
+                .param("skuId", skuId).query(Integer.class).single()).isEqualTo(5);
     }
 
     @Test
@@ -414,7 +410,7 @@ class AdminProductServiceTest {
         assertThat(retainedSku)
                 .containsEntry("ID", retainedSkuId)
                 .containsEntry("PRICE_CENT", 2590L)
-                .containsEntry("STOCK_AVAILABLE", 7)
+                .containsEntry("STOCK_AVAILABLE", 5)
                 .containsEntry("DELETED_AT", null);
         assertThat(omittedSku)
                 .containsEntry("ID", omittedSkuId)

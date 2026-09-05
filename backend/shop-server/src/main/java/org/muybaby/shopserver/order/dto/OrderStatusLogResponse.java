@@ -1,5 +1,7 @@
 package org.muybaby.shopserver.order.dto;
 
+import org.muybaby.shopserver.common.api.JsonStringId;
+
 import java.time.LocalDateTime;
 
 public record OrderStatusLogResponse(
@@ -10,7 +12,7 @@ public record OrderStatusLogResponse(
         String toStatus,
         String eventType,
         String operatorType,
-        Long operatorId,
+        @JsonStringId Long operatorId,
         String description,
         LocalDateTime createdAt
 ) {

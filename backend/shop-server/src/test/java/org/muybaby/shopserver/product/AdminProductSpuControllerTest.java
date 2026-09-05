@@ -273,7 +273,7 @@ class AdminProductSpuControllerTest {
                 .param("skuId", skuId)
                 .query(Integer.class)
                 .single();
-        assertThat(updateStockAuditLogs).isEqualTo(1);
+        assertThat(updateStockAuditLogs).isZero();
 
         mockMvc.perform(get("/admin/product/spus/" + spuId)
                         .header("Authorization", "Bearer " + token))
@@ -281,7 +281,7 @@ class AdminProductSpuControllerTest {
                 .andExpect(jsonPath("$.data.mainImageFileId").value(replacementMainFile.id()))
                 .andExpect(jsonPath("$.data.images[0].fileId").value(replacementGalleryFile.id()))
                 .andExpect(jsonPath("$.data.skus[0].imageFileId").value(replacementSkuFile.id()))
-                .andExpect(jsonPath("$.data.skus[0].stockAvailable").value(10))
+                .andExpect(jsonPath("$.data.skus[0].stockAvailable").value(8))
                 .andExpect(jsonPath("$.data.skus[0].lowStockThreshold").value(4));
 
         assertThat(activeUsageCount(mainFile.id(), "PRODUCT_SPU_MAIN", "PRODUCT_SPU", spuId)).isZero();

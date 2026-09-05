@@ -342,7 +342,12 @@
                     {{ formatMoneyOrDash(row.approvedAmountCent) }}
                   </template>
                 </ElTableColumn>
-                <ElTableColumn label="验收入库" width="100" align="right">
+                <ElTableColumn label="实际收到" width="100" align="right">
+                  <template #default="{ row }">
+                    {{ row.receivedQuantity ?? '-' }}
+                  </template>
+                </ElTableColumn>
+                <ElTableColumn label="可回库数量" width="110" align="right">
                   <template #default="{ row }">
                     {{ row.restockQuantity ?? '-' }}
                   </template>
@@ -892,7 +897,7 @@
 
     <ElDialog v-model="inspectionDialogVisible" title="退货验收" width="640px" align-center>
       <ElAlert
-        title="验收通过后将按批准金额发起退款；回库数量可以小于批准退货数量。验收拒绝不会发起退款。"
+        title="请分别填写实际收到和可回库数量。损坏商品计入实收，但不计入可回库数量；验收通过后仍按批准金额退款。"
         type="info"
         :closable="false"
         show-icon
@@ -905,7 +910,7 @@
             <ElRadio value="REJECT">验收拒绝</ElRadio>
           </ElRadioGroup>
         </ElFormItem>
-        <ElFormItem v-if="inspectionForm.decision === 'ACCEPT'" label="回库明细">
+        <ElFormItem v-if="inspectionForm.decision === 'ACCEPT'" label="验收明细">
           <div class="audit-item-list">
             <div
               v-for="(item, index) in inspectionItems"
@@ -916,14 +921,31 @@
                 <strong>{{ item.productTitle }}</strong>
                 <span>批准退回 {{ item.approvedQuantity }} 件</span>
               </div>
-              <ElInputNumber
-                v-model="inspectionForm.items[index].restockQuantity"
-                :min="0"
-                :max="item.approvedQuantity"
-                :step="1"
-                :precision="0"
-                controls-position="right"
-              />
+              <div class="inspection-item__quantities">
+                <label>
+                  <span>实际收到</span>
+                  <ElInputNumber
+                    v-model="inspectionForm.items[index].receivedQuantity"
+                    :min="0"
+                    :max="item.approvedQuantity"
+                    :step="1"
+                    :precision="0"
+                    controls-position="right"
+                    @change="limitInspectionRestock(index)"
+                  />
+                </label>
+                <label>
+                  <span>可回库</span>
+                  <ElInputNumber
+                    v-model="inspectionForm.items[index].restockQuantity"
+                    :min="0"
+                    :max="inspectionForm.items[index].receivedQuantity || 0"
+                    :step="1"
+                    :precision="0"
+                    controls-position="right"
+                  />
+                </label>
+              </div>
             </div>
           </div>
         </ElFormItem>
@@ -1157,7 +1179,7 @@
   interface InspectionForm {
     decision: 'ACCEPT' | 'REJECT'
     note: string
-    items: Array<{ orderItemId: number; restockQuantity: number }>
+    items: Array<{ orderItemId: number; restockQuantity: number; receivedQuantity: number }>
   }
 
   interface RefundOperationForm {
@@ -2077,9 +2099,15 @@
     inspectionForm.note = ''
     inspectionForm.items = detail.items.map((item) => ({
       orderItemId: item.orderItemId,
+      receivedQuantity: item.approvedQuantity || 0,
       restockQuantity: item.approvedQuantity || 0
     }))
     inspectionDialogVisible.value = true
+  }
+
+  const limitInspectionRestock = (index: number) => {
+    const item = inspectionForm.items[index]
+    if (item) item.restockQuantity = Math.min(item.restockQuantity, item.receivedQuantity || 0)
   }
 
   const submitInspection = async () => {
@@ -2090,9 +2118,26 @@
       ElMessage.warning('验收拒绝时必须填写原因')
       return
     }
+    if (
+      inspectionForm.decision === 'ACCEPT' &&
+      inspectionForm.items.some((item, index) => {
+        const approvedQuantity = inspectionItems.value[index]?.approvedQuantity || 0
+        return (
+          !Number.isInteger(item.receivedQuantity) ||
+          !Number.isInteger(item.restockQuantity) ||
+          item.receivedQuantity < 0 ||
+          item.receivedQuantity > approvedQuantity ||
+          item.restockQuantity < 0 ||
+          item.restockQuantity > item.receivedQuantity
+        )
+      })
+    ) {
+      ElMessage.warning('请填写有效数量：可回库数量不能超过实收数量，实收数量不能超过批准数量')
+      return
+    }
     await ElMessageBox.confirm(
       inspectionForm.decision === 'ACCEPT'
-        ? '验收通过后将发起退款并按填写数量回库，是否继续？'
+        ? '验收通过后将按批准金额退款，并按可回库数量回库，是否继续？'
         : '验收拒绝后不会发起退款，是否继续？',
       '确认验收结果',
       { type: 'warning', confirmButtonText: '确认', cancelButtonText: '取消' }
@@ -2474,6 +2519,23 @@
 
   .audit-item__product span {
     color: var(--el-text-color-secondary);
+    font-size: 12px;
+  }
+
+  .inspection-item__quantities {
+    display: grid;
+    gap: 8px;
+    flex-shrink: 0;
+  }
+
+  .inspection-item__quantities label {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .inspection-item__quantities span {
+    width: 56px;
     font-size: 12px;
   }
 

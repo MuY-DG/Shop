@@ -11,6 +11,7 @@ public record AfterSaleItemResponse(
         Integer approvedQuantity,
         Long requestedAmountCent,
         Long approvedAmountCent,
-        Integer restockQuantity
+        Integer restockQuantity,
+        Integer receivedQuantity
 ) {
 }

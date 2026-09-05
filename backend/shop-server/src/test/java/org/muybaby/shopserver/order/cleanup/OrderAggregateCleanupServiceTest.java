@@ -36,6 +36,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.AdditionalAnswers.delegatesTo;
+import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 
@@ -57,6 +59,10 @@ class OrderAggregateCleanupServiceTest {
     private static final long WAYBILL_RECORD_ID = 9_870_041L;
     private static final long SHIPMENT_ID = 9_870_042L;
     private static final long REGISTRATION_ID = 9_870_043L;
+    private static final long AFTER_SALE_ITEM_ID = 9_870_044L;
+    private static final long SHIPMENT_ITEM_ID = 9_870_045L;
+    private static final long SHIPPED_ALLOCATION_ID = 9_870_046L;
+    private static final long UNSHIPPED_ALLOCATION_ID = 9_870_047L;
     private static final long CATEGORY_ID = 9_870_020L;
     private static final long SPU_ID = 9_870_021L;
     private static final long SKU_ID = 9_870_022L;
@@ -111,10 +117,13 @@ class OrderAggregateCleanupServiceTest {
         assertThat(count("refund_order", "order_id", ORDER_ID)).isZero();
         assertThat(count("refund_provider_attempt", "order_id", ORDER_ID)).isZero();
         assertThat(count("after_sale_request", "order_id", ORDER_ID)).isZero();
+        assertThat(count("after_sale_item", "after_sale_id", AFTER_SALE_ID)).isZero();
+        assertThat(count("after_sale_fulfillment_allocation", "after_sale_item_id", AFTER_SALE_ITEM_ID)).isZero();
         assertThat(count("after_sale_evidence", "after_sale_id", AFTER_SALE_ID)).isZero();
         assertThat(count("order_status_log", "order_id", ORDER_ID)).isZero();
         assertThat(count("order_electronic_waybill", "order_id", ORDER_ID)).isZero();
         assertThat(count("order_shipment", "order_id", ORDER_ID)).isZero();
+        assertThat(count("order_shipment_item", "shipment_id", SHIPMENT_ID)).isZero();
         assertThat(count("shipment_waybill_registration", "id", REGISTRATION_ID)).isZero();
         assertThat(count("shipment_tracking_snapshot", "shipment_id", SHIPMENT_ID)).isZero();
         assertThat(count("shipment_tracking_event", "shipment_id", SHIPMENT_ID)).isZero();
@@ -240,6 +249,15 @@ class OrderAggregateCleanupServiceTest {
                 .contains("\"shipments\"")
                 .contains("\"refund_provider_attempts\"")
                 .contains("\"provider_error_code\":\"NOT_ENOUGH\"");
+        var archivedAllocations = objectMapper.readTree(archiveJson).path("after_sale_fulfillment_allocations");
+        assertThat(archivedAllocations.size()).isEqualTo(2);
+        assertThat(archivedAllocations.get(0).path("after_sale_item_id").asLong()).isEqualTo(AFTER_SALE_ITEM_ID);
+        assertThat(archivedAllocations.get(0).path("source_type").asText()).isEqualTo("SHIPPED");
+        assertThat(archivedAllocations.get(0).path("shipment_item_id").asLong()).isEqualTo(SHIPMENT_ITEM_ID);
+        assertThat(archivedAllocations.get(0).path("quantity").asInt()).isOne();
+        assertThat(archivedAllocations.get(1).path("source_type").asText()).isEqualTo("UNSHIPPED");
+        assertThat(archivedAllocations.get(1).path("shipment_item_id").asLong()).isZero();
+        assertThat(archivedAllocations.get(1).path("quantity").asInt()).isOne();
 
         assertThat(storageAssetCleanupService.cleanupAsset(ASSET_ID)).isTrue();
         assertThat(storageAssetCleanupService.cleanupAsset(ORDER_ITEM_ASSET_ID)).isTrue();
@@ -519,6 +537,39 @@ class OrderAggregateCleanupServiceTest {
     }
 
     @Test
+    void retainsAggregateWhenFulfillmentAllocationChangesAfterArchiving() {
+        seedCompletedRefundedOrder();
+        StorageProvider mutatingProvider = mock(StorageProvider.class, delegatesTo(storageProvider));
+        AtomicBoolean changed = new AtomicBoolean();
+        doAnswer(invocation -> {
+            StoredObject stored = storageProvider.put(
+                    invocation.getArgument(0, StorageObjectLocation.class),
+                    invocation.getArgument(1, String.class),
+                    invocation.getArgument(2, InputStream.class),
+                    invocation.getArgument(3, Long.class));
+            if (changed.compareAndSet(false, true)) {
+                jdbcClient.sql("""
+                                update after_sale_fulfillment_allocation
+                                set source_type = 'LEGACY_UNKNOWN' where id = :id
+                                """)
+                        .param("id", UNSHIPPED_ALLOCATION_ID).update();
+            }
+            return stored;
+        }).when(mutatingProvider).put(any(StorageObjectLocation.class), any(), any(), anyLong());
+        OrderAggregateCleanupService isolated = new OrderAggregateCleanupService(
+                jdbcClient, mutatingProvider, storageConfigService, objectMapper, transactionTemplate);
+
+        assertThat(isolated.cleanupBatch(CUTOFF, 20, true, () -> true)).isZero();
+        assertThat(changed).isTrue();
+        assertThat(count("shop_order", "id", ORDER_ID)).isOne();
+        assertThat(count("after_sale_fulfillment_allocation", "after_sale_item_id", AFTER_SALE_ITEM_ID)).isEqualTo(2);
+        assertThat(count("order_archive_manifest", "source_order_id", ORDER_ID)).isZero();
+
+        assertThat(isolated.cleanupBatch(CUTOFF, 20, true, () -> true)).isOne();
+        assertThat(count("after_sale_fulfillment_allocation", "after_sale_item_id", AFTER_SALE_ITEM_ID)).isZero();
+    }
+
+    @Test
     void archiveProviderFailureNeverDeletesTheOrder() {
         seedOrderOnly(ORDER_ID, "CLOSED");
         StorageProvider failingProvider = mock(StorageProvider.class);
@@ -715,6 +766,31 @@ class OrderAggregateCleanupServiceTest {
                         """)
                 .param("id", AFTER_SALE_ID)
                 .param("orderId", ORDER_ID)
+                .param("oldAt", oldAt())
+                .update();
+        jdbcClient.sql("""
+                        insert into after_sale_item
+                            (id, after_sale_id, order_item_id, sku_id, order_quantity_snapshot,
+                             paid_amount_basis_cent, requested_quantity, approved_quantity,
+                             requested_amount_cent, approved_amount_cent, created_at, updated_at)
+                        values (:id, :afterSaleId, :orderItemId, 7002, 2, 1000, 2, 2,
+                                1000, 1000, :oldAt, :oldAt)
+                        """)
+                .param("id", AFTER_SALE_ITEM_ID)
+                .param("afterSaleId", AFTER_SALE_ID)
+                .param("orderItemId", SECOND_ORDER_ITEM_ID)
+                .param("oldAt", oldAt())
+                .update();
+        jdbcClient.sql("""
+                        insert into after_sale_fulfillment_allocation
+                            (id, after_sale_item_id, source_type, shipment_item_id, quantity, created_at)
+                        values (:shippedId, :afterSaleItemId, 'SHIPPED', :shipmentItemId, 1, :oldAt),
+                               (:unshippedId, :afterSaleItemId, 'UNSHIPPED', 0, 1, :oldAt)
+                        """)
+                .param("shippedId", SHIPPED_ALLOCATION_ID)
+                .param("unshippedId", UNSHIPPED_ALLOCATION_ID)
+                .param("afterSaleItemId", AFTER_SALE_ITEM_ID)
+                .param("shipmentItemId", SHIPMENT_ITEM_ID)
                 .param("oldAt", oldAt())
                 .update();
         insertAfterSaleAsset();
@@ -1016,6 +1092,16 @@ class OrderAggregateCleanupServiceTest {
                 .param("oldAt", oldAt())
                 .update();
         jdbcClient.sql("""
+                        insert into order_shipment_item
+                            (id, shipment_id, order_item_id, quantity, created_at)
+                        values (:id, :shipmentId, :orderItemId, 1, :oldAt)
+                        """)
+                .param("id", SHIPMENT_ITEM_ID)
+                .param("shipmentId", SHIPMENT_ID)
+                .param("orderItemId", SECOND_ORDER_ITEM_ID)
+                .param("oldAt", oldAt())
+                .update();
+        jdbcClient.sql("""
                         insert into shipment_waybill_registration(
                             id, shipment_id, registration_kind, status, waybill_token,
                             attempt_count, last_attempt_at, registered_at, created_at, updated_at)
@@ -1257,6 +1343,10 @@ class OrderAggregateCleanupServiceTest {
                 .param("orderId", ORDER_ID).update();
         jdbcClient.sql("delete from refund_order where order_id = :orderId")
                 .param("orderId", ORDER_ID).update();
+        jdbcClient.sql("delete from after_sale_fulfillment_allocation where after_sale_item_id = :afterSaleItemId")
+                .param("afterSaleItemId", AFTER_SALE_ITEM_ID).update();
+        jdbcClient.sql("delete from after_sale_item where after_sale_id = :afterSaleId")
+                .param("afterSaleId", AFTER_SALE_ID).update();
         jdbcClient.sql("delete from after_sale_request where order_id = :orderId")
                 .param("orderId", ORDER_ID).update();
         jdbcClient.sql("delete from shipment_tracking_event where shipment_id = :shipmentId")
@@ -1265,6 +1355,8 @@ class OrderAggregateCleanupServiceTest {
                 .param("shipmentId", SHIPMENT_ID).update();
         jdbcClient.sql("delete from shipment_waybill_registration where id = :registrationId")
                 .param("registrationId", REGISTRATION_ID).update();
+        jdbcClient.sql("delete from order_shipment_item where shipment_id = :shipmentId")
+                .param("shipmentId", SHIPMENT_ID).update();
         jdbcClient.sql("delete from order_shipment where order_id = :orderId")
                 .param("orderId", ORDER_ID).update();
         jdbcClient.sql("delete from order_electronic_waybill where order_id = :orderId")

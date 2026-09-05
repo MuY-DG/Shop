@@ -437,6 +437,11 @@ declare namespace Api {
       updatedAt: string
     }
 
+    interface SkuForm extends Omit<Sku, 'stockAvailable'> {
+      /** 仅用于新建规格的初始库存；已有规格请使用独立库存调整接口。 */
+      stockAvailable?: number
+    }
+
     interface SpuForm {
       categoryId: number
       title: string
@@ -454,7 +459,7 @@ declare namespace Api {
       displayBadgeTone: ProductBadgeTone
       sortOrder: number
       images: ProductImageForm[]
-      skus: Sku[]
+      skus: SkuForm[]
       specGroups: SpecGroupForm[]
       guaranteeServiceIds: number[]
     }
@@ -1256,6 +1261,7 @@ declare namespace Api {
   }
 
   namespace Order {
+    type Identifier = string
     type OrderStatus =
       | 'CREATED'
       | 'PAYING'
@@ -1361,7 +1367,7 @@ declare namespace Api {
       toStatus: OrderStatus
       eventType: string
       operatorType: string
-      operatorId: number | null
+      operatorId: Identifier | null
       description: string | null
       createdAt: string
     }
@@ -1793,6 +1799,7 @@ declare namespace Api {
       requestedAmountCent: number
       approvedAmountCent?: number | null
       restockQuantity?: number | null
+      receivedQuantity?: number | null
     }
 
     interface AfterSaleReturn {
@@ -1844,7 +1851,7 @@ declare namespace Api {
     interface ReturnInspectionPayload {
       decision: 'ACCEPT' | 'REJECT'
       note: string
-      items: Array<{ orderItemId: number; restockQuantity: number }>
+      items: Array<{ orderItemId: number; restockQuantity: number; receivedQuantity?: number }>
     }
 
     interface RefundOperationPayload {

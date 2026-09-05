@@ -23,6 +23,7 @@ import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
@@ -65,6 +66,57 @@ public class WechatShippingUploadStateStore {
                 false,
                 now
         );
+    }
+
+    /** Updates the durable payload without allowing an older in-flight attempt to acknowledge it. */
+    public void requestFinalShipmentRefresh(long orderId, long shipmentId, LocalDateTime now) {
+        required.executeWithoutResult(status -> {
+            lockOrder(orderId);
+            ShipmentRefreshState current = jdbcClient.sql("""
+                            select final_shipment, wechat_upload_status, wechat_upload_claim_token
+                            from order_shipment
+                            where id = :shipmentId and order_id = :orderId and status = 'SHIPPED'
+                            for update
+                            """)
+                    .param("shipmentId", shipmentId)
+                    .param("orderId", orderId)
+                    .query((rs, rowNum) -> new ShipmentRefreshState(
+                            rs.getBoolean("final_shipment"), rs.getString("wechat_upload_status"),
+                            rs.getString("wechat_upload_claim_token")))
+                    .optional().orElseThrow(this::conflict);
+            if (current.finalShipment()) {
+                return;
+            }
+            // Every in-flight package captured the old order-wide allDelivered value.
+            // Stable uploaded packages need no replay, but older active claims must refresh.
+            jdbcClient.sql("""
+                            update order_shipment
+                            set wechat_upload_refresh_pending = true, updated_at = :now
+                            where order_id = :orderId and id <> :shipmentId and status = 'SHIPPED'
+                              and (wechat_upload_status = 'UPLOADING'
+                                   or (wechat_upload_status = 'UNKNOWN' and wechat_upload_claim_token is not null))
+                            """)
+                    .param("now", now).param("orderId", orderId).param("shipmentId", shipmentId).update();
+            boolean skipped = WechatShippingUploadStatus.SKIPPED.name().equals(current.uploadStatus());
+            jdbcClient.sql("""
+                            update order_shipment
+                            set final_shipment = true, wechat_upload_refresh_pending = :refreshPending,
+                                updated_at = :now
+                            where id = :shipmentId
+                            """)
+                    .param("refreshPending", !skipped)
+                    .param("now", now).param("shipmentId", shipmentId).update();
+            // Uploads deliberately skipped while disabled still require the existing operator retry.
+            if (skipped) {
+                return;
+            }
+            boolean inFlight = WechatShippingUploadStatus.UPLOADING.name().equals(current.uploadStatus())
+                    || (WechatShippingUploadStatus.UNKNOWN.name().equals(current.uploadStatus())
+                    && StringUtils.hasText(current.claimToken()));
+            if (!inFlight) {
+                enqueuePayloadRefresh("id = :shipmentId", Map.of("shipmentId", shipmentId), now);
+            }
+        });
     }
 
     public Optional<UploadClaim> claimScheduled(long shipmentId, LocalDateTime now) {
@@ -199,6 +251,7 @@ public class WechatShippingUploadStateStore {
                             update order_shipment
                             set upload_time = :uploadTime,
                                 wechat_provider_mode = :providerMode,
+                                wechat_upload_refresh_pending = false,
                                 last_attempt_at = :now,
                                 updated_at = :now
                             where id = :shipmentId
@@ -243,6 +296,9 @@ public class WechatShippingUploadStateStore {
         }
         return Boolean.TRUE.equals(required.execute(status -> {
             lockOrder(orderId);
+            if (releasePayloadRefreshForClaim(claim.shipmentId(), claim.claimToken(), attemptedAt)) {
+                return false;
+            }
             return jdbcClient.sql("""
                         update order_shipment
                         set wechat_provider_mode = :providerMode,
@@ -289,6 +345,9 @@ public class WechatShippingUploadStateStore {
         }
         requiresNew.executeWithoutResult(status -> {
             lockOrder(orderId);
+            if (releasePayloadRefreshForClaim(claim.shipmentId(), claim.claimToken(), now)) {
+                return;
+            }
             jdbcClient.sql("""
                         update order_shipment
                         set wechat_provider_mode = :providerMode,
@@ -323,7 +382,7 @@ public class WechatShippingUploadStateStore {
                         select sh.id
                         from order_shipment sh
                         join shop_order o on o.id = sh.order_id
-                        where o.status in ('PARTIALLY_SHIPPED', 'SHIPPED')
+                        where o.status in ('PARTIALLY_SHIPPED', 'SHIPPED', 'COMPLETED')
                           and sh.wechat_upload_status in (:pending, :unavailable)
                           and sh.wechat_upload_attempt_count < :maxAttempts
                           and coalesce(sh.wechat_upload_next_action_at, sh.created_at) <= :now
@@ -344,7 +403,7 @@ public class WechatShippingUploadStateStore {
                         select sh.id
                         from order_shipment sh
                         join shop_order o on o.id = sh.order_id
-                        where o.status in ('PARTIALLY_SHIPPED', 'SHIPPED')
+                        where o.status in ('PARTIALLY_SHIPPED', 'SHIPPED', 'COMPLETED')
                           and sh.wechat_provider_mode = 'REAL'
                           and sh.wechat_upload_status = :unknown
                           and coalesce(sh.wechat_upload_next_action_at, sh.updated_at, sh.created_at) <= :now
@@ -410,6 +469,11 @@ public class WechatShippingUploadStateStore {
                     && candidate.claimedAt().isAfter(now.minus(properties.claimTimeout())))) {
                 return Optional.empty();
             }
+            if (enqueuePayloadRefresh(
+                    "id = :shipmentId and wechat_upload_refresh_pending = true",
+                    Map.of("shipmentId", shipmentId), now) == 1) {
+                return Optional.empty();
+            }
             PaymentIdentity identity = loadPaymentIdentity(orderId);
             String token = UUID.randomUUID().toString();
             int updated = jdbcClient.sql("""
@@ -463,6 +527,9 @@ public class WechatShippingUploadStateStore {
     public boolean markReconciledUploaded(UnknownClaim claim, LocalDateTime now) {
         return Boolean.TRUE.equals(required.execute(status -> {
             lockOrder(claim.orderId());
+            if (releasePayloadRefreshForClaim(claim.shipmentId(), claim.claimToken(), now)) {
+                return false;
+            }
             return jdbcClient.sql("""
                         update order_shipment
                         set wechat_upload_status = :uploaded,
@@ -542,6 +609,9 @@ public class WechatShippingUploadStateStore {
     ) {
         return Boolean.TRUE.equals(required.execute(status -> {
             lockOrder(claim.orderId());
+            if (releasePayloadRefreshForClaim(claim.shipmentId(), claim.claimToken(), now)) {
+                return false;
+            }
             return jdbcClient.sql("""
                         update order_shipment
                         set wechat_upload_status = :nextStatus,
@@ -615,7 +685,12 @@ public class WechatShippingUploadStateStore {
 
     private boolean reconcileByPredicate(String predicate, long identifier, LocalDateTime now) {
         LocalDateTime cutoff = now.minus(properties.claimTimeout());
-        return jdbcClient.sql("""
+        int refreshed = enqueuePayloadRefresh(
+                predicate + " and wechat_upload_status = 'UPLOADING'"
+                        + " and wechat_upload_refresh_pending = true"
+                        + " and coalesce(wechat_upload_claimed_at, last_attempt_at, updated_at, created_at) < :cutoff",
+                Map.of("identifier", identifier, "cutoff", cutoff), now);
+        int reconciled = jdbcClient.sql("""
                         update order_shipment
                         set wechat_upload_status = :unknown,
                             wechat_error_code = :errorCode,
@@ -638,19 +713,50 @@ public class WechatShippingUploadStateStore {
                 .param("now", now)
                 .param("uploading", WechatShippingUploadStatus.UPLOADING.name())
                 .param("cutoff", cutoff)
-                .update() == 1;
+                .update();
+        return refreshed + reconciled > 0;
+    }
+
+    private boolean releasePayloadRefreshForClaim(long shipmentId, String claimToken, LocalDateTime now) {
+        return enqueuePayloadRefresh("""
+                        id = :shipmentId and wechat_upload_refresh_pending = true
+                        and wechat_upload_status in ('UPLOADING', 'UNKNOWN')
+                        and wechat_upload_claim_token = :claimToken
+                        """, Map.of("shipmentId", shipmentId, "claimToken", claimToken), now) == 1;
+    }
+
+    private int enqueuePayloadRefresh(String predicate, Map<String, ?> parameters, LocalDateTime now) {
+        return jdbcClient.sql("""
+                        update order_shipment
+                        set wechat_upload_status = 'PENDING',
+                            wechat_upload_refresh_pending = false,
+                            wechat_error_code = '', wechat_error_message = '',
+                            wechat_uploaded_at = null,
+                            wechat_upload_claim_token = null, wechat_upload_claimed_at = null,
+                            wechat_upload_next_action_at = :now,
+                            wechat_upload_attempt_count = 0,
+                            wechat_upload_not_uploaded_observations = 0,
+                            wechat_upload_last_reconciled_at = null,
+                            updated_at = :now
+                        where %s
+                        """.formatted(predicate))
+                .params(parameters).param("now", now).update();
+    }
+
+    private record ShipmentRefreshState(boolean finalShipment, String uploadStatus, String claimToken) {
     }
 
     private AttemptContext loadAttemptContext(UploadClaim claim) {
         AttemptContext shipment = jdbcClient.sql("""
                         select sh.id as shipment_id, sh.order_id, sh.logistics_type, sh.delivery_mode,
-                               sh.final_shipment,
+                               case when o.status in ('SHIPPED', 'COMPLETED') then true else false end
+                                   as all_delivered,
                                sh.item_desc, sh.express_company_code, sh.tracking_no,
                                sh.consignor_contact, sh.receiver_contact, sh.upload_time
                         from order_shipment sh
                         join shop_order o on o.id = sh.order_id
                         where sh.id = :shipmentId
-                          and o.status in ('PARTIALLY_SHIPPED', 'SHIPPED')
+                          and o.status in ('PARTIALLY_SHIPPED', 'SHIPPED', 'COMPLETED')
                           and sh.wechat_upload_status = :uploading
                           and sh.wechat_upload_claim_token = :claimToken
                         """)
@@ -689,7 +795,7 @@ public class WechatShippingUploadStateStore {
                 rs.getLong("order_id"),
                 LogisticsType.fromValue(rs.getInt("logistics_type")),
                 DeliveryMode.fromValue(rs.getInt("delivery_mode")),
-                rs.getBoolean("final_shipment"),
+                rs.getBoolean("all_delivered"),
                 rs.getString("item_desc"),
                 rs.getString("express_company_code"),
                 rs.getString("tracking_no"),
@@ -757,22 +863,25 @@ public class WechatShippingUploadStateStore {
 
     private UnknownCandidate loadUnknownCandidateForUpdate(long shipmentId) {
         return jdbcClient.sql("""
-                        select logistics_type, delivery_mode, final_shipment,
-                               express_company_code, tracking_no,
-                               wechat_provider_mode, wechat_upload_status,
-                               wechat_upload_claim_token, wechat_upload_claimed_at,
-                               wechat_upload_next_action_at,
-                               wechat_upload_not_uploaded_observations,
-                               wechat_upload_last_reconciled_at
-                        from order_shipment
-                        where id = :shipmentId
+                        select sh.logistics_type, sh.delivery_mode,
+                               case when o.status in ('SHIPPED', 'COMPLETED') then true else false end
+                                   as all_delivered,
+                               sh.express_company_code, sh.tracking_no,
+                               sh.wechat_provider_mode, sh.wechat_upload_status,
+                               sh.wechat_upload_claim_token, sh.wechat_upload_claimed_at,
+                               sh.wechat_upload_next_action_at,
+                               sh.wechat_upload_not_uploaded_observations,
+                               sh.wechat_upload_last_reconciled_at
+                        from order_shipment sh
+                        join shop_order o on o.id = sh.order_id
+                        where sh.id = :shipmentId
                         for update
                         """)
                 .param("shipmentId", shipmentId)
                 .query((rs, rowNum) -> new UnknownCandidate(
                         LogisticsType.fromValue(rs.getInt("logistics_type")),
                         DeliveryMode.fromValue(rs.getInt("delivery_mode")),
-                        rs.getBoolean("final_shipment"),
+                        rs.getBoolean("all_delivered"),
                         defaultString(rs.getString("express_company_code")),
                         defaultString(rs.getString("tracking_no")),
                         providerMode(rs.getString("wechat_provider_mode")),
@@ -817,7 +926,8 @@ public class WechatShippingUploadStateStore {
                 .param("orderId", orderId)
                 .query(String.class)
                 .optional()
-                .filter(status -> "PARTIALLY_SHIPPED".equals(status) || "SHIPPED".equals(status))
+                .filter(status -> "PARTIALLY_SHIPPED".equals(status)
+                        || "SHIPPED".equals(status) || "COMPLETED".equals(status))
                 .isPresent();
     }
 

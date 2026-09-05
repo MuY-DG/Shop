@@ -628,6 +628,46 @@ class AppOrderServiceTest {
         assertThat(count("stock_lock", created.orderId())).isEqualTo(1L);
     }
 
+    @ParameterizedTest
+    @CsvSource({"DIRECT", "CART"})
+    void submitFreezesCategoryFromCheckoutWhenProductIsLaterRecategorized(CheckoutSource source) {
+        long userId = insertUser("category-snapshot-" + source);
+        long addressId = insertAddress(userId, "分类快照", "13800138000", "四川省", "成都市", "武侯区", "测试路1号");
+        long skuId = insertSku("CATEGORY-SNAPSHOT-" + source, 1000L, 1200L, 20);
+        long categoryId = jdbcClient.sql("""
+                        select s.category_id from product_spu s
+                        join product_sku k on k.spu_id = s.id where k.id = :skuId
+                        """).param("skuId", skuId).query(Long.class).single();
+        jdbcClient.sql("update product_category set name = '成交时分类' where id = :categoryId")
+                .param("categoryId", categoryId).update();
+        List<Long> cartIds = source == CheckoutSource.CART
+                ? List.of(insertCartItem(userId, skuId, 2)) : List.of();
+        var submitted = appOrderService.submit(appPrincipal(userId), new AppOrderSubmitRequest(
+                source, cartIds, source == CheckoutSource.DIRECT ? skuId : null,
+                source == CheckoutSource.DIRECT ? 2 : null, addressId, null, "category-snapshot-" + source));
+
+        long replacementSkuId = insertSku("CATEGORY-REPLACEMENT-" + source, 1000L, 1200L, 10);
+        long replacementCategoryId = jdbcClient.sql("""
+                        select s.category_id from product_spu s
+                        join product_sku k on k.spu_id = s.id where k.id = :skuId
+                        """).param("skuId", replacementSkuId).query(Long.class).single();
+        jdbcClient.sql("update product_category set name = '后来修改的分类名' where id = :categoryId")
+                .param("categoryId", categoryId).update();
+        jdbcClient.sql("""
+                        update product_spu set category_id = :categoryId
+                        where id = (select spu_id from product_sku where id = :skuId)
+                        """).param("categoryId", replacementCategoryId).param("skuId", skuId).update();
+
+        var snapshot = jdbcClient.sql("""
+                        select category_id_snapshot, category_name_snapshot from order_item where order_id = :orderId
+                        """).param("orderId", submitted.orderId())
+                .query((rs, rowNum) -> new CheckoutSelection.CategorySnapshot(
+                        rs.getObject("category_id_snapshot", Long.class), rs.getString("category_name_snapshot")))
+                .single();
+        assertThat(snapshot.categoryId()).isEqualTo(categoryId);
+        assertThat(snapshot.categoryName()).isEqualTo("成交时分类");
+    }
+
     @Test
     void sameKeyRejectsChangedSourceIdsQuantityAddressAndRequestedCouponBeforeCheckoutReads() {
         long userId = insertUser("digest-conflict-user");

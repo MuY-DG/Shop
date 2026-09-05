@@ -7,6 +7,7 @@ import org.muybaby.shopserver.logistics.waybill.config.WechatExpressEffectiveCon
 import org.muybaby.shopserver.logistics.waybill.config.WechatExpressParcel;
 import org.muybaby.shopserver.logistics.waybill.config.WechatExpressSender;
 import org.springframework.jdbc.core.simple.JdbcClient;
+import org.muybaby.shopserver.order.repository.OrderItemFulfillmentRepository;
 import org.springframework.stereotype.Component;
 
 import java.sql.ResultSet;
@@ -19,9 +20,11 @@ import java.util.Optional;
 public class ElectronicWaybillStateStore {
 
     private final JdbcClient jdbcClient;
+    private final OrderItemFulfillmentRepository fulfillment;
 
-    public ElectronicWaybillStateStore(JdbcClient jdbcClient) {
+    public ElectronicWaybillStateStore(JdbcClient jdbcClient, OrderItemFulfillmentRepository fulfillment) {
         this.jdbcClient = jdbcClient;
+        this.fulfillment = fulfillment;
     }
 
     public OrderSnapshot loadOrderSnapshot(
@@ -72,34 +75,11 @@ public class ElectronicWaybillStateStore {
                 .optional()
                 .orElse(null);
 
-        List<ItemSnapshot> items = jdbcClient.sql("""
-                        select item.id, item.product_title, item.product_subtitle,
-                               item.main_image, item.sku_image, item.display_image, item.spec_text,
-                               item.quantity - item.refunded_quantity
-                                 - coalesce(sum(shipment_item.quantity), 0) as quantity
-                        from order_item item
-                        left join order_shipment_item shipment_item
-                          on shipment_item.order_item_id = item.id
-                        where item.order_id = :orderId
-                        group by item.id, item.product_title, item.product_subtitle,
-                                 item.main_image, item.sku_image, item.display_image, item.spec_text,
-                                 item.quantity, item.refunded_quantity
-                        having item.quantity - item.refunded_quantity
-                                 - coalesce(sum(shipment_item.quantity), 0) > 0
-                        order by item.id
-                        """)
-                .param("orderId", orderId)
-                .query((rs, rowNum) -> new ItemSnapshot(
-                        rs.getLong("id"),
-                        rs.getString("product_title"),
-                        rs.getString("product_subtitle"),
-                        rs.getString("main_image"),
-                        rs.getString("sku_image"),
-                        rs.getString("display_image"),
-                        rs.getString("spec_text"),
-                        rs.getInt("quantity")
-                ))
-                .list();
+        List<ItemSnapshot> items = fulfillment.items(orderId).stream()
+                .filter(item -> item.remainingQuantity() > 0)
+                .map(item -> new ItemSnapshot(item.orderItemId(), item.title(), item.subtitle(),
+                        item.mainImage(), item.skuImage(), item.displayImage(), item.specText(), item.remainingQuantity()))
+                .toList();
 
         Integer blockingAfterSaleCount = jdbcClient.sql("""
                         select count(*)
@@ -116,6 +96,10 @@ public class ElectronicWaybillStateStore {
                 List.copyOf(items),
                 blockingAfterSaleCount != null && blockingAfterSaleCount > 0
         );
+    }
+
+    public void requireKnownForShipping(long orderId) {
+        fulfillment.requireKnownForShipping(orderId);
     }
 
     public Optional<AttemptRow> findByIdempotency(long orderId, String idempotencyKey) {

@@ -1360,7 +1360,7 @@ public class AdminProductService {
         for (int index = 0; index < requests.size(); index++) {
             AdminSkuUpsertRequest request = requests.get(index);
             ProductSku existingSku = request.id() == null
-                    ? existingSkusByCode.get(request.skuCode())
+                    ? existingSkusByCode.get(defaultString(request.skuCode()).trim())
                     : existingSkusById.get(request.id());
             normalized.add(normalizeSkuRequest(request, existingSku, index, preserveOmittedSpecValueKeys));
         }
@@ -1416,7 +1416,8 @@ public class AdminProductService {
                 request.specText(),
                 request.priceCent(),
                 request.originalPriceCent() == null ? 0L : request.originalPriceCent(),
-                request.stockAvailable() == null ? 0 : request.stockAvailable(),
+                existingSku != null ? existingSku.stockAvailable()
+                        : request.stockAvailable() == null ? 0 : request.stockAvailable(),
                 request.weightGram(),
                 costPriceCent,
                 volumeCubicMeter,
@@ -1541,18 +1542,6 @@ public class AdminProductService {
                         operatorType,
                         operatorId
                 );
-            } else if (!existingSku.stockAvailable().equals(sku.stockAvailable())) {
-                int quantityDelta = sku.stockAvailable() - existingSku.stockAvailable();
-                insertStockLog(
-                        skuId,
-                        StockChangeType.ADJUST.name(),
-                        existingSku.stockAvailable(),
-                        quantityDelta,
-                        sku.stockAvailable(),
-                        "spu update stock",
-                        operatorType,
-                        operatorId
-                );
             }
             replaceSkuSpecValues(skuId, snapshot.specValueIds());
             replaceSkuWholesaleTiers(skuId, sku.wholesaleTiers());
@@ -1633,6 +1622,7 @@ public class AdminProductService {
             SkuSnapshot snapshot,
             String skuCode
     ) {
+        // Stock is changed only by inventory commands; a loaded product form may be stale.
         int updatedRows = jdbcClient.sql("""
                         update product_sku
                         set sku_code = :skuCode,
@@ -1641,7 +1631,6 @@ public class AdminProductService {
                             price_cent = :priceCent,
                             original_price_cent = :originalPriceCent,
                             cost_price_cent = :costPriceCent,
-                            stock_available = :stockAvailable,
                             low_stock_threshold = :lowStockThreshold,
                             weight_gram = :weightGram,
                             volume_cubic_meter = :volumeCubicMeter,
@@ -1663,7 +1652,6 @@ public class AdminProductService {
                 .param("priceCent", request.priceCent())
                 .param("originalPriceCent", request.originalPriceCent())
                 .param("costPriceCent", request.costPriceCent())
-                .param("stockAvailable", request.stockAvailable())
                 .param("lowStockThreshold", request.lowStockThreshold())
                 .param("weightGram", request.weightGram())
                 .param("volumeCubicMeter", request.volumeCubicMeter())
@@ -2324,7 +2312,6 @@ public class AdminProductService {
                     throw new BusinessException(ErrorCode.PERMISSION_DENIED);
                 }
             } else if (existingSku.deletedAt() != null
-                    || !Objects.equals(existingSku.stockAvailable(), sku.stockAvailable())
                     || !Objects.equals(existingSku.lowStockThreshold(), sku.lowStockThreshold())) {
                 throw new BusinessException(ErrorCode.PERMISSION_DENIED);
             }

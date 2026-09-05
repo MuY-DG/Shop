@@ -151,6 +151,7 @@ public class GlobalExceptionHandler {
             case PERMISSION_DENIED, ADMIN_REGISTRATION_DISABLED -> HttpStatus.FORBIDDEN;
             case PAYMENT_CONFIG_UNAVAILABLE -> HttpStatus.NOT_FOUND;
             case DATA_CLEANUP_CONFIG_CONFLICT,
+                 ORDER_FULFILLMENT_UNRESOLVED,
                  APP_USER_STATUS_CONFLICT,
                  PAYMENT_CONFIG_ENABLED_DELETE_FORBIDDEN,
                  PAYMENT_CONFIG_CONFLICT,

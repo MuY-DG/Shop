@@ -117,7 +117,9 @@
 
       <ElTableColumn label="库存" width="130">
         <template #default="{ row, $index }">
+          <span v-if="row.id != null">{{ row.stockAvailable }}</span>
           <ElInputNumber
+            v-else
             :model-value="row.stockAvailable"
             :min="0"
             :precision="0"

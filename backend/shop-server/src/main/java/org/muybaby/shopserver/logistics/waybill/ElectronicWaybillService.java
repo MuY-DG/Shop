@@ -330,6 +330,7 @@ public class ElectronicWaybillService {
             return new CreateClaim(existing, null, false, recover);
         }
 
+        stateStore.requireKnownForShipping(orderId);
         List<String> blockers = blockers(config, order, stateStore.activeAttemptExists(orderId));
         if (!blockers.isEmpty()) {
             throw conflict();

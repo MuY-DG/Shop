@@ -24,9 +24,9 @@ class SchemaGenerationBaselineTest {
         Flyway flyway = MigrationTestSupport.migrateToLatest(jdbcUrl, "sa", "");
         JdbcClient jdbc = JdbcClient.create(new DriverManagerDataSource(jdbcUrl, "sa", ""));
 
-        assertThat(flyway.info().current().getVersion().getVersion()).isEqualTo("17");
-        assertThat(flyway.info().applied()).hasSize(17);
-        assertThat(tableCount(jdbc)).isEqualTo(124);
+        assertThat(flyway.info().current().getVersion().getVersion()).isEqualTo("21");
+        assertThat(flyway.info().applied()).hasSize(21);
+        assertThat(tableCount(jdbc)).isEqualTo(125);
 
         assertThat(tableExists(jdbc, "payment_config_snapshot")).isFalse();
         assertThat(tableExists(jdbc, "payment_runtime_setting")).isFalse();
@@ -43,6 +43,8 @@ class SchemaGenerationBaselineTest {
         assertThat(tableExists(jdbc, "wechat_service_card_callback_log")).isFalse();
         assertThat(columnExists(jdbc, "payment_callback_log", "route_mode")).isFalse();
         assertThat(columnExists(jdbc, "after_sale_request", "app_deleted_at")).isTrue();
+        assertThat(columnExists(jdbc, "order_item", "category_id_snapshot")).isTrue();
+        assertThat(columnExists(jdbc, "order_item", "category_name_snapshot")).isTrue();
         assertThat(tableExists(jdbc, "refund_provider_attempt")).isTrue();
         assertThat(columnExists(jdbc, "admin_system_log", "related_target_type")).isTrue();
         assertThat(columnExists(jdbc, "admin_system_log", "related_target_id")).isTrue();
@@ -98,6 +100,74 @@ class SchemaGenerationBaselineTest {
         assertReferenceData(jdbc);
         assertFailClosedRuntimeDefaults(jdbc);
         assertV2OnlySecretConstraints(jdbc);
+        InventoryAmountConstraintTestSupport.insertValidLegacyRows(jdbc);
+        InventoryAmountConstraintTestSupport.assertLegacyValuesAndWriteConstraints(jdbc);
+    }
+
+    @Test
+    void v21LeavesHistoricalCategorySnapshotsUnknownEvenWhenCurrentCategoryExists() {
+        String jdbcUrl = "jdbc:h2:mem:v21_category_"
+                + UUID.randomUUID().toString().replace("-", "")
+                + ";MODE=MySQL;DATABASE_TO_LOWER=TRUE;DB_CLOSE_DELAY=-1";
+        Flyway.configure().dataSource(jdbcUrl, "sa", "").target("20").load().migrate();
+        JdbcClient jdbc = JdbcClient.create(new DriverManagerDataSource(jdbcUrl, "sa", ""));
+        jdbc.sql("""
+                        insert into product_category (id, parent_id, name, status)
+                        values (9890210, 0, 'Current product category', 'ENABLED')
+                        """).update();
+        jdbc.sql("""
+                        insert into product_spu
+                            (id, category_id, title, selling_points, detail_html, status)
+                        values (9890021, 9890210, 'Legacy product', '', '', 'DRAFT')
+                        """).update();
+        InventoryAmountConstraintTestSupport.insertValidLegacyRows(jdbc);
+
+        MigrationTestSupport.migrateToLatest(jdbcUrl, "sa", "");
+
+        assertThat(jdbc.sql("""
+                        select count(*) from order_item item
+                        join product_spu product on product.id = item.spu_id
+                        join product_category category on category.id = product.category_id
+                        where item.id = 9890203 and category.name = 'Current product category'
+                          and item.category_id_snapshot is null and item.category_name_snapshot is null
+                        """).query(Long.class).single()).isOne();
+    }
+
+    @Test
+    void v20RefusesNegativeLegacyInventoryWithoutRewritingIt() {
+        String jdbcUrl = legacyConstraintDatabase("negative_inventory");
+        JdbcClient jdbc = JdbcClient.create(new DriverManagerDataSource(jdbcUrl, "sa", ""));
+        InventoryAmountConstraintTestSupport.insertValidLegacyRows(jdbc);
+        jdbc.sql("update product_sku set stock_available = -1 where id = 9890201").update();
+
+        assertThatThrownBy(() -> MigrationTestSupport.migrateToLatest(jdbcUrl, "sa", ""))
+                .hasStackTraceContaining("chk_product_sku_stock_nonnegative");
+        assertThat(jdbc.sql("select stock_available from product_sku where id = 9890201")
+                .query(Integer.class).single()).isEqualTo(-1);
+    }
+
+    @Test
+    void v20RefusesDuplicateLegacyStockLocksWithoutDeletingEitherRow() {
+        String jdbcUrl = legacyConstraintDatabase("duplicate_stock_lock");
+        JdbcClient jdbc = JdbcClient.create(new DriverManagerDataSource(jdbcUrl, "sa", ""));
+        InventoryAmountConstraintTestSupport.insertValidLegacyRows(jdbc);
+        jdbc.sql("""
+                        insert into stock_lock (order_id, order_item_id, sku_id, quantity, status)
+                        values (9890202, 9890203, 9890201, 1, 'LOCKED')
+                        """).update();
+
+        assertThatThrownBy(() -> MigrationTestSupport.migrateToLatest(jdbcUrl, "sa", ""))
+                .hasStackTraceContaining("uk_stock_lock_order_item");
+        assertThat(jdbc.sql("select count(*) from stock_lock where order_item_id = 9890203")
+                .query(Long.class).single()).isEqualTo(2L);
+    }
+
+    private String legacyConstraintDatabase(String scenario) {
+        String jdbcUrl = "jdbc:h2:mem:v20_" + scenario + "_"
+                + UUID.randomUUID().toString().replace("-", "")
+                + ";MODE=MySQL;DATABASE_TO_LOWER=TRUE;DB_CLOSE_DELAY=-1";
+        Flyway.configure().dataSource(jdbcUrl, "sa", "").target("19").load().migrate();
+        return jdbcUrl;
     }
 
     private long tableCount(JdbcClient jdbc) {

@@ -19,6 +19,7 @@ import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.util.List;
 import java.util.Map;
@@ -67,6 +68,7 @@ class AdminOperationsControllerTest {
         jdbcClient.sql("delete from app_user_daily_activity").update();
         jdbcClient.sql("delete from payment_attempt").update();
         jdbcClient.sql("delete from refund_order").update();
+        jdbcClient.sql("delete from after_sale_item").update();
         jdbcClient.sql("delete from after_sale_request").update();
         jdbcClient.sql("delete from payment_order").update();
         jdbcClient.sql("delete from order_shipment").update();
@@ -182,6 +184,7 @@ class AdminOperationsControllerTest {
                         .param("endDate", "2026-07-07"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.summary.soldQuantity.value").value(4))
+                .andExpect(jsonPath("$.data.summary.refundedQuantity.value").value(1))
                 .andExpect(jsonPath("$.data.summary.paidItemAmountCent.value").value(35000))
                 .andExpect(jsonPath("$.data.summary.costCoverageRate.value").value(8571))
                 .andExpect(jsonPath("$.data.summary.grossProfitAmountCent.value").value(13500))
@@ -248,6 +251,94 @@ class AdminOperationsControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.summary.outOfStockSkuCount.value").value(1))
                 .andExpect(jsonPath("$.data.summary.lowStockSkuCount.value").value(0));
+    }
+
+    @Test
+    void categoryRankingUsesCheckoutSnapshotsAndKeepsHistoricalUnknowns() throws Exception {
+        seedBusinessFacts();
+        jdbcClient.sql("""
+                        update order_item set category_id_snapshot = 91001, category_name_snapshot = '成交时分类'
+                        where id in (95001, 95002)
+                        """).update();
+        jdbcClient.sql("insert into product_category (id, parent_id, name, status) values (91002, 0, '新分类', 'ENABLED')")
+                .update();
+        jdbcClient.sql("update product_spu set category_id = 91002").update();
+        jdbcClient.sql("update product_category set name = '已改名分类' where id = 91001").update();
+
+        mockMvc.perform(get("/admin/operations/product-statistics")
+                        .header("Authorization", "Bearer " + token("operation:product:read"))
+                        .param("startDate", "2026-07-01").param("endDate", "2026-07-07"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.topCategories.data.length()").value(2))
+                .andExpect(jsonPath("$.data.topCategories.data[0].id").value("91001"))
+                .andExpect(jsonPath("$.data.topCategories.data[0].name").value("成交时分类"))
+                .andExpect(jsonPath("$.data.topCategories.data[0].primaryValue").value(3))
+                .andExpect(jsonPath("$.data.topCategories.data[1].id").value("0"))
+                .andExpect(jsonPath("$.data.topCategories.data[1].name").value("历史未记录"))
+                .andExpect(jsonPath("$.data.topCategories.data[1].primaryValue").value(1));
+    }
+
+    @Test
+    void refundedQuantityCountsApprovedItemsOnceAndUsesRefundSuccessTime() throws Exception {
+        seedBusinessFacts();
+        jdbcClient.sql("delete from refund_order").update();
+        jdbcClient.sql("delete from after_sale_item").update();
+        jdbcClient.sql("delete from after_sale_request").update();
+        jdbcClient.sql("update order_item set quantity = 10 where id = 95002").update();
+        insertStatisticsRefund(97001, 98001, 2, "SUCCESS", "2026-07-06T12:00:00");
+        insertStatisticsRefund(97003, 98003, 3, "SUCCESS", "2026-07-06T13:00:00");
+        // An unsuccessful attempt of the same after-sale must not count its approved items again.
+        jdbcClient.sql("""
+                        insert into refund_order
+                            (id, after_sale_id, order_id, payment_order_id, notification_route_token,
+                             out_refund_no, refund_amount_cent, status, requested_at, created_at, updated_at)
+                        values (98004, 97003, 94002, 96002, 'eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee',
+                                'OPS-RETRY-FAILED', 3000, 'FAILED', timestamp '2026-07-05 12:00:00',
+                                timestamp '2026-07-05 12:00:00', timestamp '2026-07-05 12:00:00')
+                        """).update();
+        insertStatisticsRefund(97005, 98005, 1, "SUCCESS", "2026-07-07T16:00:00");
+        insertStatisticsRefund(97006, 98006, 1, "PROCESSING", null);
+        String accessToken = token("operation:product:read");
+
+        mockMvc.perform(get("/admin/operations/product-statistics")
+                        .header("Authorization", "Bearer " + accessToken)
+                        .param("startDate", "2026-07-01").param("endDate", "2026-07-07"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.summary.refundedQuantity.value").value(5));
+        mockMvc.perform(get("/admin/operations/product-statistics")
+                        .header("Authorization", "Bearer " + accessToken)
+                        .param("startDate", "2026-07-08").param("endDate", "2026-07-08"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.summary.refundedQuantity.value").value(1));
+    }
+
+    private void insertStatisticsRefund(long afterSaleId, long refundId, int quantity, String status, String successAt) {
+        jdbcClient.sql("""
+                        insert into after_sale_request
+                            (id, after_sale_no, order_id, user_id, after_sale_type, status, reason,
+                             requested_amount_cent, approved_amount_cent)
+                        values (:id, :afterSaleNo, 94002, 90001, 'REFUND_ONLY', 'APPROVED', '部分退款', :amount, :amount)
+                        """).param("id", afterSaleId).param("afterSaleNo", "OPS-PARTIAL-" + afterSaleId)
+                .param("amount", quantity * 1000L).update();
+        jdbcClient.sql("""
+                        insert into after_sale_item
+                            (after_sale_id, order_item_id, sku_id, order_quantity_snapshot, paid_amount_basis_cent,
+                             requested_quantity, approved_quantity, requested_amount_cent, approved_amount_cent)
+                        values (:afterSaleId, 95002, 93001, 10, 20000, :quantity, :quantity, :amount, :amount)
+                        """).param("afterSaleId", afterSaleId).param("quantity", quantity)
+                .param("amount", quantity * 1000L).update();
+        jdbcClient.sql("""
+                        insert into refund_order
+                            (id, after_sale_id, order_id, payment_order_id, notification_route_token,
+                             out_refund_no, refund_amount_cent, status, requested_at, success_at, created_at, updated_at)
+                        values (:id, :afterSaleId, 94002, 96002, :routeToken, :refundNo, :amount, :status,
+                                timestamp '2026-07-05 11:00:00', :successAt,
+                                timestamp '2026-07-05 11:00:00', timestamp '2026-07-05 11:00:00')
+                        """).param("id", refundId).param("afterSaleId", afterSaleId)
+                .param("routeToken", org.muybaby.shopserver.support.PaymentFixtureIdentity.routeToken(refundId))
+                .param("refundNo", "OPS-PARTIAL-REFUND-" + refundId).param("amount", quantity * 1000L)
+                .param("status", status).param("successAt", successAt == null ? null : LocalDateTime.parse(successAt))
+                .update();
     }
 
     @Test
@@ -1085,6 +1176,12 @@ class AdminOperationsControllerTest {
                             (97002, 'ASFIX97002', 94003, 90002, 'REFUND_ONLY', 'REQUESTED', '其他',
                              5000, null,
                              timestamp '2026-07-07 10:00:00', timestamp '2026-07-07 10:00:00')
+                        """).update();
+        jdbcClient.sql("""
+                        insert into after_sale_item
+                            (after_sale_id, order_item_id, sku_id, order_quantity_snapshot, paid_amount_basis_cent,
+                             requested_quantity, approved_quantity, requested_amount_cent, approved_amount_cent)
+                        values (97001, 95002, 93001, 1, 20000, 1, 1, 20000, 20000)
                         """).update();
         jdbcClient.sql("""
                         insert into refund_order

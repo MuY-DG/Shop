@@ -1080,11 +1080,8 @@ public class AdminAfterSaleService {
                     adminUserId,
                     now);
         } else {
-            boolean unshipped = OrderStatus.PAID.name().equals(order.status())
-                    && order.shippedAt() == null
-                    && !shipmentExists(order.orderId());
             plan = afterSaleV2WorkflowService.applyRefundOnlyApprovalLocked(
-                    afterSaleId, auditRequest, unshipped, now);
+                    afterSaleId, auditRequest, now);
         }
         if (plan.approvedAmountCent() != approvedAmountCent) {
             throw new BusinessException(ErrorCode.ORDER_STATE_CONFLICT);

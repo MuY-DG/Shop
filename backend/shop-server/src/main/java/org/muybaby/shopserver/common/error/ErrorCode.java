@@ -56,6 +56,7 @@ public enum ErrorCode {
     COUPON_CLAIM_LIMIT_REACHED(300002, "Coupon claim limit reached"),
     COUPON_ALREADY_USED(300003, "Coupon already used"),
     ORDER_STATE_CONFLICT(400001, "Order state conflict"),
+    ORDER_FULFILLMENT_UNRESOLVED(400002, "历史退款的发货来源未记录，请核对履约记录后再操作"),
     PAYMENT_PENDING(500001, "Payment pending"),
     PAYMENT_CONFIGURATION_CHANGED(500002, "Payment configuration changed; manual reconciliation required"),
     PAYMENT_CONFIG_UNAVAILABLE(500003, "支付配置不存在或已删除"),

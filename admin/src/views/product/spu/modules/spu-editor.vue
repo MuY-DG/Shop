@@ -450,7 +450,7 @@
       priceCent: sku.priceCent,
       costPriceCent: sku.costPriceCent,
       originalPriceCent: sku.originalPriceCent,
-      stockAvailable: sku.stockAvailable,
+      ...(sku.id == null ? { stockAvailable: sku.stockAvailable } : {}),
       lowStockThreshold: sku.lowStockThreshold,
       weightGram: sku.weightGram,
       volumeCubicMeter: sku.volumeCubicMeter,

@@ -63,7 +63,7 @@ public class AfterSaleV2ReadService {
                                     else oi.main_image end as image,
                                asi.requested_quantity, asi.approved_quantity,
                                asi.requested_amount_cent, asi.approved_amount_cent,
-                               asi.restock_quantity
+                               asi.restock_quantity, asi.received_quantity
                         from after_sale_item asi
                         join order_item oi on oi.id = asi.order_item_id
                         where asi.after_sale_id in (:afterSaleIds)
@@ -131,7 +131,8 @@ public class AfterSaleV2ReadService {
                 rs.getString("product_title"), rs.getString("spec_text"), rs.getString("image"),
                 rs.getInt("requested_quantity"), rs.getObject("approved_quantity", Integer.class),
                 rs.getLong("requested_amount_cent"),
-                rs.getObject("approved_amount_cent", Long.class), rs.getInt("restock_quantity"));
+                rs.getObject("approved_amount_cent", Long.class), rs.getInt("restock_quantity"),
+                rs.getObject("received_quantity", Integer.class));
     }
 
     private record ItemRow(long afterSaleId, AfterSaleItemResponse item) {

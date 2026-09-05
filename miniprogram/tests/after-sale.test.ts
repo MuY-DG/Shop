@@ -5,6 +5,7 @@ import { test } from "node:test";
 
 import {
   afterSaleItemRefundCeilingCent,
+  afterSaleItemSelectableQuantity,
   afterSaleStatusText,
   afterSaleTypeText,
   buildAfterSaleApplyPayload,
@@ -24,6 +25,14 @@ import type {
   AfterSaleType
 } from "../miniprogram/types/after-sale";
 import type { AppOrderDetailResponse, OrderStatus } from "../miniprogram/types/order";
+
+test("return refund selection uses shipped availability while refund only includes unshipped units", () => {
+  const partial = { availableQuantity: 2, returnableQuantity: 1 };
+  assert.equal(afterSaleItemSelectableQuantity(partial, "REFUND_ONLY"), 2);
+  assert.equal(afterSaleItemSelectableQuantity(partial, "RETURN_REFUND"), 1);
+  assert.equal(afterSaleItemSelectableQuantity({ ...partial, returnableQuantity: 0 }, "RETURN_REFUND"), 0);
+  assert.equal(afterSaleItemSelectableQuantity({ ...partial, returnableQuantity: 9 }, "RETURN_REFUND"), 2);
+});
 
 function afterSale(
   status: AfterSaleStatus = "REQUESTED",

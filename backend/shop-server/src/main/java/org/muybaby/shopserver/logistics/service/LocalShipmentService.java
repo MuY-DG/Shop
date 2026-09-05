@@ -23,6 +23,7 @@ import org.muybaby.shopserver.order.service.OrderStatusLogService;
 import org.muybaby.shopserver.security.AuthenticatedPrincipal;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.jdbc.core.simple.JdbcClient;
+import org.muybaby.shopserver.order.repository.OrderItemFulfillmentRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
@@ -69,6 +70,7 @@ public class LocalShipmentService {
             """;
 
     private final JdbcClient jdbcClient;
+    private final OrderItemFulfillmentRepository fulfillment;
     private final WechatShippingRuntimeSettingService runtimeSettingService;
     private final WechatShippingProvider shippingProvider;
     private final ShipmentContactMasker contactMasker;
@@ -83,9 +85,11 @@ public class LocalShipmentService {
             ShipmentContactMasker contactMasker,
             AfterSaleFulfillmentPolicy afterSaleFulfillmentPolicy,
             PlatformTransactionManager transactionManager,
-            OrderStatusLogService orderStatusLogService
+            OrderStatusLogService orderStatusLogService,
+            OrderItemFulfillmentRepository fulfillment
     ) {
         this.jdbcClient = jdbcClient;
+        this.fulfillment = fulfillment;
         this.runtimeSettingService = runtimeSettingService;
         this.shippingProvider = shippingProvider;
         this.contactMasker = contactMasker;
@@ -571,28 +575,9 @@ public class LocalShipmentService {
 
     private Map<Long, RemainingItem> remainingItems(long orderId) {
         Map<Long, RemainingItem> remaining = new LinkedHashMap<>();
-        jdbcClient.sql("""
-                        select item.id as order_item_id, item.product_title, item.spec_text,
-                               item.quantity - item.refunded_quantity
-                                 - coalesce(sum(shipment_item.quantity), 0) as remaining_quantity
-                        from order_item item
-                        left join order_shipment_item shipment_item
-                          on shipment_item.order_item_id = item.id
-                        where item.order_id = :orderId
-                        group by item.id, item.product_title, item.spec_text,
-                                 item.quantity, item.refunded_quantity
-                        having item.quantity - item.refunded_quantity
-                                 - coalesce(sum(shipment_item.quantity), 0) > 0
-                        order by item.id
-                        """)
-                .param("orderId", orderId)
-                .query((rs, rowNum) -> new RemainingItem(
-                        rs.getLong("order_item_id"),
-                        rs.getString("product_title"),
-                        rs.getString("spec_text"),
-                        rs.getInt("remaining_quantity")
-                ))
-                .list()
+        fulfillment.requireKnownForShipping(orderId);
+        fulfillment.items(orderId).stream().filter(item -> item.remainingQuantity() > 0)
+                .map(item -> new RemainingItem(item.orderItemId(), item.title(), item.specText(), item.remainingQuantity()))
                 .forEach(item -> remaining.put(item.orderItemId(), item));
         return remaining;
     }

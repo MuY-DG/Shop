@@ -551,7 +551,7 @@ class AdminShipmentControllerTest {
                 "wechatProviderMode", "wechatUploadStatus", "wechatUploadMessage", "shippedAt",
                 "waybillTrackingSupported", "waybillRegistrationKind",
                 "waybillRegistrationStatus", "waybillRegistrationMessage",
-                "uploadTime", "wechatUploadedAt", "items");
+                "uploadTime", "wechatUploadedAt", "items", "senderAddress");
         assertThat(appShipment.path("shipmentSource").asText()).isEqualTo("MANUAL");
         assertThat(appShipment.has("electronicWaybillId")).isFalse();
     }

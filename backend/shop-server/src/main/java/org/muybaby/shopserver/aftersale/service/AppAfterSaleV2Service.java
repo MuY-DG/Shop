@@ -15,6 +15,7 @@ import org.muybaby.shopserver.auth.token.TokenKind;
 import org.muybaby.shopserver.common.error.BusinessException;
 import org.muybaby.shopserver.common.error.ErrorCode;
 import org.muybaby.shopserver.order.OrderStatus;
+import org.muybaby.shopserver.order.repository.OrderItemFulfillmentRepository;
 import org.muybaby.shopserver.order.service.OrderStatusLogService;
 import org.muybaby.shopserver.security.AuthenticatedPrincipal;
 import org.muybaby.shopserver.storage.StorageAssetScope;
@@ -77,6 +78,7 @@ public class AppAfterSaleV2Service {
     private final AfterSaleStatusLogService statusLogService;
     private final AfterSaleV2ReadService readService;
     private final AfterSaleReturnExpiryService returnExpiryService;
+    private final OrderItemFulfillmentRepository fulfillmentRepository;
 
     public AppAfterSaleV2Service(
             JdbcClient jdbcClient,
@@ -86,7 +88,8 @@ public class AppAfterSaleV2Service {
             OrderStatusLogService orderStatusLogService,
             AfterSaleStatusLogService statusLogService,
             AfterSaleV2ReadService readService,
-            AfterSaleReturnExpiryService returnExpiryService
+            AfterSaleReturnExpiryService returnExpiryService,
+            OrderItemFulfillmentRepository fulfillmentRepository
     ) {
         this.jdbcClient = jdbcClient;
         this.namedParameterJdbcTemplate = namedParameterJdbcTemplate;
@@ -96,6 +99,7 @@ public class AppAfterSaleV2Service {
         this.statusLogService = statusLogService;
         this.readService = readService;
         this.returnExpiryService = returnExpiryService;
+        this.fulfillmentRepository = fulfillmentRepository;
     }
 
     public AfterSaleEligibilityResponse eligibility(
@@ -106,20 +110,32 @@ public class AppAfterSaleV2Service {
         returnExpiryService.expireDueForOrder(orderId);
         OrderSnapshot order = requireOwnedOrder(orderId, userId, false);
         List<ItemSnapshot> items = itemSnapshots(order);
+        Map<Long, Integer> returnable = fulfillmentRepository.returnableQuantities(orderId, order.status());
+        Set<Long> unresolvedItems = unresolvedItemIds(order);
         Long activeId = activeAfterSaleId(orderId);
         List<AfterSaleEligibilityItemResponse> itemResponses = items.stream()
                 .map(item -> new AfterSaleEligibilityItemResponse(
                         item.orderItemId(), item.skuId(), item.title(), item.specText(), item.image(),
                         item.quantity(), item.refundedQuantity(),
-                        Math.max(0, item.quantity() - item.refundedQuantity()), item.paidAmountBasisCent()))
+                        unresolvedItems.contains(item.orderItemId()) ? 0
+                                : Math.max(0, item.quantity() - item.refundedQuantity()),
+                        unresolvedItems.contains(item.orderItemId()) ? 0
+                                : returnable.getOrDefault(item.orderItemId(), 0), item.paidAmountBasisCent()))
                 .toList();
+        List<String> availableTypes = new ArrayList<>();
+        if (ELIGIBLE_ORDER_STATUSES.contains(order.status())) {
+            if (itemResponses.stream().anyMatch(item -> item.availableQuantity() > 0)) {
+                availableTypes.add(AfterSaleType.REFUND_ONLY.name());
+            }
+            if (itemResponses.stream().anyMatch(item -> item.returnableQuantity() > 0)) {
+                availableTypes.add(AfterSaleType.RETURN_REFUND.name());
+            }
+        }
         return new AfterSaleEligibilityResponse(
                 order.orderId(), order.orderNo(), order.status(), activeId,
                 order.paidAmountCent(), order.refundedAmountCent(),
                 Math.max(0, order.paidAmountCent() - order.refundedAmountCent()),
-                ELIGIBLE_ORDER_STATUSES.contains(order.status())
-                        ? List.of(AfterSaleType.REFUND_ONLY.name(), AfterSaleType.RETURN_REFUND.name())
-                        : List.of(),
+                List.copyOf(availableTypes),
                 itemResponses);
     }
 
@@ -152,23 +168,35 @@ public class AppAfterSaleV2Service {
 
         OrderSnapshot order = requireOwnedOrder(orderId, userId, true);
         lockAfterSales(orderId);
+        ExistingRequest existing = requestKey == null ? null : existingRequest(userId, orderId, requestKey);
         List<AfterSaleItemRequest> selectedItems = request == null ? null : request.items();
-        if (selectedItems == null || selectedItems.isEmpty()) {
+        if ((selectedItems == null || selectedItems.isEmpty()) && existing != null) {
+            selectedItems = jdbcClient.sql("""
+                            select order_item_id, requested_quantity from after_sale_item
+                            where after_sale_id = :id order by order_item_id
+                            """).param("id", existing.afterSaleId())
+                    .query((rs, rowNum) -> new AfterSaleItemRequest(
+                            rs.getLong("order_item_id"), rs.getInt("requested_quantity")))
+                    .list();
+        } else if (selectedItems == null || selectedItems.isEmpty()) {
+            Map<Long, Integer> returnable = type == AfterSaleType.RETURN_REFUND
+                    ? fulfillmentRepository.returnableQuantities(orderId, order.status()) : Map.of();
+            Set<Long> unresolvedItems = unresolvedItemIds(order);
             selectedItems = itemSnapshots(order).stream()
-                    .filter(item -> item.refundedQuantity() < item.quantity())
+                    .filter(item -> !unresolvedItems.contains(item.orderItemId()))
                     .map(item -> new AfterSaleItemRequest(
-                            item.orderItemId(), item.quantity() - item.refundedQuantity()))
+                            item.orderItemId(), type == AfterSaleType.RETURN_REFUND
+                            ? returnable.getOrDefault(item.orderItemId(), 0)
+                            : item.quantity() - item.refundedQuantity()))
+                    .filter(item -> item.quantity() > 0)
                     .toList();
         }
         String requestDigest = requestDigest(type, selectedItems, reason, description, evidenceIds);
-        if (requestKey != null) {
-            ExistingRequest existing = existingRequest(userId, orderId, requestKey);
-            if (existing != null) {
-                if (!requestDigest.equals(existing.requestDigest())) {
-                    throw new BusinessException(ErrorCode.ORDER_STATE_CONFLICT);
-                }
-                return requireDecorated(existing.afterSaleId(), userId);
+        if (existing != null) {
+            if (!requestDigest.equals(existing.requestDigest())) {
+                throw new BusinessException(ErrorCode.ORDER_STATE_CONFLICT);
             }
+            return requireDecorated(existing.afterSaleId(), userId);
         }
         if (!ELIGIBLE_ORDER_STATUSES.contains(order.status()) || activeAfterSaleId(orderId) != null) {
             throw new BusinessException(ErrorCode.ORDER_STATE_CONFLICT);
@@ -359,12 +387,20 @@ public class AppAfterSaleV2Service {
             byId.put(item.orderItemId(), item);
         }
         List<AfterSaleItemRequest> normalized = normalizeItems(requestedItems);
+        Map<Long, Integer> returnable = type == AfterSaleType.RETURN_REFUND
+                ? fulfillmentRepository.returnableQuantities(order.orderId(), order.status()) : Map.of();
+        Set<Long> unresolvedItems = unresolvedItemIds(order);
         List<AfterSaleQuoteItemResponse> result = new ArrayList<>(normalized.size());
         long total = 0;
         for (AfterSaleItemRequest request : normalized) {
             ItemSnapshot item = byId.get(request.orderItemId());
+            if (unresolvedItems.contains(request.orderItemId())) {
+                throw new BusinessException(ErrorCode.ORDER_FULFILLMENT_UNRESOLVED);
+            }
             if (item == null || request.quantity() == null || request.quantity() <= 0
-                    || item.refundedQuantity() + request.quantity() > item.quantity()) {
+                    || item.refundedQuantity() + request.quantity() > item.quantity()
+                    || type == AfterSaleType.RETURN_REFUND
+                    && request.quantity() > returnable.getOrDefault(item.orderItemId(), 0)) {
                 throw new BusinessException(ErrorCode.VALIDATION_FAILED);
             }
             long ceiling = AfterSaleAmountAllocator.tranche(
@@ -384,6 +420,20 @@ public class AppAfterSaleV2Service {
                 .map(item -> item.orderItemId() + ":" + item.quantity() + ":" + item.requestedAmountCent())
                 .reduce((left, right) -> left + "," + right).orElse(""));
         return new AfterSaleQuoteResponse(order.orderId(), type.name(), total, digest, List.copyOf(result));
+    }
+
+    private Set<Long> unresolvedItemIds(OrderSnapshot order) {
+        List<OrderItemFulfillmentRepository.Item> items = fulfillmentRepository.items(order.orderId());
+        boolean legacyFullyShipped = (OrderStatus.SHIPPED.name().equals(order.status())
+                || OrderStatus.COMPLETED.name().equals(order.status()))
+                && items.stream().allMatch(item -> item.shippedQuantity() == 0);
+        if (legacyFullyShipped) {
+            return Set.of();
+        }
+        return items.stream().filter(item -> item.unresolvedRefundedQuantity() > 0
+                        || item.quantity() < item.shippedQuantity() + item.cancelledQuantity())
+                .map(OrderItemFulfillmentRepository.Item::orderItemId)
+                .collect(java.util.stream.Collectors.toSet());
     }
 
     private List<ItemSnapshot> itemSnapshots(OrderSnapshot order) {

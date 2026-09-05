@@ -9,6 +9,7 @@ public record AfterSaleEligibilityItemResponse(
         Integer purchasedQuantity,
         Integer refundedQuantity,
         Integer availableQuantity,
+        Integer returnableQuantity,
         Long paidAmountBasisCent
 ) {
 }

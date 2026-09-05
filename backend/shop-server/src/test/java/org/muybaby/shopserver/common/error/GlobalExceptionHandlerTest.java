@@ -19,6 +19,16 @@ import static org.mockito.Mockito.mock;
 class GlobalExceptionHandlerTest {
 
     @Test
+    void unresolvedFulfillmentReturnsAnActionableConflict() {
+        ResponseEntity<ApiResponse<Void>> response = new GlobalExceptionHandler().handleBusinessException(
+                new BusinessException(ErrorCode.ORDER_FULFILLMENT_UNRESOLVED));
+        assertThat(response.getStatusCode().value()).isEqualTo(409);
+        assertThat(response.getBody()).isNotNull();
+        assertThat(response.getBody().code()).isEqualTo(400002);
+        assertThat(response.getBody().msg()).contains("历史退款", "核对履约记录");
+    }
+
+    @Test
     void businessExceptionReturnsStableCodeAndMessage() {
         GlobalExceptionHandler handler = new GlobalExceptionHandler();
 

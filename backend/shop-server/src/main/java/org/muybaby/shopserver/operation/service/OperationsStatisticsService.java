@@ -484,12 +484,15 @@ public class OperationsStatisticsService {
                 ))
                 .single();
         long refundedQuantity = jdbcClient.sql("""
-                        select coalesce(sum(oi.quantity), 0)
-                        from refund_order r
-                        join order_item oi on oi.order_id = r.order_id
-                        where r.status = 'SUCCESS'
-                          and r.success_at >= :startAt
-                          and r.success_at < :endExclusive
+                        select coalesce(sum(asi.approved_quantity), 0)
+                        from after_sale_item asi
+                        where exists (
+                            select 1 from refund_order r
+                            where r.after_sale_id = asi.after_sale_id
+                              and r.status = 'SUCCESS'
+                              and r.success_at >= :startAt
+                              and r.success_at < :endExclusive
+                        )
                         """)
                 .param("startAt", startAt)
                 .param("endExclusive", endExclusive)
@@ -978,17 +981,15 @@ public class OperationsStatisticsService {
 
     private List<RankingItem> categoryRanking(ReportContext context) {
         return jdbcClient.sql("""
-                        select coalesce(c.id, 0) as category_id,
-                               coalesce(max(c.name), '历史商品') as category_name,
+                        select coalesce(oi.category_id_snapshot, 0) as category_id,
+                               coalesce(max(oi.category_name_snapshot), '历史未记录') as category_name,
                                coalesce(sum(oi.quantity), 0) as sold_quantity,
                                coalesce(sum(oi.line_amount_cent), 0) as paid_item_amount_cent
                         from order_item oi
                         join shop_order o on o.id = oi.order_id
-                        left join product_spu s on s.id = oi.spu_id
-                        left join product_category c on c.id = s.category_id
                         where o.paid_at >= :startAt
                           and o.paid_at < :endExclusive
-                        group by c.id
+                        group by oi.category_id_snapshot
                         order by sold_quantity desc, paid_item_amount_cent desc, category_id
                         limit :limit
                         """)

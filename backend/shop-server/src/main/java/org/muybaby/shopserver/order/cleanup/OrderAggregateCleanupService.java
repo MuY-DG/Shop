@@ -520,6 +520,14 @@ public class OrderAggregateCleanupService {
                 where request.order_id = :orderId
                 order by item.id
                 """, orderId));
+        sections.put("after_sale_fulfillment_allocations", rows("""
+                select allocation.*
+                from after_sale_fulfillment_allocation allocation
+                join after_sale_item item on item.id = allocation.after_sale_item_id
+                join after_sale_request request on request.id = item.after_sale_id
+                where request.order_id = :orderId
+                order by allocation.id
+                """, orderId));
         sections.put("after_sale_returns", rows("""
                 select return_entry.*
                 from after_sale_return return_entry
@@ -714,6 +722,14 @@ public class OrderAggregateCleanupService {
         delete("""
                 delete from after_sale_return
                 where after_sale_id in (select id from after_sale_request where order_id = :orderId)
+                """, orderId);
+        delete("""
+                delete from after_sale_fulfillment_allocation
+                where after_sale_item_id in (
+                    select item.id from after_sale_item item
+                    join after_sale_request request on request.id = item.after_sale_id
+                    where request.order_id = :orderId
+                )
                 """, orderId);
         delete("""
                 delete from after_sale_item
@@ -922,6 +938,15 @@ public class OrderAggregateCleanupService {
                         select item.id from after_sale_item item
                         join after_sale_request request on request.id = item.after_sale_id
                         where request.order_id = :orderId order by item.id for update
+                        """)
+                .param("orderId", orderId)
+                .query(Long.class)
+                .list();
+        jdbcClient.sql("""
+                        select allocation.id from after_sale_fulfillment_allocation allocation
+                        join after_sale_item item on item.id = allocation.after_sale_item_id
+                        join after_sale_request request on request.id = item.after_sale_id
+                        where request.order_id = :orderId order by allocation.id for update
                         """)
                 .param("orderId", orderId)
                 .query(Long.class)

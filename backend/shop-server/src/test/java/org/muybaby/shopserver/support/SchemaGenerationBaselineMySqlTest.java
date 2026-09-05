@@ -46,11 +46,33 @@ class SchemaGenerationBaselineMySqlTest {
                             (9890023, 1, 'Existing non-food', '', '', 'NON_FOOD', 'DRAFT')
                         """).update();
 
+        InventoryAmountConstraintTestSupport.insertValidLegacyRows(jdbc);
+        MigrationTestSupport.migrateToVersion(
+                MYSQL.getJdbcUrl(), MYSQL.getUsername(), MYSQL.getPassword(), "18");
+        AfterSaleFulfillmentMigrationTestSupport.insertLegacyRows(jdbc);
+        Flyway.configure()
+                .dataSource(MYSQL.getJdbcUrl(), MYSQL.getUsername(), MYSQL.getPassword())
+                .target("20")
+                .load()
+                .migrate();
+        jdbc.sql("""
+                        insert into product_category (id, parent_id, name, status)
+                        values (9890210, 0, 'Current product category', 'ENABLED')
+                        """).update();
+        jdbc.sql("update product_spu set category_id = 9890210 where id = 9890021").update();
         Flyway flyway = MigrationTestSupport.migrateToLatest(
                 MYSQL.getJdbcUrl(), MYSQL.getUsername(), MYSQL.getPassword());
 
-        assertThat(flyway.info().current().getVersion().getVersion()).isEqualTo("17");
-        assertThat(flyway.info().applied()).hasSize(17);
+        assertThat(flyway.info().current().getVersion().getVersion()).isEqualTo("21");
+        assertThat(flyway.info().applied()).hasSize(21);
+        AfterSaleFulfillmentMigrationTestSupport.assertConservativeHistory(jdbc);
+        assertThat(jdbc.sql("""
+                        select count(*) from order_item item
+                        join product_spu product on product.id = item.spu_id
+                        join product_category category on category.id = product.category_id
+                        where item.id = 9890203 and category.name = 'Current product category'
+                          and item.category_id_snapshot is null and item.category_name_snapshot is null
+                        """).query(Long.class).single()).isOne();
         assertThat(jdbc.sql("select compliance_type from product_spu order by id")
                 .query(String.class).list()).containsExactly("NON_FOOD", "FOOD", "NON_FOOD");
         assertThat(jdbc.sql("select icon from admin_menu where id = 105")
@@ -91,7 +113,7 @@ class SchemaGenerationBaselineMySqlTest {
                         select count(*)
                         from information_schema.tables
                         where table_schema = database()
-                        """).query(Long.class).single()).isEqualTo(125);
+                        """).query(Long.class).single()).isEqualTo(126);
         assertThat(jdbc.sql("""
                         select count(*)
                         from information_schema.tables
@@ -185,5 +207,6 @@ class SchemaGenerationBaselineMySqlTest {
                         where id = 1 and worker_enabled = false and daily_enabled = false
                           and revision = 1
                         """).query(Long.class).single()).isEqualTo(1);
+        InventoryAmountConstraintTestSupport.assertLegacyValuesAndWriteConstraints(jdbc);
     }
 }

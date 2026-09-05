@@ -75,10 +75,12 @@ public abstract class PaymentTestSupport {
         jdbcClient.sql("delete from after_sale_evidence").update();
         jdbcClient.sql("delete from after_sale_status_log").update();
         jdbcClient.sql("delete from after_sale_return").update();
+        jdbcClient.sql("delete from after_sale_fulfillment_allocation").update();
         jdbcClient.sql("delete from after_sale_item").update();
         jdbcClient.sql("delete from after_sale_request").update();
         jdbcClient.sql("delete from merchant_return_address").update();
         jdbcClient.sql("delete from payment_callback_log").update();
+        jdbcClient.sql("delete from order_shipment_item").update();
         jdbcClient.sql("delete from order_shipment").update();
         jdbcClient.sql("delete from payment_attempt").update();
         jdbcClient.sql("delete from payment_order").update();

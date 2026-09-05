@@ -39,4 +39,13 @@ public final class MigrationTestSupport {
         flyway.migrate();
         return flyway;
     }
+
+    public static Flyway migrateToVersion(String jdbcUrl, String username, String password, String version) {
+        Flyway flyway = Flyway.configure()
+                .dataSource(jdbcUrl, username, password)
+                .target(version)
+                .load();
+        flyway.migrate();
+        return flyway;
+    }
 }

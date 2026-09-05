@@ -1,6 +1,7 @@
 import {
   AFTER_SALE_REASONS,
   afterSaleItemRefundCeilingCent,
+  afterSaleItemSelectableQuantity,
   afterSaleTypeText,
   buildAfterSaleApplyPayload,
   buildAfterSaleDetailUrl,
@@ -34,6 +35,7 @@ interface AmountInputEvent {
 interface SelectedEvidence { fileId: number; tempFilePath: string; originalFilename: string; sizeBytes: number }
 interface LocalImage { tempFilePath: string; size: number }
 interface SelectableItem extends AfterSaleEligibilityItem {
+  selectableQuantity: number
   selected: boolean
   quantity: number
   maxAmountCent: number
@@ -135,13 +137,15 @@ Page({
       const blockedAfterSaleId = positiveAfterSaleId(eligibility.activeAfterSaleId)
       const selectedType = eligibility.availableTypes[0] || 'REFUND_ONLY'
       const items = eligibility.items.map((item) => {
+        const selectableQuantity = afterSaleItemSelectableQuantity(item, selectedType)
         const maxAmountCent = afterSaleItemRefundCeilingCent(
-          item.paidAmountBasisCent, item.purchasedQuantity, item.refundedQuantity, item.availableQuantity
+          item.paidAmountBasisCent, item.purchasedQuantity, item.refundedQuantity, selectableQuantity
         )
         return {
           ...item,
-          selected: item.availableQuantity > 0,
-          quantity: item.availableQuantity,
+          selectableQuantity,
+          selected: selectableQuantity > 0,
+          quantity: selectableQuantity,
           maxAmountCent,
           maxAmountText: `¥${formatMoney(maxAmountCent)}`,
           amountText: formatMoney(maxAmountCent)
@@ -199,12 +203,12 @@ Page({
   },
 
   async refreshQuote() {
+    const quoteId = ++latestQuoteRequest
     const items = this.normalizeSelectedAmounts()
     if (!items.length) {
       this.setData({ quote: null, quoteAmountText: '', quoting: false })
       return
     }
-    const quoteId = ++latestQuoteRequest
     this.setData({ quoting: true, quote: null, quoteAmountText: '' })
     try {
       const quote = await quoteAfterSale(this.data.orderId, {
@@ -225,13 +229,29 @@ Page({
   onTypeTap(event: DatasetEvent) {
     const type = String(event.currentTarget.dataset.type || '') as AfterSaleType
     if (!this.data.eligibility?.availableTypes.includes(type) || this.data.submitting) return
-    this.setData({ selectedType: type }, () => void this.refreshQuote())
+    const items = this.data.items.map((item) => {
+      const selectableQuantity = afterSaleItemSelectableQuantity(item, type)
+      const quantity = Math.min(item.quantity || selectableQuantity, selectableQuantity)
+      const maxAmountCent = afterSaleItemRefundCeilingCent(
+        item.paidAmountBasisCent, item.purchasedQuantity, item.refundedQuantity, quantity
+      )
+      return {
+        ...item,
+        selectableQuantity,
+        quantity,
+        selected: item.selected && quantity > 0,
+        maxAmountCent,
+        maxAmountText: `¥${formatMoney(maxAmountCent)}`,
+        amountText: formatMoney(maxAmountCent)
+      }
+    })
+    this.setData({ selectedType: type, items }, () => void this.refreshQuote())
   },
 
   onItemToggle(event: DatasetEvent) {
     const index = Number(event.currentTarget.dataset.index)
     const item = this.data.items[index]
-    if (!item || item.availableQuantity <= 0 || this.data.submitting) return
+    if (!item || item.selectableQuantity <= 0 || this.data.submitting) return
     this.setData(
       { [`items[${index}].selected`]: !item.selected },
       () => void this.refreshQuote()
@@ -262,7 +282,7 @@ Page({
   onQuantityPlus(event: DatasetEvent) {
     const index = Number(event.currentTarget.dataset.index)
     const item = this.data.items[index]
-    if (!item || !item.selected || item.quantity >= item.availableQuantity || this.data.submitting) return
+    if (!item || !item.selected || item.quantity >= item.selectableQuantity || this.data.submitting) return
     this.applyQuantityChange(index, item.quantity + 1)
   },
 

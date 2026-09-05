@@ -28,17 +28,20 @@ public class AfterSaleV2WorkflowService {
     private final MerchantReturnAddressService returnAddressService;
     private final AfterSaleStatusLogService statusLogService;
     private final OrderStatusLogService orderStatusLogService;
+    private final AfterSaleFulfillmentAllocationService allocationService;
 
     public AfterSaleV2WorkflowService(
             JdbcClient jdbcClient,
             MerchantReturnAddressService returnAddressService,
             AfterSaleStatusLogService statusLogService,
-            OrderStatusLogService orderStatusLogService
+            OrderStatusLogService orderStatusLogService,
+            AfterSaleFulfillmentAllocationService allocationService
     ) {
         this.jdbcClient = jdbcClient;
         this.returnAddressService = returnAddressService;
         this.statusLogService = statusLogService;
         this.orderStatusLogService = orderStatusLogService;
+        this.allocationService = allocationService;
     }
 
     public String type(long afterSaleId) {
@@ -72,7 +75,8 @@ public class AfterSaleV2WorkflowService {
                 returnAddressService.requireEnabled(request.returnAddressId());
         LocalDateTime now = LocalDateTime.now(java.time.ZoneOffset.UTC);
         LocalDateTime deadline = now.plus(DEFAULT_RETURN_WINDOW);
-        updateApprovedItems(afterSaleId, plan, false, now);
+        updateApprovedItems(afterSaleId, plan, now);
+        allocationService.allocate(afterSaleId, plan, true, now);
         jdbcClient.sql("""
                         insert into after_sale_return (
                             after_sale_id, return_address_id, contact_name, contact_phone,
@@ -122,11 +126,11 @@ public class AfterSaleV2WorkflowService {
     public ApprovalPlan applyRefundOnlyApprovalLocked(
             long afterSaleId,
             AdminAfterSaleAuditRequest request,
-            boolean restockRequired,
             LocalDateTime now
     ) {
         ApprovalPlan plan = approvalPlan(afterSaleId, request, true);
-        updateApprovedItems(afterSaleId, plan, restockRequired, now);
+        updateApprovedItems(afterSaleId, plan, now);
+        allocationService.allocate(afterSaleId, plan, false, now);
         return plan;
     }
 
@@ -138,39 +142,56 @@ public class AfterSaleV2WorkflowService {
             LocalDateTime now
     ) {
         List<ApprovalItem> approvedItems = approvalItems(afterSaleId, true);
-        Map<Long, Integer> requestedRestocks = new LinkedHashMap<>();
+        Map<Long, AdminReturnInspectionItemRequest> requestedInspections = new LinkedHashMap<>();
         if (inspectionItems != null) {
             for (AdminReturnInspectionItemRequest item : inspectionItems) {
                 if (item == null || item.orderItemId() == null || item.restockQuantity() == null
                         || item.restockQuantity() < 0
-                        || requestedRestocks.putIfAbsent(item.orderItemId(), item.restockQuantity()) != null) {
+                        || item.receivedQuantity() != null && item.receivedQuantity() < 0
+                        || requestedInspections.putIfAbsent(item.orderItemId(), item) != null) {
                     throw new BusinessException(ErrorCode.VALIDATION_FAILED);
                 }
             }
         }
-        boolean explicitRestocks = !requestedRestocks.isEmpty();
+        boolean explicitInspections = !requestedInspections.isEmpty();
+        Map<Long, Integer> receivedQuantities = new LinkedHashMap<>();
+        Map<Long, Integer> restockQuantities = new LinkedHashMap<>();
         long amount = 0;
         for (ApprovalItem item : approvedItems) {
-            int restock = explicitRestocks
-                    ? requestedRestocks.getOrDefault(item.orderItemId(), 0)
-                    : item.approvedQuantity();
-            if (restock > item.approvedQuantity()) {
+            AdminReturnInspectionItemRequest inspection = requestedInspections.remove(item.orderItemId());
+            if (item.approvedQuantity() == null || item.approvedAmountCent() == null) {
+                throw new BusinessException(ErrorCode.ORDER_STATE_CONFLICT);
+            }
+            // Older clients did not report receipts. Keep their all-received convention
+            // only for included items; an omitted item in an explicit list was not received.
+            int received = inspection == null
+                    ? (explicitInspections ? 0 : item.approvedQuantity())
+                    : (inspection.receivedQuantity() == null ? item.approvedQuantity() : inspection.receivedQuantity());
+            int restock = inspection == null
+                    ? (explicitInspections ? 0 : item.approvedQuantity())
+                    : inspection.restockQuantity();
+            if (received > item.approvedQuantity() || restock > received) {
                 throw new BusinessException(ErrorCode.VALIDATION_FAILED);
             }
+            receivedQuantities.put(item.id(), received);
+            restockQuantities.put(item.id(), restock);
+            amount = Math.addExact(amount, item.approvedAmountCent());
+        }
+        if (!requestedInspections.isEmpty()) {
+            throw new BusinessException(ErrorCode.VALIDATION_FAILED);
+        }
+        for (ApprovalItem item : approvedItems) {
             requireOne(jdbcClient.sql("""
                             update after_sale_item
-                            set restock_quantity = :restockQuantity, updated_at = :now
+                            set received_quantity = :receivedQuantity,
+                                restock_quantity = :restockQuantity, updated_at = :now
                             where id = :id
                             """)
-                    .param("restockQuantity", restock)
+                    .param("receivedQuantity", receivedQuantities.get(item.id()))
+                    .param("restockQuantity", restockQuantities.get(item.id()))
                     .param("now", now)
                     .param("id", item.id())
                     .update());
-            amount = Math.addExact(amount, item.approvedAmountCent());
-            requestedRestocks.remove(item.orderItemId());
-        }
-        if (!requestedRestocks.isEmpty()) {
-            throw new BusinessException(ErrorCode.VALIDATION_FAILED);
         }
         int returnRows = jdbcClient.sql("""
                         update after_sale_return
@@ -357,7 +378,6 @@ public class AfterSaleV2WorkflowService {
     private void updateApprovedItems(
             long afterSaleId,
             ApprovalPlan plan,
-            boolean restockRequired,
             LocalDateTime now
     ) {
         Map<Long, PlannedItem> byId = new LinkedHashMap<>();
@@ -378,7 +398,7 @@ public class AfterSaleV2WorkflowService {
                             """)
                     .param("approvedQuantity", approvedQuantity)
                     .param("approvedAmount", approvedAmount)
-                    .param("restockQuantity", restockRequired ? approvedQuantity : 0)
+                    .param("restockQuantity", 0)
                     .param("now", now)
                     .param("id", current.id())
                     .update());

@@ -187,12 +187,12 @@ class AdminOrderControllerTest {
                             (order_id, from_status, to_status, event_type, operator_type,
                              operator_id, description, created_at)
                         values
-                            (9121, '', 'CREATED', 'ORDER_CREATED', 'APP_USER', :userId,
+                            (9121, '', 'CREATED', 'ORDER_CREATED', 'APP_USER', :operatorId,
                              '订单创建', timestamp '2026-07-07 12:30:00'),
                             (9121, 'PAYING', 'PAID', 'PAYMENT_SUCCEEDED', 'WECHAT', null,
                              '微信支付成功', timestamp '2026-07-07 12:35:00')
                         """)
-                .param("userId", userId)
+                .param("operatorId", 9007199254740993L)
                 .update();
 
         mockMvc.perform(get("/admin/orders/{orderId}/status-logs", 9121L)
@@ -202,7 +202,9 @@ class AdminOrderControllerTest {
                 .andExpect(jsonPath("$.data[0].eventType").value("ORDER_CREATED"))
                 .andExpect(jsonPath("$.data[0].toStatus").value("CREATED"))
                 .andExpect(jsonPath("$.data[0].operatorType").value("APP_USER"))
+                .andExpect(jsonPath("$.data[0].operatorId").value("9007199254740993"))
                 .andExpect(jsonPath("$.data[1].eventType").value("PAYMENT_SUCCEEDED"))
+                .andExpect(jsonPath("$.data[1].operatorId").doesNotExist())
                 .andExpect(jsonPath("$.data[1].toStatus").value("PAID"));
     }
 

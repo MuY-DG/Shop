@@ -417,6 +417,11 @@ class AdminElectronicWaybillControllerTest {
         long recordId = data(created).path("id").asLong();
         assertThat(provider.addRequests).hasSize(1);
 
+        // Legacy refunded units lack an allocation source. Recovery/cancellation must
+        // remain possible even though creating another shipping label is forbidden.
+        jdbcClient.sql("update order_item set refunded_quantity = 1 where order_id = :id")
+                .param("id", orderId).update();
+
         jdbcClient.sql("""
                         update order_electronic_waybill
                         set pending_operation = 'REFRESH',
@@ -463,6 +468,10 @@ class AdminElectronicWaybillControllerTest {
 
         assertThat(provider.cancelRequests).hasSize(2);
         assertThat(provider.getRequests).hasSize(3);
+        create(token, orderId, UUID.randomUUID().toString(), "1.000")
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value(ErrorCode.ORDER_FULFILLMENT_UNRESOLVED.code()));
+        assertThat(provider.addRequests).hasSize(1);
         assertThat(provider.networkTransactionActive).isFalse();
     }
 

@@ -28,6 +28,7 @@ import org.muybaby.shopserver.order.dto.OrderItemResponse;
 import org.muybaby.shopserver.order.dto.OrderStatusLogResponse;
 import org.muybaby.shopserver.security.AuthenticatedPrincipal;
 import org.springframework.jdbc.core.simple.JdbcClient;
+import org.muybaby.shopserver.order.repository.OrderItemFulfillmentRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 
@@ -46,6 +47,7 @@ public class AdminOrderService {
     private static final String OPERATOR_TYPE_ADMIN = "ADMIN";
 
     private final JdbcClient jdbcClient;
+    private final OrderItemFulfillmentRepository fulfillment;
     private final OrderCloseService orderCloseService;
     private final WechatShippingUploadRecovery shippingUploadRecovery;
     private final AfterSaleFulfillmentPolicy afterSaleFulfillmentPolicy;
@@ -56,9 +58,11 @@ public class AdminOrderService {
             OrderCloseService orderCloseService,
             WechatShippingUploadRecovery shippingUploadRecovery,
             AfterSaleFulfillmentPolicy afterSaleFulfillmentPolicy,
-            ElectronicWaybillService electronicWaybillService
+            ElectronicWaybillService electronicWaybillService,
+            OrderItemFulfillmentRepository fulfillment
     ) {
         this.jdbcClient = jdbcClient;
+        this.fulfillment = fulfillment;
         this.orderCloseService = orderCloseService;
         this.shippingUploadRecovery = shippingUploadRecovery;
         this.afterSaleFulfillmentPolicy = afterSaleFulfillmentPolicy;
@@ -772,28 +776,9 @@ public class AdminOrderService {
     }
 
     private List<ShipmentItemResponse> findRemainingShipmentItems(long orderId) {
-        return jdbcClient.sql("""
-                        select item.id as order_item_id, item.product_title, item.spec_text,
-                               item.quantity - item.refunded_quantity
-                                 - coalesce(sum(shipment_item.quantity), 0) as remaining_quantity
-                        from order_item item
-                        left join order_shipment_item shipment_item
-                          on shipment_item.order_item_id = item.id
-                        where item.order_id = :orderId
-                        group by item.id, item.product_title, item.spec_text,
-                                 item.quantity, item.refunded_quantity
-                        having item.quantity - item.refunded_quantity
-                                 - coalesce(sum(shipment_item.quantity), 0) > 0
-                        order by item.id
-                        """)
-                .param("orderId", orderId)
-                .query((rs, rowNum) -> new ShipmentItemResponse(
-                        rs.getLong("order_item_id"),
-                        rs.getString("product_title"),
-                        rs.getString("spec_text"),
-                        rs.getInt("remaining_quantity")
-                ))
-                .list();
+        return fulfillment.items(orderId).stream().filter(item -> item.remainingQuantity() > 0)
+                .map(item -> new ShipmentItemResponse(item.orderItemId(), item.title(), item.specText(), item.remainingQuantity()))
+                .toList();
     }
 
     private boolean isShippableStatus(String status) {

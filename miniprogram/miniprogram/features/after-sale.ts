@@ -1,6 +1,7 @@
 import type {
   AfterSaleAction,
   AfterSaleApplyRequest,
+  AfterSaleEligibilityItem,
   AfterSaleItemResponse,
   AfterSaleItemRequest,
   AfterSaleQuoteResponse,
@@ -19,6 +20,16 @@ export const AFTER_SALE_REASONS = Object.freeze([
   '收到的商品与描述不符',
   '其他原因'
 ])
+
+export function afterSaleItemSelectableQuantity(
+  item: Pick<AfterSaleEligibilityItem, 'availableQuantity' | 'returnableQuantity'>,
+  type: AfterSaleType
+): number {
+  const available = Math.max(0, Number(item.availableQuantity) || 0)
+  return type === 'RETURN_REFUND'
+    ? Math.min(available, Math.max(0, Number(item.returnableQuantity) || 0))
+    : available
+}
 
 export type AfterSaleStatusTone = 'brand' | 'warning' | 'success' | 'danger' | 'muted'
 export type AfterSaleProgressState = 'pending' | 'current' | 'done' | 'error'

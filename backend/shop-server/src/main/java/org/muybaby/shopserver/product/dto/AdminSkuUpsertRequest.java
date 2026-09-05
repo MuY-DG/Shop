@@ -26,6 +26,7 @@ public class AdminSkuUpsertRequest {
     @Min(0)
     private Long originalPriceCent;
 
+    /** Initial stock for a new SKU; metadata updates ignore this field for existing SKUs. */
     @Min(0)
     private Integer stockAvailable;
 

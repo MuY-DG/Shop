@@ -102,6 +102,7 @@ public class CheckoutSelectionService {
         List<OrderPreviewItemResponse> previewItems = new ArrayList<>(checkoutRows.size());
         List<CheckoutItem> checkoutItems = new ArrayList<>(checkoutRows.size());
         List<Long> unitCostCents = new ArrayList<>(checkoutRows.size());
+        List<CheckoutSelection.CategorySnapshot> categorySnapshots = new ArrayList<>(checkoutRows.size());
         Map<Long, List<WholesaleTierRow>> wholesaleTiersBySkuId = findWholesaleTiersBySkuIds(
                 checkoutRows.stream().map(CheckoutRow::skuId).distinct().toList()
         );
@@ -151,6 +152,7 @@ public class CheckoutSelectionService {
             ));
             checkoutItems.add(new CheckoutItem(row.skuId(), row.spuId(), lineAmountCent, row.quantity()));
             unitCostCents.add(row.unitCostCent());
+            categorySnapshots.add(new CheckoutSelection.CategorySnapshot(row.categoryId(), row.categoryName()));
         }
         long freightCent = freightAmountsByTemplate.values().stream()
                 .mapToLong(Long::longValue)
@@ -161,6 +163,7 @@ public class CheckoutSelectionService {
                 previewItems,
                 checkoutItems,
                 unitCostCents,
+                categorySnapshots,
                 selectedCartItemIds,
                 productOriginalAmountCent,
                 productAmountCent,
@@ -331,7 +334,7 @@ public class CheckoutSelectionService {
 
     private List<LockedCategoryRow> lockCategoryRows(List<Long> categoryIds) {
         return jdbcTemplate.query("""
-                        select id as category_id, status as category_status
+                        select id as category_id, name as category_name, status as category_status
                         from product_category
                         where id in (:categoryIds)
                         order by id asc
@@ -340,6 +343,7 @@ public class CheckoutSelectionService {
                 new MapSqlParameterSource().addValue("categoryIds", categoryIds),
                 (rs, rowNum) -> new LockedCategoryRow(
                         rs.getLong("category_id"),
+                        rs.getString("category_name"),
                         rs.getString("category_status")
                 ));
     }
@@ -447,6 +451,8 @@ public class CheckoutSelectionService {
                 sku.skuStatus(),
                 spu.spuStatus(),
                 category.categoryStatus(),
+                category.categoryId(),
+                category.categoryName(),
                 freightTemplate.freightTemplateId(),
                 freightTemplate.chargeMode(),
                 freightTemplate.fixedAmountCent(),
@@ -478,6 +484,8 @@ public class CheckoutSelectionService {
                                k.status as sku_status,
                                s.status as spu_status,
                                pc.status as category_status,
+                               pc.id as category_id,
+                               pc.name as category_name,
                                s.freight_template_id,
                                ft.charge_mode,
                                ft.fixed_amount_cent,
@@ -522,6 +530,8 @@ public class CheckoutSelectionService {
                        k.status as sku_status,
                        s.status as spu_status,
                        pc.status as category_status,
+                       pc.id as category_id,
+                       pc.name as category_name,
                        s.freight_template_id,
                        ft.charge_mode,
                        ft.fixed_amount_cent,
@@ -650,6 +660,8 @@ public class CheckoutSelectionService {
                 rs.getString("sku_status"),
                 rs.getString("spu_status"),
                 rs.getString("category_status"),
+                rs.getLong("category_id"),
+                rs.getString("category_name"),
                 rs.getObject("freight_template_id", Long.class),
                 rs.getString("charge_mode"),
                 rs.getObject("fixed_amount_cent", Long.class),
@@ -688,7 +700,7 @@ public class CheckoutSelectionService {
     ) {
     }
 
-    private record LockedCategoryRow(Long categoryId, String categoryStatus) {
+    private record LockedCategoryRow(Long categoryId, String categoryName, String categoryStatus) {
     }
 
     private record LockedFreightTemplateRow(
@@ -751,6 +763,8 @@ public class CheckoutSelectionService {
             String skuStatus,
             String spuStatus,
             String categoryStatus,
+            Long categoryId,
+            String categoryName,
             Long freightTemplateId,
             String freightChargeMode,
             Long freightFixedAmountCent,
