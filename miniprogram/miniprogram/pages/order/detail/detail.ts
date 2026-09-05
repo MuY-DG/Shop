@@ -8,7 +8,6 @@ import {
   buildOrderListUrl,
   buildOrderModifyUrl,
   copyOrderNo,
-  copyTrackingNo,
   filterRebuyableOrderItems,
   formatPaymentCountdown,
   positiveOrderId,
@@ -18,10 +17,9 @@ import {
   type OrderDetailView
 } from "../../../features/order-center";
 import {
-  buildOrderTrackingView,
-  LOGISTICS_UNAVAILABLE_MESSAGE,
-  openOrderLogistics,
-  type OrderTrackingView
+  buildOrderDeliverySummary,
+  buildOrderLogisticsUrl,
+  type OrderDeliverySummary
 } from "../../../features/order-logistics";
 import { buildCustomerServiceUrl } from "../../../features/customer-service";
 import {
@@ -35,7 +33,6 @@ import {
   confirmOrderReceipt,
   deleteOrder,
   getOrderDetail,
-  getShipmentWaybillToken,
   syncShipmentTracking
 } from "../../../services/order";
 import { isApiError } from "../../../utils/api-error";
@@ -44,7 +41,6 @@ interface DatasetEvent {
   currentTarget: {
     dataset: {
       index?: number | string;
-      shipmentId?: number | string;
       spuId?: number | string;
     };
   };
@@ -96,7 +92,7 @@ Page({
   data: {
     orderId: 0,
     detail: null as OrderDetailView | null,
-    orderInfoExpanded: true,
+    orderInfoExpanded: false,
     countdownText: "",
     countdownHours: "",
     countdownMinutes: "",
@@ -109,11 +105,7 @@ Page({
     loaded: false,
     errorText: "",
     actionType: "",
-    logisticsOpening: false,
-    activeShipmentId: 0,
-    trackingView: null as OrderTrackingView | null,
-    trackingLoading: false,
-    trackingErrorText: ""
+    deliverySummary: null as OrderDeliverySummary | null
   },
 
   onLoad(query: Record<string, string | undefined>) {
@@ -160,6 +152,7 @@ Page({
       return;
     }
     const requestId = ++latestDetailRequest;
+    latestTrackingRequest += 1;
     this.setData({ loading: true, errorText: "" });
     try {
       const response = await getOrderDetail(this.data.orderId);
@@ -172,7 +165,7 @@ Page({
         : undefined;
       this.setData({
         detail,
-        activeShipmentId: latestShipment?.shipmentId || 0,
+        deliverySummary: buildOrderDeliverySummary(detail),
         loading: false,
         loaded: true,
         errorText: ""
@@ -182,11 +175,7 @@ Page({
         void this.refreshTracking(detail.orderId, latestShipment.shipmentId);
       } else {
         latestTrackingRequest += 1;
-        this.setData({
-          trackingView: null,
-          trackingLoading: false,
-          trackingErrorText: ""
-        });
+        this.setData({ deliverySummary: null });
       }
     } catch (error) {
       if (requestId !== latestDetailRequest) {
@@ -202,30 +191,12 @@ Page({
 
   async refreshTracking(orderId: number, shipmentId: number) {
     const requestId = ++latestTrackingRequest;
-    this.setData({ trackingLoading: true, trackingErrorText: "" });
     try {
       const response = await syncShipmentTracking(orderId, shipmentId);
-      if (
-        requestId !== latestTrackingRequest
-        || this.data.orderId !== orderId
-        || this.data.detail?.orderId !== orderId
-        || this.data.activeShipmentId !== shipmentId
-      ) {
-        return;
-      }
-      this.setData({
-        trackingView: buildOrderTrackingView(response),
-        trackingLoading: false,
-        trackingErrorText: ""
-      });
-    } catch (error) {
-      if (requestId !== latestTrackingRequest || this.data.orderId !== orderId) {
-        return;
-      }
-      this.setData({
-        trackingLoading: false,
-        trackingErrorText: actionError(error, "物流轨迹暂不可用，请稍后再试")
-      });
+      if (requestId !== latestTrackingRequest || this.data.detail?.orderId !== orderId) return;
+      this.setData({ deliverySummary: buildOrderDeliverySummary(this.data.detail, undefined, response) });
+    } catch {
+      // Keep the shipment/address snapshot visible when tracking cannot be refreshed.
     }
   },
 
@@ -426,45 +397,9 @@ Page({
     copyOrderNo(this.data.detail?.orderNo);
   },
 
-  onCopyTrackingNoTap(event: DatasetEvent) {
-    const shipmentId = Number(event.currentTarget.dataset.shipmentId);
-    const shipment = this.data.detail?.shipmentViews.find((item) => item.shipmentId === shipmentId);
-    copyTrackingNo(shipment?.trackingNo);
-  },
-
-  onOpenLogisticsTap(event: DatasetEvent) {
-    const shipmentId = Number(event.currentTarget.dataset.shipmentId);
-    void this.openCurrentOrderLogistics(shipmentId);
-  },
-
-  onShipmentTap(event: DatasetEvent) {
-    const shipmentId = Number(event.currentTarget.dataset.shipmentId);
-    const detail = this.data.detail;
-    if (!detail || !detail.shipmentViews.some((item) => item.shipmentId === shipmentId)) return;
-    this.setData({ activeShipmentId: shipmentId, trackingView: null, trackingErrorText: "" });
-    void this.refreshTracking(detail.orderId, shipmentId);
-  },
-
-  async openCurrentOrderLogistics(shipmentId: number) {
-    const detail = this.data.detail;
-    const shipment = detail?.shipmentViews.find((item) => item.shipmentId === shipmentId);
-    if (
-      !detail || !shipment?.canOpenTracking
-      || this.data.logisticsOpening
-    ) {
-      return;
-    }
-    this.setData({ logisticsOpening: true });
-    try {
-      const opened = await openOrderLogistics({
-        requestWaybillToken: () => getShipmentWaybillToken(detail.orderId, shipmentId)
-      });
-      if (!opened) {
-        wx.showToast({ title: LOGISTICS_UNAVAILABLE_MESSAGE, icon: "none" });
-      }
-    } finally {
-      this.setData({ logisticsOpening: false });
-    }
+  onLogisticsTap() {
+    if (!this.data.detail || !this.data.deliverySummary || this.data.actionType) return;
+    wx.navigateTo({ url: buildOrderLogisticsUrl(this.data.detail.orderId, this.data.deliverySummary.shipmentId) });
   },
 
   onOrderInfoToggle() {

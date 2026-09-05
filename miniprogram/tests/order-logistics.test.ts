@@ -28,7 +28,7 @@ test("官方物流查询插件只声明在预下载分包中", () => {
   const logisticsPackage = appConfig.subPackages?.find(({ name }) => name === "logistics");
   assert.equal(appConfig.plugins, undefined);
   assert.equal(logisticsPackage?.root, "packages/logistics");
-  assert.deepEqual(logisticsPackage?.pages, ["loader/loader"]);
+  assert.deepEqual(logisticsPackage?.pages, ["loader/loader", "detail/detail"]);
   ["json", "less", "ts", "wxml"].forEach((extension) => {
     assert.equal(
       existsSync(resolve(
@@ -119,12 +119,14 @@ test("getPath 无节点或失败时仍返回可展示的空态", () => {
   assert.equal(failed.pathStateText, "详细物流轨迹暂不可用，请稍后再试");
 });
 
-test("订单详情始终保留自定义轨迹区域和官方全部物流入口", () => {
+test("物流详情保留自定义轨迹和官方入口，订单详情仅展示摘要", () => {
   const template = readFileSync(
-    resolve(process.cwd(), "miniprogram/pages/order/detail/detail.wxml"),
+    resolve(process.cwd(), "miniprogram/packages/logistics/detail/detail.wxml"),
     "utf8"
   );
-  assert.match(template, /class="tracking-panel"/);
+  const orderTemplate = readFileSync(resolve(process.cwd(), "miniprogram/pages/order/detail/detail.wxml"), "utf8");
+  assert.doesNotMatch(orderTemplate, /trackingView|运单号|包裹商品/);
+  assert.match(orderTemplate, /deliverySummary.originText/);
   assert.match(template, /物流轨迹/);
   assert.match(template, /查看全部物流/);
   assert.match(template, /trackingView && trackingView\.hasPathItems/);

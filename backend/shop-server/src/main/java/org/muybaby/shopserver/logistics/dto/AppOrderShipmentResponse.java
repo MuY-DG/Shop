@@ -28,7 +28,8 @@ public record AppOrderShipmentResponse(
         String waybillRegistrationMessage,
         LocalDateTime shippedAt, String uploadTime,
         LocalDateTime wechatUploadedAt,
-        List<ShipmentItemResponse> items
+        List<ShipmentItemResponse> items,
+        String senderAddress
 ) {
     public AppOrderShipmentResponse {
         items = items == null ? List.of() : List.copyOf(items);

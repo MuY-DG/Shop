@@ -126,7 +126,9 @@ test("订单状态映射稳定并只开放合法操作", () => {
   assert.equal(shipped.canPay, false);
   assert.equal(shipped.canRebuy, true);
   assert.equal(shipped.canDelete, false);
-  assert.equal(shipped.canAfterSale, true);
+  assert.equal(shipped.canAfterSale, false);
+  assert.equal(shipped.canViewLogistics, true);
+  assert.equal(buildOrderSummaryView(summary("PARTIALLY_SHIPPED")).canViewLogistics, true);
   assert.equal(shipped.afterSaleActionText, "退换|售后");
   assert.equal(shipped.amountText, "¥45.40");
 
@@ -282,6 +284,7 @@ test("订单详情为实体快递生成独立于 token 的静态物流视图", (
   assert.deepEqual(view.shipmentView, {
     shipmentId: 701,
     packageNo: 1,
+    senderAddress: "",
     carrierName: "顺丰速运",
     trackingNo: "SF1234567890",
     shippedAtText: "2026-08-08 10:20:30",

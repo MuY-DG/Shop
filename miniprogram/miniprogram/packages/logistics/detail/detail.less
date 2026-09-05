@@ -1,0 +1,291 @@
+@import "../../../styles/tokens.less";
+.logistics-card__heading {
+  min-height: 56rpx;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: @space-4;
+}
+
+.logistics-card__row {
+  min-width: 0;
+  display: grid;
+  padding: @space-3 0;
+  align-items: center;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: @space-4;
+  color: @color-text-muted;
+  font-size: @font-size-sm;
+}
+
+.logistics-card__row--tracking {
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 0;
+}
+
+.logistics-card__row--tracking .logistics-card__label {
+  margin-right: @space-4;
+}
+
+.logistics-card__label {
+  flex: none;
+}
+
+.logistics-card__value,
+.logistics-card__tracking-no {
+  min-width: 0;
+  color: @color-text-black;
+  text-align: right;
+}
+
+.logistics-card__tracking-no {
+  width: 100%;
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tracking-panel__heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: @space-4;
+}
+
+.tracking-panel__status--active {
+  color: @color-action-primary;
+}
+
+.tracking-panel__status--success {
+  color: #2f7d52;
+}
+
+.tracking-panel__status--warning {
+  color: #c46b22;
+}
+
+.tracking-panel__status--muted {
+  color: @color-text-muted;
+}
+
+.tracking-panel__empty {
+  padding: @space-6 0 @space-4;
+  color: @color-text-muted;
+  font-size: @font-size-sm;
+  line-height: 1.5;
+  text-align: center;
+}
+
+.tracking-event {
+  display: grid;
+  grid-template-columns: 28rpx minmax(0, 1fr);
+  gap: @space-3;
+}
+
+.tracking-event:first-of-type {
+  margin-top: @space-5;
+}
+
+.tracking-event__rail {
+  position: relative;
+  display: flex;
+  justify-content: center;
+}
+
+.tracking-event__dot {
+  z-index: 1;
+  width: 14rpx;
+  height: 14rpx;
+  margin-top: 7rpx;
+  border: 4rpx solid #ead8d4;
+  border-radius: 50%;
+  background: @color-text-placeholder;
+  box-sizing: border-box;
+}
+
+.tracking-event--latest .tracking-event__dot {
+  border-color: #f2d5d1;
+  background: @color-action-primary;
+}
+
+.tracking-event__line {
+  position: absolute;
+  top: 21rpx;
+  bottom: -7rpx;
+  width: 2rpx;
+  background: @color-divider;
+}
+
+.tracking-event__body {
+  min-width: 0;
+  padding-bottom: @space-5;
+}
+
+.tracking-event__message {
+  display: block;
+  color: @color-text-secondary;
+  font-size: @font-size-sm;
+  line-height: 1.5;
+}
+
+.tracking-event--latest .tracking-event__message {
+  color: @color-text-black;
+}
+
+.tracking-event__time,
+.tracking-panel__synced-at {
+  display: block;
+  margin-top: @space-1;
+  color: @color-text-placeholder;
+  font-size: @font-size-xs;
+  line-height: 1.4;
+}
+
+.tracking-panel__synced-at {
+  margin-top: 0;
+  text-align: right;
+}
+
+.logistics-page {
+  display: flex;
+  height: 100vh;
+  overflow: hidden;
+  flex-direction: column;
+  background: @color-page;
+}
+.logistics-scroll {
+  flex: 1;
+  height: 0;
+}
+.logistics-content {
+  padding: 24rpx 24rpx calc(32rpx + env(safe-area-inset-bottom));
+}
+.logistics-card {
+  margin-bottom: 20rpx;
+  padding: 28rpx;
+  border-radius: 20rpx;
+  background: #fff;
+}
+.section-heading {
+  font-size: 29rpx;
+  font-weight: 650;
+  color: @color-text-black;
+}
+.package-label {
+  font-size: 24rpx;
+  color: @color-text-muted;
+}
+.package-tabs {
+  margin-bottom: 20rpx;
+  white-space: nowrap;
+}
+button.package-tab {
+  display: inline-block;
+  width: auto;
+  margin: 0 16rpx 0 0;
+  padding: 0 30rpx;
+  background: #fff;
+  color: @color-text-muted;
+  border-radius: 40rpx;
+  font-size: 26rpx;
+  line-height: 72rpx;
+}
+button.package-tab--active {
+  background: #fff0ef;
+  color: @color-action-primary;
+  font-weight: 650;
+}
+button::after {
+  border: 0;
+}
+.route-card__status {
+  display: block;
+  margin-bottom: 28rpx;
+  color: @color-action-primary;
+  font-size: 34rpx;
+  font-weight: 650;
+}
+.route-card__status.tracking-panel__status--success {
+  color: #25834b;
+}
+.route-card__status.tracking-panel__status--warning {
+  color: #b36a16;
+}
+.route-stop {
+  display: flex;
+  align-items: flex-start;
+  gap: 20rpx;
+  margin-top: 24rpx;
+}
+.route-stop > view {
+  flex: 1;
+  min-width: 0;
+}
+.route-stop__badge {
+  display: block;
+  width: 40rpx;
+  height: 40rpx;
+  line-height: 40rpx;
+  flex: none;
+  border-radius: 50%;
+  background: #edeef0;
+  color: @color-text-muted;
+  font-size: 22rpx;
+  text-align: center;
+}
+.route-stop__badge--destination {
+  color: #fff;
+  background: @color-action-primary;
+}
+.route-stop__label {
+  display: block;
+  color: @color-text-muted;
+  font-size: 24rpx;
+  margin-bottom: 8rpx;
+}
+.route-stop__address {
+  display: block;
+  color: @color-text-black;
+  font-size: 27rpx;
+  line-height: 1.6;
+  word-break: break-all;
+}
+button.copy-action {
+  width: auto;
+  min-width: 0;
+  margin: 0;
+  padding: 0 8rpx;
+  background: transparent;
+  color: @color-action-primary;
+  flex: none;
+  font-size: 25rpx;
+  line-height: 56rpx;
+}
+button.official-tracking {
+  width: 100%;
+  margin: 28rpx 0 0;
+  border: 1rpx solid @color-border;
+  border-radius: 40rpx;
+  background: #fff;
+  color: @color-text-black;
+  font-size: 27rpx;
+  line-height: 76rpx;
+}
+.logistics-notice {
+  padding: 12rpx 0 20rpx;
+  color: @color-text-muted;
+  font-size: 24rpx;
+  line-height: 1.5;
+}
+.logistics-empty {
+  padding: 80rpx 24rpx;
+  text-align: center;
+}
+.logistics-empty button {
+  width: 240rpx;
+  margin-top: 24rpx;
+  background: #fff;
+  color: @color-action-primary;
+  font-size: 28rpx;
+}

@@ -1642,6 +1642,7 @@ public class AppOrderService {
                                express_company_code,
                                express_company_name,
                                tracking_no,
+                               sender_address,
                                shipment_source,
                                electronic_waybill_id,
                                status as local_shipment_status,
@@ -1715,7 +1716,8 @@ public class AppOrderService {
                 rs.getObject("shipped_at", LocalDateTime.class),
                 rs.getString("upload_time"),
                 rs.getObject("wechat_uploaded_at", LocalDateTime.class),
-                findShipmentItems(shipmentId)
+                findShipmentItems(shipmentId),
+                rs.getString("sender_address")
         );
     }
 

@@ -395,9 +395,12 @@ class AppOrderServiceTest {
         long olderAfterSale = insertAfterSale(orderId, userId, "REJECTED", completedAt.plusMinutes(1));
         long latestAfterSale = insertAfterSale(orderId, userId, "REFUNDED", completedAt.plusMinutes(2));
 
+        jdbcClient.sql("update order_shipment set sender_address = '广东省 深圳市 南山区 一号仓库' where order_id = :id")
+                .param("id", orderId).update();
         AppOrderDetailResponse detail = appOrderService.detail(appPrincipal(userId), orderId);
 
         assertThat(detail.orderId()).isEqualTo(orderId);
+        assertThat(detail.shipment().senderAddress()).isEqualTo("广东省 深圳市 南山区 一号仓库");
         assertThat(detail.receiverName()).isEqualTo("Receiver Snapshot");
         assertThat(detail.receiverPhone()).isEqualTo("13800138000");
         assertThat(detail.receiverAddress()).isEqualTo("Persisted Receiver Address");

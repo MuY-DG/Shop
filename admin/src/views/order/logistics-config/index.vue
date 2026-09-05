@@ -23,10 +23,8 @@
       <template #header>
         <div class="page-header">
           <div>
-            <div class="page-header__title">电子面单配置</div>
-            <div class="page-header__subtitle">
-              先在微信沙箱跑通生成、预览、打印和轨迹模拟，绑定正式快递账号后只需切换配置
-            </div>
+            <div class="page-header__title">发货地址与电子面单</div>
+            <div class="page-header__subtitle"> 维护默认发货地址，按需启用电子面单 </div>
           </div>
           <div class="page-header__actions">
             <ElButton :disabled="loading || saving" @click="handleReload">重新加载</ElButton>
@@ -57,72 +55,13 @@
       />
 
       <ElForm v-loading="loading" :model="formData" label-position="top" class="config-form">
-        <section class="config-section config-section--mode">
-          <div class="section-heading">
-            <div>
-              <h2>运行模式</h2>
-              <p>沙箱会强制使用微信官方测试运力和测试客户编码，前端填写值不能覆盖。</p>
-            </div>
-            <ElTag :type="modeTagType" effect="plain">{{ modeLabel }}</ElTag>
-          </div>
-
-          <ElFormItem label="电子面单模式" required>
-            <ElSegmented
-              v-model="formData.mode"
-              :options="modeOptions"
-              :disabled="interactionDisabled"
-              block
-            />
-          </ElFormItem>
-
-          <ElAlert
-            v-if="formData.mode === 'SANDBOX'"
-            title="微信官方沙箱：每天最多生成 10 单"
-            description="下单用户的 OpenID 必须属于该小程序的管理员、运营者或开发者。实际调用固定使用 TEST / test_biz_id / 1 / test_service_name。"
-            type="warning"
-            :closable="false"
-            show-icon
-          />
-          <ElAlert
-            v-else-if="formData.mode === 'PRODUCTION'"
-            title="正式环境不会保存月结账号密码"
-            description="请先在微信小程序后台绑定快递账号，再填写快递公司、客户编码和服务类型标识。"
-            type="warning"
-            :closable="false"
-            show-icon
-          />
-          <ElAlert
-            v-else
-            title="电子面单当前停用"
-            description="手动填写快递公司和运单号的发货流程不受影响；可先完善下方配置，再切换到沙箱或正式环境。"
-            type="info"
-            :closable="false"
-            show-icon
-          />
-
-          <div class="switch-row">
-            <div>
-              <div class="switch-row__title">手动发货物流消息</div>
-              <div class="field-tip">
-                开启后，手动填写的实体快递会尝试通过微信物流消息能力注册；失败不影响本地物流卡片。
-              </div>
-            </div>
-            <ElSwitch
-              v-model="formData.messageEnabled"
-              :disabled="interactionDisabled"
-              inline-prompt
-              active-text="开"
-              inactive-text="关"
-              aria-label="手动发货物流消息开关"
-            />
-          </div>
-        </section>
-
         <section class="config-section">
           <div class="section-heading">
             <div>
-              <h2>寄件人信息</h2>
-              <p>沙箱和正式电子面单都会使用这份结构化寄件快照。</p>
+              <h2>默认发货地址</h2>
+              <p
+                >手动发货使用此地址，停用电子面单时也可维护。电子面单使用制单时的地址；修改仅影响后续发货，不改变已发货包裹。</p
+              >
             </div>
           </div>
 
@@ -183,6 +122,67 @@
                 placeholder="街道、门牌号和楼层房间"
               />
             </ElFormItem>
+          </div>
+        </section>
+
+        <section class="config-section config-section--mode">
+          <div class="section-heading">
+            <div>
+              <h2>运行模式</h2>
+              <p>沙箱会强制使用微信官方测试运力和测试客户编码，前端填写值不能覆盖。</p>
+            </div>
+            <ElTag :type="modeTagType" effect="plain">{{ modeLabel }}</ElTag>
+          </div>
+
+          <ElFormItem label="电子面单模式" required>
+            <ElSegmented
+              v-model="formData.mode"
+              :options="modeOptions"
+              :disabled="interactionDisabled"
+              block
+            />
+          </ElFormItem>
+
+          <ElAlert
+            v-if="formData.mode === 'SANDBOX'"
+            title="微信官方沙箱：每天最多生成 10 单"
+            description="下单用户的 OpenID 必须属于该小程序的管理员、运营者或开发者。实际调用固定使用 TEST / test_biz_id / 1 / test_service_name。"
+            type="warning"
+            :closable="false"
+            show-icon
+          />
+          <ElAlert
+            v-else-if="formData.mode === 'PRODUCTION'"
+            title="正式环境不会保存月结账号密码"
+            description="请先在微信小程序后台绑定快递账号，再填写快递公司、客户编码和服务类型标识。"
+            type="warning"
+            :closable="false"
+            show-icon
+          />
+          <ElAlert
+            v-else
+            title="电子面单当前停用"
+            description="手动填写快递公司和运单号的发货流程不受影响；可先完善下方配置，再切换到沙箱或正式环境。"
+            type="info"
+            :closable="false"
+            show-icon
+          />
+
+          <div class="switch-row">
+            <div>
+              <div class="switch-row__title">手动发货物流消息</div>
+              <div class="field-tip">
+                开启后，手动填写的实体快递会尝试通过微信物流消息能力注册；失败不影响本地物流卡片。
+              </div>
+            </div>
+            <ElSwitch
+              v-model="formData.messageEnabled"
+              :disabled="interactionDisabled"
+              inline-prompt
+              active-text="开"
+              inactive-text="关"
+              aria-label="手动发货物流消息开关"
+            />
           </div>
         </section>
 

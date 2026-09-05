@@ -119,7 +119,6 @@
 
 .inline-error button::after,
 .receiver-card__modify::after,
-.logistics-card__view::after,
 .copy-action::after,
 .payment-tool::after,
 .payment-action::after,
@@ -190,198 +189,6 @@ button.receiver-card__modify {
   background: #eeeeee;
   font-size: 22rpx;
   line-height: 44rpx;
-}
-
-.logistics-card {
-  padding: @space-5;
-}
-
-.logistics-card__heading {
-  min-height: 56rpx;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: @space-4;
-}
-
-button.logistics-card__view {
-  width: 192rpx !important;
-  min-width: 192rpx;
-  height: 56rpx;
-  margin: 0;
-  padding: 0 @space-3;
-  border-radius: @radius-pill;
-  color: #ffffff;
-  background: @color-action-primary;
-  font-size: @font-size-sm;
-  line-height: 56rpx;
-}
-
-button.logistics-card__view[disabled] {
-  opacity: 0.64;
-}
-
-.logistics-card__content {
-  margin-top: @space-3;
-  padding-top: @space-2;
-  border-top: 1rpx solid @color-divider;
-}
-
-.logistics-card__row {
-  min-width: 0;
-  display: grid;
-  padding: @space-3 0;
-  align-items: center;
-  grid-template-columns: auto minmax(0, 1fr);
-  gap: @space-4;
-  color: @color-text-muted;
-  font-size: @font-size-sm;
-}
-
-.logistics-card__row--tracking {
-  grid-template-columns: auto minmax(0, 1fr) auto;
-  gap: 0;
-}
-
-.logistics-card__row--tracking .logistics-card__label {
-  margin-right: @space-4;
-}
-
-.logistics-card__label {
-  flex: none;
-}
-
-.logistics-card__value,
-.logistics-card__tracking-no {
-  min-width: 0;
-  color: @color-text-black;
-  text-align: right;
-}
-
-.logistics-card__tracking-no {
-  width: 100%;
-  display: block;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.tracking-panel {
-  margin-top: @space-3;
-  padding-top: @space-4;
-  border-top: 1rpx solid @color-divider;
-}
-
-.tracking-panel__heading {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: @space-4;
-}
-
-.tracking-panel__title {
-  color: @color-text-black;
-  font-size: @font-size-base;
-  font-weight: 600;
-}
-
-.tracking-panel__status {
-  font-size: @font-size-sm;
-  text-align: right;
-}
-
-.tracking-panel__status--active {
-  color: @color-action-primary;
-}
-
-.tracking-panel__status--success {
-  color: #2f7d52;
-}
-
-.tracking-panel__status--warning {
-  color: #c46b22;
-}
-
-.tracking-panel__status--muted {
-  color: @color-text-muted;
-}
-
-.tracking-panel__empty {
-  padding: @space-6 0 @space-4;
-  color: @color-text-muted;
-  font-size: @font-size-sm;
-  line-height: 1.5;
-  text-align: center;
-}
-
-.tracking-event {
-  display: grid;
-  grid-template-columns: 28rpx minmax(0, 1fr);
-  gap: @space-3;
-}
-
-.tracking-event:first-of-type {
-  margin-top: @space-5;
-}
-
-.tracking-event__rail {
-  position: relative;
-  display: flex;
-  justify-content: center;
-}
-
-.tracking-event__dot {
-  z-index: 1;
-  width: 14rpx;
-  height: 14rpx;
-  margin-top: 7rpx;
-  border: 4rpx solid #ead8d4;
-  border-radius: 50%;
-  background: @color-text-placeholder;
-  box-sizing: border-box;
-}
-
-.tracking-event--latest .tracking-event__dot {
-  border-color: #f2d5d1;
-  background: @color-action-primary;
-}
-
-.tracking-event__line {
-  position: absolute;
-  top: 21rpx;
-  bottom: -7rpx;
-  width: 2rpx;
-  background: @color-divider;
-}
-
-.tracking-event__body {
-  min-width: 0;
-  padding-bottom: @space-5;
-}
-
-.tracking-event__message {
-  display: block;
-  color: @color-text-secondary;
-  font-size: @font-size-sm;
-  line-height: 1.5;
-}
-
-.tracking-event--latest .tracking-event__message {
-  color: @color-text-black;
-}
-
-.tracking-event__time,
-.tracking-panel__synced-at {
-  display: block;
-  margin-top: @space-1;
-  color: @color-text-placeholder;
-  font-size: @font-size-xs;
-  line-height: 1.4;
-}
-
-.tracking-panel__synced-at {
-  margin-top: 0;
-  text-align: right;
 }
 
 .product-card {
@@ -885,4 +692,111 @@ button.payment-action[disabled],
 button.detail-action[disabled] {
   box-shadow: none;
   opacity: 0.5;
+}
+
+.delivery-card {
+  padding: 28rpx 32rpx;
+}
+.delivery-card--pressed {
+  opacity: 0.78;
+}
+.delivery-card__heading,
+.delivery-card__entry {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.delivery-card__status {
+  color: @color-action-primary;
+  font-size: 32rpx;
+  font-weight: 650;
+}
+.delivery-card__status--success {
+  color: #25834b;
+}
+.delivery-card__status--warning {
+  color: #b36a16;
+}
+.delivery-card__entry {
+  gap: 6rpx;
+  color: @color-text-muted;
+  font-size: 24rpx;
+}
+.delivery-card__entry image {
+  width: 28rpx;
+  height: 28rpx;
+}
+.delivery-card__packages {
+  margin-top: 10rpx;
+  color: @color-text-muted;
+  font-size: 23rpx;
+}
+.delivery-card__route {
+  margin-top: 26rpx;
+}
+.delivery-card__stop {
+  position: relative;
+  display: flex;
+  gap: 20rpx;
+  padding-bottom: 26rpx;
+}
+.delivery-card__stop:first-child::before {
+  position: absolute;
+  content: "";
+  top: 22rpx;
+  bottom: -10rpx;
+  left: 7rpx;
+  border-left: 2rpx solid @color-divider;
+}
+.delivery-card__stop:last-child {
+  padding-bottom: 0;
+}
+.delivery-card__dot {
+  position: relative;
+  width: 16rpx;
+  height: 16rpx;
+  margin-top: 10rpx;
+  flex: none;
+  border-radius: 50%;
+  background: @color-action-primary;
+}
+.delivery-card__dot--destination {
+  background: #b8b8bd;
+}
+.delivery-card__body {
+  min-width: 0;
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 8rpx;
+}
+.delivery-card__label,
+.delivery-card__time {
+  color: @color-text-muted;
+  font-size: 23rpx;
+}
+.delivery-card__address {
+  color: @color-text-black;
+  font-size: 27rpx;
+  line-height: 1.55;
+  word-break: break-all;
+}
+.delivery-card__address--latest {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+button.order-info__after-sale {
+  width: auto;
+  margin: 0 0 0 28rpx;
+  padding: 0 0 0 28rpx;
+  border-left: 1rpx solid @color-divider;
+  background: transparent;
+  color: @color-text-muted;
+  font-size: 26rpx;
+  border-radius: 0;
+}
+button.order-info__after-sale::after {
+  border: 0;
 }

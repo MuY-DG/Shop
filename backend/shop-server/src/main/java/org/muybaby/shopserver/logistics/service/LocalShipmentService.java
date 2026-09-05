@@ -174,6 +174,7 @@ public class LocalShipmentService {
         }
 
         long shipmentId = requireShipmentId(orderId, packageNo);
+        snapshotSenderAddress(shipmentId, null);
         insertShipmentItems(shipmentId, allocations, now);
 
         OrderStatus nextStatus = finalShipment ? OrderStatus.SHIPPED : OrderStatus.PARTIALLY_SHIPPED;
@@ -301,6 +302,7 @@ public class LocalShipmentService {
         }
 
         long shipmentId = requireShipmentId(orderId, packageNo);
+        snapshotSenderAddress(shipmentId, waybillRecordId);
         insertShipmentItems(shipmentId, allocations, now);
 
         int waybillUpdated = jdbcClient.sql("""
@@ -377,6 +379,27 @@ public class LocalShipmentService {
                 .param("orderId", orderId)
                 .query(this::mapShipment)
                 .list();
+    }
+
+    private void snapshotSenderAddress(long shipmentId, Long waybillRecordId) {
+        String source = waybillRecordId == null
+                ? "wechat_express_setting" : "order_electronic_waybill";
+        String address = jdbcClient.sql("""
+                        select sender_province, sender_city, sender_district, sender_detail_address
+                        from %s where id = :id
+                        """.formatted(source))
+                .param("id", waybillRecordId == null ? 1L : waybillRecordId)
+                .query((rs, rowNum) -> java.util.stream.Stream.of(
+                                rs.getString("sender_province"), rs.getString("sender_city"),
+                                rs.getString("sender_district"), rs.getString("sender_detail_address"))
+                        .filter(StringUtils::hasText)
+                        .map(String::trim)
+                        .collect(java.util.stream.Collectors.joining(" ")))
+                .optional().orElse("");
+        jdbcClient.sql("update order_shipment set sender_address = :address where id = :id")
+                .param("address", address)
+                .param("id", shipmentId)
+                .update();
     }
 
     private OrderForShipment lockShippableOrder(long orderId) {

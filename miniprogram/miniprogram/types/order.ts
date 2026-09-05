@@ -114,6 +114,7 @@ export type WaybillRegistrationStatus =
   | "SKIPPED";
 
 export interface AppOrderShipmentResponse {
+  senderAddress?: string;
   shipmentId: number;
   orderId: number;
   packageNo?: number;

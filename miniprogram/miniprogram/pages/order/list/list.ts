@@ -16,6 +16,7 @@ import {
   type OrderSummaryView
 } from "../../../features/order-center";
 import { buildAfterSaleApplyUrl } from "../../../features/after-sale";
+import { buildOrderLogisticsUrl } from "../../../features/order-logistics";
 import { buildCartCheckoutUrl } from "../../../features/checkout";
 import { normalizeOrderRouteKeyword } from "../../../features/order-search";
 import { executeOrderPayment } from "../../../features/order-payment";
@@ -519,6 +520,13 @@ Page({
     const orderId = positiveOrderId(event.currentTarget.dataset.id);
     if (orderId && !this.data.actionOrderId) {
       wx.navigateTo({ url: buildAfterSaleApplyUrl(orderId) });
+    }
+  },
+
+  onLogisticsTap(event: DatasetEvent) {
+    const orderId = positiveOrderId(event.currentTarget.dataset.id);
+    if (orderId && !this.data.actionOrderId) {
+      wx.navigateTo({ url: buildOrderLogisticsUrl(orderId) });
     }
   },
 

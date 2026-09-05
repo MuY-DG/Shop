@@ -80,6 +80,22 @@ class AdminElectronicWaybillControllerTest {
     }
 
     @Test
+    void shipmentUsesWaybillSenderSnapshotInsteadOfTheCurrentSetting() throws Exception {
+        long orderId = insertPaidOrder("SENDER-SNAPSHOT");
+        String adminToken = token(List.of(MANAGE, "order:ship"));
+        long recordId = data(create(adminToken, orderId, UUID.randomUUID().toString(), "1.000")
+                .andExpect(status().isOk()).andReturn()).path("id").asLong();
+        jdbcClient.sql("update wechat_express_setting set sender_detail_address = '新的仓库' where id = 1")
+                .update();
+        mockMvc.perform(post("/admin/orders/{orderId}/waybills/{recordId}/confirm-shipment", orderId, recordId)
+                        .header(HttpHeaders.AUTHORIZATION, bearer(adminToken)))
+                .andExpect(status().isOk());
+        assertThat(jdbcClient.sql("select sender_address from order_shipment where electronic_waybill_id = :id")
+                .param("id", recordId).query(String.class).single())
+                .isEqualTo("广东省 深圳市 南山区 科技园1号");
+    }
+
+    @Test
     void contextUsesExactPermissionAndReportsEveryTrustedInputBlocker() throws Exception {
         long orderId = insertPaidOrder("CONTEXT");
         String manageToken = token(List.of(MANAGE));

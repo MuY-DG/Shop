@@ -227,6 +227,15 @@
               aria-label="{{item.afterSaleActionText}}，订单 {{item.orderNo}}"
             >{{item.afterSaleActionText}}</button>
             <button
+              wx:if="{{item.canViewLogistics}}"
+              class="order-action order-action--secondary"
+              data-id="{{item.orderId}}"
+              disabled="{{actionOrderId}}"
+              catchtap="onLogisticsTap"
+              hover-class="order-action--pressed"
+              aria-label="查看物流，订单 {{item.orderNo}}"
+            >查看物流</button>
+            <button
               wx:if="{{item.canModify}}"
               class="order-action order-action--secondary"
               data-id="{{item.orderId}}"

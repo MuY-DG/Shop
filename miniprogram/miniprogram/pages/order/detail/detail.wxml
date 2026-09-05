@@ -51,7 +51,32 @@
           <button bindtap="onRetry">重试</button>
         </view>
 
-        <view class="detail-card receiver-card">
+        <view wx:if="{{deliverySummary}}" class="detail-card delivery-card" bindtap="onLogisticsTap" hover-class="delivery-card--pressed" aria-role="button" aria-label="查看物流">
+          <view class="delivery-card__heading">
+            <text class="delivery-card__status delivery-card__status--{{deliverySummary.statusTone}}">{{deliverySummary.statusText}}</text>
+            <view class="delivery-card__entry"><text>查看物流</text><image src="/assets/icons/chevron-right-detail.svg" mode="aspectFit" /></view>
+          </view>
+          <view wx:if="{{deliverySummary.packageText}}" class="delivery-card__packages">{{deliverySummary.packageText}}</view>
+          <view class="delivery-card__route">
+            <view class="delivery-card__stop">
+              <text class="delivery-card__dot"></text>
+              <view class="delivery-card__body">
+                <text class="delivery-card__label">{{deliverySummary.originLabel}}</text>
+                <text class="delivery-card__address delivery-card__address--latest">{{deliverySummary.originText}}</text>
+                <text wx:if="{{deliverySummary.updatedAtText}}" class="delivery-card__time">{{deliverySummary.updatedAtText}}</text>
+              </view>
+            </view>
+            <view class="delivery-card__stop">
+              <text class="delivery-card__dot delivery-card__dot--destination"></text>
+              <view class="delivery-card__body">
+                <text class="delivery-card__label">收货地 · {{detail.receiverName}} {{detail.receiverPhoneDisplay}}</text>
+                <text class="delivery-card__address">{{deliverySummary.destinationText}}</text>
+              </view>
+            </view>
+          </view>
+        </view>
+
+        <view wx:else class="detail-card receiver-card">
           <image
             class="receiver-card__icon"
             src="/assets/icons/location-on-outline-rounded.svg"
@@ -73,89 +98,6 @@
             aria-label="修改订单收货地址"
           >修改</button>
         </view>
-
-        <block wx:for="{{detail.shipmentViews}}" wx:key="shipmentId" wx:for-item="shipment">
-        <view
-          class="detail-card logistics-card"
-          data-shipment-id="{{shipment.shipmentId}}"
-          bindtap="onShipmentTap"
-        >
-          <view class="logistics-card__heading">
-            <text class="section-heading">包裹 {{shipment.packageNo}}</text>
-            <button
-              wx:if="{{shipment.canOpenTracking}}"
-              class="logistics-card__view"
-              data-shipment-id="{{shipment.shipmentId}}"
-              loading="{{logisticsOpening}}"
-              disabled="{{logisticsOpening}}"
-              catchtap="onOpenLogisticsTap"
-              aria-label="{{logisticsOpening ? '正在打开全部物流' : '查看全部物流'}}"
-            >{{logisticsOpening ? '打开中' : '查看全部物流'}}</button>
-          </view>
-          <view class="logistics-card__content">
-            <view class="logistics-card__row">
-              <text class="logistics-card__label">承运商</text>
-              <text class="logistics-card__value">{{shipment.carrierName}}</text>
-            </view>
-            <view class="logistics-card__row logistics-card__row--tracking">
-              <text class="logistics-card__label">运单号</text>
-              <text class="logistics-card__tracking-no">{{shipment.trackingNo || '暂不可用'}}</text>
-              <button
-                wx:if="{{shipment.canCopyTrackingNo}}"
-                class="copy-action"
-                data-shipment-id="{{shipment.shipmentId}}"
-                catchtap="onCopyTrackingNoTap"
-                aria-label="复制完整运单号"
-              >
-                <text class="copy-action__divider">｜</text>
-                <text class="copy-action__label">复制</text>
-              </button>
-            </view>
-            <view wx:if="{{shipment.itemsText}}" class="logistics-card__row">
-              <text class="logistics-card__label">包裹商品</text>
-              <text class="logistics-card__value">{{shipment.itemsText}}</text>
-            </view>
-            <view wx:if="{{shipment.shippedAtText}}" class="logistics-card__row">
-              <text class="logistics-card__label">发货时间</text>
-              <text class="logistics-card__value">{{shipment.shippedAtText}}</text>
-            </view>
-          </view>
-          <view wx:if="{{activeShipmentId === shipment.shipmentId}}" class="tracking-panel">
-            <view class="tracking-panel__heading">
-              <text class="tracking-panel__title">物流轨迹</text>
-              <text
-                wx:if="{{trackingView}}"
-                class="tracking-panel__status tracking-panel__status--{{trackingView.statusTone}}"
-              >{{trackingView.statusText}}</text>
-            </view>
-            <view wx:if="{{trackingLoading}}" class="tracking-panel__empty">
-              正在更新物流信息...
-            </view>
-            <block wx:elif="{{trackingView && trackingView.hasPathItems}}">
-              <view
-                wx:for="{{trackingView.pathItems}}"
-                wx:key="eventKey"
-                class="tracking-event {{index === 0 ? 'tracking-event--latest' : ''}}"
-              >
-                <view class="tracking-event__rail">
-                  <view class="tracking-event__dot"></view>
-                  <view wx:if="{{index < trackingView.pathItems.length - 1}}" class="tracking-event__line"></view>
-                </view>
-                <view class="tracking-event__body">
-                  <text class="tracking-event__message">{{item.actionMessage}}</text>
-                  <text wx:if="{{item.actionTimeText}}" class="tracking-event__time">{{item.actionTimeText}}</text>
-                </view>
-              </view>
-            </block>
-            <view wx:else class="tracking-panel__empty">
-              {{trackingErrorText || (trackingView ? trackingView.pathStateText : '物流轨迹正在获取中')}}
-            </view>
-            <view wx:if="{{trackingView && trackingView.lastSyncedAtText}}" class="tracking-panel__synced-at">
-              更新于 {{trackingView.lastSyncedAtText}}
-            </view>
-          </view>
-        </view>
-        </block>
 
         <view class="detail-card product-card">
           <view
@@ -199,13 +141,13 @@
         <view class="detail-card amount-card">
           <view class="amount-row"><text>商品金额</text><text>{{detail.productAmountText}}</text></view>
           <view class="amount-row"><text>运费</text><text>{{detail.freightText}}</text></view>
-          <view class="amount-row amount-row--discount">
+          <view wx:if="{{detail.hasWholesaleDiscount}}" class="amount-row amount-row--discount">
             <text>批发优惠</text>
-            <text>{{detail.hasWholesaleDiscount ? '-' + detail.wholesaleDiscountText : '¥0.00'}}</text>
+            <text>-{{detail.wholesaleDiscountText}}</text>
           </view>
-          <view class="amount-row amount-row--discount">
+          <view wx:if="{{detail.hasCouponDiscount}}" class="amount-row amount-row--discount">
             <text>优惠券<text wx:if="{{detail.couponName}}">（{{detail.couponName}}）</text></text>
-            <text>{{detail.hasCouponDiscount ? '-' + detail.couponDiscountText : '¥0.00'}}</text>
+            <text>-{{detail.couponDiscountText}}</text>
           </view>
           <view class="amount-card__divider"></view>
           <view class="amount-total">
@@ -232,15 +174,15 @@
               aria-hidden="true"
             />
           </view>
+          <view class="info-row info-row--order-no">
+            <text>订单编号</text>
+            <text class="info-row__order-no">{{detail.orderNo}}</text>
+            <button class="copy-action" catchtap="onCopyOrderNoTap">
+              <text class="copy-action__divider">｜</text>
+              <text class="copy-action__label">复制</text>
+            </button>
+          </view>
           <view wx:if="{{orderInfoExpanded}}" class="order-info__content">
-            <view class="info-row info-row--order-no">
-              <text>订单编号</text>
-              <text class="info-row__order-no">{{detail.orderNo}}</text>
-              <button class="copy-action" catchtap="onCopyOrderNoTap">
-                <text class="copy-action__divider">｜</text>
-                <text class="copy-action__label">复制</text>
-              </button>
-            </view>
             <view class="info-row"><text>下单时间</text><text>{{detail.createdAtText}}</text></view>
             <view wx:if="{{detail.paidAtText}}" class="info-row"><text>支付时间</text><text>{{detail.paidAtText}}</text></view>
             <view wx:if="{{detail.shippedAtText}}" class="info-row"><text>发货时间</text><text>{{detail.shippedAtText}}</text></view>
@@ -264,8 +206,9 @@
                 aria-hidden="true"
               />
             </view>
-          <text class="order-info__service-label">联系客服</text>
-        </view>
+            <text class="order-info__service-label">联系客服</text>
+            <button wx:if="{{detail.showAfterSaleAction && deliverySummary}}" class="order-info__after-sale" disabled="{{actionType !== ''}}" catchtap="onAfterSaleActionTap">{{detail.afterSaleActionText}}</button>
+          </view>
         </view>
       </block>
     </view>
@@ -312,7 +255,7 @@
     ><text class="payment-action__label">继续支付</text></button>
   </view>
 
-  <view wx:elif="{{detail && (detail.canConfirmReceipt || detail.canDelete || detail.canRebuy || detail.showAfterSaleAction)}}" class="detail-actions">
+  <view wx:elif="{{detail && (deliverySummary || detail.canConfirmReceipt || detail.canDelete || detail.canRebuy || detail.showAfterSaleAction)}}" class="detail-actions">
     <button
       wx:if="{{detail.canDelete}}"
       class="detail-action detail-action--secondary detail-action--minor"
@@ -328,11 +271,12 @@
       bindtap="onRebuyTap"
     >再次购买</button>
     <button
-      wx:if="{{detail.showAfterSaleAction}}"
+      wx:if="{{detail.showAfterSaleAction && !deliverySummary}}"
       class="detail-action detail-action--secondary detail-action--minor"
       disabled="{{actionType !== ''}}"
       bindtap="onAfterSaleActionTap"
     >{{detail.afterSaleActionText}}</button>
+    <button wx:if="{{deliverySummary}}" class="detail-action detail-action--secondary detail-action--minor" disabled="{{actionType !== ''}}" bindtap="onLogisticsTap">查看物流</button>
     <button
       wx:if="{{detail.canConfirmReceipt}}"
       class="detail-action detail-action--primary detail-action--major"

@@ -36,7 +36,8 @@
       "name": "logistics",
       "root": "packages/logistics",
       "pages": [
-        "loader/loader"
+        "loader/loader",
+        "detail/detail"
       ],
       "plugins": {
         "logisticsPlugin": {

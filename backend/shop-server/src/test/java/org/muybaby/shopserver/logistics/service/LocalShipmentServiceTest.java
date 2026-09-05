@@ -56,6 +56,38 @@ class LocalShipmentServiceTest {
     }
 
     @Test
+    void manualShipmentSnapshotsSenderEvenWhenElectronicWaybillsAreDisabled() {
+        jdbcClient.sql("""
+                update wechat_express_setting set mode = 'DISABLED',
+                    sender_province = '广东省', sender_city = '深圳市',
+                    sender_district = '南山区', sender_detail_address = '一号仓库'
+                where id = 1
+                """).update();
+        long orderId = insertPaidOrder("13800008000");
+        OrderShipmentResponse shipment = service.create(ADMIN, orderId,
+                request(LogisticsType.EXPRESS, "商品", null));
+        jdbcClient.sql("update wechat_express_setting set sender_detail_address = '二号仓库' where id = 1")
+                .update();
+
+        assertThat(jdbcClient.sql("select sender_address from order_shipment where id = :id")
+                .param("id", shipment.shipmentId()).query(String.class).single())
+                .isEqualTo("广东省 深圳市 南山区 一号仓库");
+    }
+
+    @Test
+    void missingSenderDoesNotInventAnAddressOrBlockManualShipment() {
+        jdbcClient.sql("""
+                update wechat_express_setting set sender_province = '', sender_city = '',
+                    sender_district = '', sender_detail_address = '' where id = 1
+                """).update();
+        long orderId = insertPaidOrder("13800008000");
+        OrderShipmentResponse shipment = service.create(ADMIN, orderId,
+                request(LogisticsType.EXPRESS, "商品", null));
+        assertThat(jdbcClient.sql("select sender_address from order_shipment where id = :id")
+                .param("id", shipment.shipmentId()).query(String.class).single()).isEmpty();
+    }
+
+    @Test
     void contactMaskerNormalizesAndKeepsOnlyTheFinalFourDigits() {
         ShipmentContactMasker masker = new ShipmentContactMasker();
 

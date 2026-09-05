@@ -223,6 +223,7 @@ interface OrderActions {
 }
 
 interface OrderSummaryActions {
+  canViewLogistics: boolean;
   canPay: boolean;
   canCancel: boolean;
   canModify: boolean;
@@ -266,6 +267,7 @@ export interface OrderItemView extends OrderItemResponse {
 }
 
 export interface OrderShipmentView {
+  senderAddress: string;
   shipmentId: number;
   packageNo: number;
   carrierName: string;
@@ -327,6 +329,7 @@ function normalizedShipmentView(
     || normalizedClipboardText(order.shippedAt);
   return {
     shipmentId: shipment.shipmentId,
+    senderAddress: normalizedClipboardText(shipment.senderAddress),
     packageNo: shipment.packageNo || 1,
     carrierName: carrierName || carrierCode || "快递",
     trackingNo,
@@ -487,8 +490,8 @@ function summaryActions(
   const canReview = status === "COMPLETED" && pendingReviewCount > 0;
   const canDelete = status === "COMPLETED" || status === "CLOSED" || status === "REFUNDED";
   const canRebuy = status === "PARTIALLY_SHIPPED" || status === "SHIPPED" || canDelete;
-  const canAfterSale = status === "PARTIALLY_SHIPPED"
-    || status === "SHIPPED" || status === "COMPLETED";
+  const canViewLogistics = status === "PARTIALLY_SHIPPED" || status === "SHIPPED";
+  const canAfterSale = status === "COMPLETED";
   const canModify = canPay || status === "PAID";
   return {
     canPay,
@@ -498,7 +501,8 @@ function summaryActions(
     canRebuy,
     canReview,
     canAfterSale,
-    hasActions: canPay || canDelete || canRebuy || canReview || canAfterSale || canModify,
+    canViewLogistics,
+    hasActions: canPay || canDelete || canRebuy || canReview || canAfterSale || canModify || canViewLogistics,
     afterSaleActionText: status === "PAID" ? "退款|售后" : "退换|售后",
     paymentActionText: "去支付"
   };

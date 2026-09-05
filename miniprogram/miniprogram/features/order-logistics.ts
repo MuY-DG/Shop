@@ -4,6 +4,46 @@ import type {
   WechatTrackingSyncStatus
 } from "../types/order";
 import { formatLocalDateTime } from "../utils/date-time";
+import type { OrderDetailView, OrderShipmentView } from "./order-center";
+
+export function buildOrderLogisticsUrl(orderId: number, shipmentId?: number): string {
+  return `/packages/logistics/detail/detail?order_id=${encodeURIComponent(String(orderId))}`
+    + (shipmentId ? `&shipment_id=${encodeURIComponent(String(shipmentId))}` : "");
+}
+
+export interface OrderDeliverySummary {
+  shipmentId: number;
+  packageText: string;
+  statusText: string;
+  statusTone: string;
+  originLabel: string;
+  originText: string;
+  destinationText: string;
+  updatedAtText: string;
+}
+
+export function buildOrderDeliverySummary(
+  detail: OrderDetailView,
+  shipment: OrderShipmentView | undefined = detail.shipmentView,
+  tracking?: ShipmentTrackingResponse | null
+): OrderDeliverySummary | null {
+  if (!shipment) return null;
+  const view = tracking?.shipmentId === shipment.shipmentId && tracking.orderId === detail.orderId
+    ? buildOrderTrackingView(tracking) : null;
+  const latest = view?.pathItems[0];
+  const hasStatus = Boolean(tracking?.logisticsStatus && tracking.logisticsStatus !== "NOT_FOUND");
+  return {
+    shipmentId: shipment.shipmentId,
+    packageText: detail.shipmentViews.length > 1
+      ? `共 ${detail.shipmentViews.length} 个包裹 · 当前包裹 ${shipment.packageNo}` : "",
+    statusText: view && hasStatus ? view.statusText : latest ? "物流更新" : "已发货",
+    statusTone: view?.statusTone || "active",
+    originLabel: latest ? "最新进展" : "发货地",
+    originText: latest?.actionMessage || shipment.senderAddress || "商家已发货，等待物流更新",
+    destinationText: detail.receiverAddress,
+    updatedAtText: latest?.actionTimeText || ""
+  };
+}
 
 export const LOGISTICS_UNAVAILABLE_MESSAGE = "当前物流轨迹暂不可用，请稍后再试";
 
@@ -105,7 +145,8 @@ export function buildOrderTrackingView(
         actionTimeText: actionTimeText(item.actionTime),
         actionMessage: item.actionMessage.trim()
       }))
-      .filter((item) => item.actionMessage)
+      .filter((item) => item.actionMessage && Number.isFinite(item.actionTime) && item.actionTime > 0)
+      .sort((left, right) => right.actionTime - left.actionTime)
     : [];
   return {
     statusText: trackingStatusText(response),
