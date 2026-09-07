@@ -13,7 +13,7 @@
   "devDependencies": {
     "@types/node": "^24.0.0",
     "miniprogram-api-typings": "^5.2.3",
-    "tsx": "^4.23.12",
+    "tsx": "^4.23.13",
     "typescript": "^5.9.0"
   }
 }
