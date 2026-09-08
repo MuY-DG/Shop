@@ -206,7 +206,7 @@ export function registerCartPage(config: CartPageConfig): void {
           ...summary,
           selectedAmountText: fallbackAmountText
         });
-        setCustomTabBarCartCount(this, response.totalQuantity);
+        setCustomTabBarCartCount(this, response.items.length);
         this.refreshSelectedPricing(summary.selectedIds, managing, {
           fallbackAmountText,
           suppressError: options.suppressError

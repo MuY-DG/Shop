@@ -535,6 +535,9 @@ export function buildOrderSummaryView(order: OrderSummaryResponse): OrderSummary
   const afterSaleStatus = order.latestAfterSale
     ? buildAfterSaleCardStatus(order.latestAfterSale)
     : undefined;
+  // 全额退款由服务端按累计退款额将订单置为 REFUNDED，不能用最新一笔金额判断整单。
+  const partiallyRefunded = order.latestAfterSale?.status === "REFUNDED"
+    && ["PAID", "PARTIALLY_SHIPPED", "SHIPPED", "COMPLETED"].includes(order.status);
   const refundNeedsMerchantHandling = order.status === "REFUNDING"
     && order.latestAfterSale?.status === "REFUND_FAILED";
   return {
@@ -558,7 +561,7 @@ export function buildOrderSummaryView(order: OrderSummaryResponse): OrderSummary
       : order.payableAmountCent),
     createdAtText: formatLocalDateTime(order.createdAt, "second"),
     itemCountText: `共 ${Math.max(0, order.itemCount)} 件商品`,
-    afterSaleStatusText: afterSaleStatus?.text ?? "",
+    afterSaleStatusText: partiallyRefunded ? "部分退款" : afterSaleStatus?.text ?? "",
     afterSaleStatusDescription: afterSaleStatus?.description ?? ""
   };
 }

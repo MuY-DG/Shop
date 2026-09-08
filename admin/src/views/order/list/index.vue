@@ -117,6 +117,13 @@
                 <strong class="summary-fact__amount">
                   {{ formatPaidAmount(currentDetail) }}
                 </strong>
+                <span
+                  v-if="currentRefundSummary"
+                  :class="['business-status-text', `business-status--${currentRefundSummary.tone}`]"
+                >
+                  {{ currentRefundSummary.text }} · 已退
+                  {{ formatMoney(currentRefundSummary.amountCent) }}
+                </span>
               </div>
               <div class="summary-fact">
                 <span>订单来源</span>
@@ -259,9 +266,21 @@
                   <dt>实付金额</dt>
                   <dd class="detail-fact__amount">{{ formatPaidAmount(currentDetail) }}</dd>
                 </div>
-                <div v-if="currentDetail.refundedAmountCent > 0" class="detail-fact">
-                  <dt>已退款金额</dt>
-                  <dd>{{ formatMoney(currentDetail.refundedAmountCent) }}</dd>
+                <div v-if="currentRefundSummary" class="detail-fact">
+                  <dt>退款情况</dt>
+                  <dd class="refund-summary">
+                    <ElTag
+                      :type="currentRefundSummary.type"
+                      effect="light"
+                      :class="[
+                        'business-status-tag',
+                        `business-status--${currentRefundSummary.tone}`
+                      ]"
+                    >
+                      {{ currentRefundSummary.text }}
+                    </ElTag>
+                    <span>累计已退 {{ formatMoney(currentRefundSummary.amountCent) }}</span>
+                  </dd>
                 </div>
                 <div
                   v-if="currentDetail.outTradeNo || currentDetail.merchantTradeNo"
@@ -1156,6 +1175,7 @@
     trackingPathEmptyText
   } from './tracking-state'
   import ElectronicWaybillPanel from './modules/electronic-waybill-panel.vue'
+  import { buildOrderRefundSummary } from './refund-summary'
   import {
     ElButton,
     ElImage,
@@ -1183,6 +1203,9 @@
   const retryingOrderId = ref<number | null>(null)
   const registrationRetryingOrderId = ref<number | null>(null)
   const currentDetail = ref<Api.Order.OrderDetail | null>(null)
+  const currentRefundSummary = computed(() =>
+    currentDetail.value ? buildOrderRefundSummary(currentDetail.value) : null
+  )
   const diagnosticShipmentId = ref<number | null>(null)
   const diagnosticShipment = computed(() => {
     const detail = currentDetail.value
@@ -1831,6 +1854,31 @@
                   () => formatAfterSaleStatus(activeAfterSale.status)
                 )
             )
+          }
+        },
+        {
+          prop: 'refundedAmountCent',
+          label: '退款情况',
+          width: 160,
+          formatter: (row) => {
+            const summary = buildOrderRefundSummary(row)
+            if (!summary) return '-'
+            return h('div', { class: 'refund-summary' }, [
+              h(
+                ElTag,
+                {
+                  type: summary.type,
+                  effect: 'light',
+                  class: ['business-status-tag', `business-status--${summary.tone}`]
+                },
+                () => summary.text
+              ),
+              h(
+                'span',
+                { class: 'refund-summary__amount' },
+                `累计已退 ${formatMoney(summary.amountCent)}`
+              )
+            ])
           }
         },
         {
@@ -2822,6 +2870,21 @@
     height: 20px;
     padding: 0;
     font-size: 14px;
+  }
+
+  .refund-summary,
+  :deep(.refund-summary) {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    align-items: flex-start;
+  }
+
+  .refund-summary__amount,
+  :deep(.refund-summary__amount) {
+    font-size: 12px;
+    line-height: 18px;
+    color: var(--el-text-color-secondary);
   }
 
   .order-summary__facts {

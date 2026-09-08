@@ -1318,6 +1318,7 @@ declare namespace Api {
       freightCent: number
       payableAmountCent: number
       paidAmountCent: number
+      refundedAmountCent?: number
       receiverName: string | null
       receiverPhone: string | null
       productTitle: string

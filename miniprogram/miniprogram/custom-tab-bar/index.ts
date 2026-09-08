@@ -123,7 +123,7 @@ Component({
           ? {
               ...item,
               badge,
-              ariaLabel: safeCount ? `购物车，${badge}件商品` : "购物车"
+              ariaLabel: safeCount ? `购物车，${badge}种商品` : "购物车"
             }
           : item
       ));
@@ -140,7 +140,7 @@ Component({
       try {
         const cart = await getCartItems({ preferCache: true });
         if (requestId === latestCartCountRequest) {
-          this.setCartCount(cart.totalQuantity);
+          this.setCartCount(cart.items.length);
         }
       } catch {
         const currentSession = getSessionState();

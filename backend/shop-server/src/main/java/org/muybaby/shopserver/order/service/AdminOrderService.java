@@ -118,6 +118,7 @@ public class AdminOrderService {
                                o.freight_cent,
                                o.payable_amount_cent,
                                o.paid_amount_cent,
+                               o.refunded_amount_cent,
                                o.receiver_name,
                                o.receiver_phone,
                                coalesce(first_item.product_title, '') as product_title,
@@ -257,11 +258,7 @@ public class AdminOrderService {
                                o.freight_cent,
                                o.payable_amount_cent,
                                o.paid_amount_cent,
-                               coalesce((
-                                   select sum(ro.refund_amount_cent)
-                                   from refund_order ro
-                                   where ro.order_id = o.id and ro.status = 'SUCCESS'
-                               ), 0) as refunded_amount_cent,
+                               o.refunded_amount_cent,
                                o.receiver_name,
                                o.receiver_phone,
                                o.receiver_address,
@@ -458,6 +455,7 @@ public class AdminOrderService {
                 rs.getLong("freight_cent"),
                 rs.getLong("payable_amount_cent"),
                 rs.getLong("paid_amount_cent"),
+                rs.getLong("refunded_amount_cent"),
                 rs.getString("receiver_name"),
                 rs.getString("receiver_phone"),
                 rs.getString("product_title"),

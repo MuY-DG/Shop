@@ -12,6 +12,7 @@ public record AdminOrderSummaryResponse(
         Long freightCent,
         Long payableAmountCent,
         Long paidAmountCent,
+        Long refundedAmountCent,
         String receiverName,
         String receiverPhone,
         String productTitle,

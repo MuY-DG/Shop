@@ -111,6 +111,60 @@ class AdminOrderControllerTest {
     }
 
     @Test
+    void adminOrderListAndDetailExposeCumulativeRefundAmountsForUnrefundedPartialAndFullOrders() throws Exception {
+        String adminToken = adminLoginAndExtractToken();
+        long userId = appLogin("admin-order-refund-summary-user").userId();
+        long skuId = createPublishedSku("ADMIN-REFUND-SUMMARY-SKU", 3990L, 4990L, 12, "ENABLED");
+
+        insertOrderSnapshot(9103L, "ADM-REFUND-SUMMARY-NONE", OrderStatus.PAID.name(), userId, skuId, 9203L, "Unrefunded order");
+        insertOrderSnapshot(9104L, "ADM-REFUND-SUMMARY-PARTIAL", OrderStatus.PAID.name(), userId, skuId, 9204L, "Partially refunded order");
+        insertOrderSnapshot(9105L, "ADM-REFUND-SUMMARY-FULL", OrderStatus.REFUNDED.name(), userId, skuId, 9205L, "Fully refunded order");
+        jdbcClient.sql("""
+                        update shop_order
+                        set paid_amount_cent = 7480,
+                            refunded_amount_cent = case id when 9104 then 3740 when 9105 then 7480 else 0 end,
+                            refund_status = case id
+                                when 9104 then 'PARTIALLY_REFUNDED'
+                                when 9105 then 'FULLY_REFUNDED'
+                                else 'NONE'
+                            end
+                        where id in (9103, 9104, 9105)
+                        """).update();
+
+        mockMvc.perform(get("/admin/orders")
+                        .header("Authorization", "Bearer " + adminToken)
+                        .param("statusGroup", "ALL")
+                        .param("orderNo", "REFUND-SUMMARY"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.total").value(3))
+                .andExpect(jsonPath("$.data.records[0].orderId").value(9105))
+                .andExpect(jsonPath("$.data.records[0].status").value("REFUNDED"))
+                .andExpect(jsonPath("$.data.records[0].paidAmountCent").value(7480))
+                .andExpect(jsonPath("$.data.records[0].refundedAmountCent").value(7480))
+                .andExpect(jsonPath("$.data.records[1].orderId").value(9104))
+                .andExpect(jsonPath("$.data.records[1].status").value("PAID"))
+                .andExpect(jsonPath("$.data.records[1].paidAmountCent").value(7480))
+                .andExpect(jsonPath("$.data.records[1].refundedAmountCent").value(3740))
+                .andExpect(jsonPath("$.data.records[2].orderId").value(9103))
+                .andExpect(jsonPath("$.data.records[2].status").value("PAID"))
+                .andExpect(jsonPath("$.data.records[2].paidAmountCent").value(7480))
+                .andExpect(jsonPath("$.data.records[2].refundedAmountCent").value(0));
+
+        // Registered external refunds are included in the order aggregate even without local refund rows.
+        assertThat(jdbcClient.sql("""
+                        select count(*) from refund_order where order_id in (9103, 9104, 9105)
+                        """).query(Integer.class).single()).isZero();
+        for (long orderId : List.of(9103L, 9104L, 9105L)) {
+            long expectedRefundedAmount = orderId == 9103L ? 0L : orderId == 9104L ? 3740L : 7480L;
+            mockMvc.perform(get("/admin/orders/{orderId}", orderId)
+                            .header("Authorization", "Bearer " + adminToken))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.data.paidAmountCent").value(7480))
+                    .andExpect(jsonPath("$.data.refundedAmountCent").value(expectedRefundedAmount));
+        }
+    }
+
+    @Test
     void adminCanUseBusinessStatusTabsAndRichOrderFilters() throws Exception {
         String adminToken = adminLoginAndExtractToken();
         long userId = appLogin("admin-order-v2-filter-user").userId();

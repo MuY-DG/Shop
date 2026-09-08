@@ -654,7 +654,6 @@ test("商品加购按钮调用真实购物车接口并同步底部角标", () =>
   assert.match(homeLogic, /await addCartItem\(\{ skuId: sku\.id, quantity: 1 \}\)/);
   assert.match(catalogLogic, /await addCartItem\(\{ skuId: sku\.id, quantity: 1 \}\)/);
   assert.match(catalogTemplate, /<product-card[\s\S]*flat="\{\{true\}\}"/);
-  assert.match(tabLogic, /cart\.totalQuantity/);
   assert.match(tabLogic, /icon: "cart",[\s\S]*?iconPath: "\/assets\/icons\/tab-cart\.svg",[\s\S]*?selectedIconPath: "\/assets\/icons\/tab-cart-active\.svg"/);
   assert.match(tabTemplate, /class="tab-bar__badge"/);
   assert.doesNotMatch(tabTemplate, /shopping-cart-outline-iconify\.svg/);
