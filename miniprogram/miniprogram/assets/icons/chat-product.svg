@@ -3,9 +3,9 @@
   <title id="title">收纳盒</title>
   <desc id="desc">白色背景上的黑色圆角收纳盒，正面有红色横条。</desc>
   <rect id="background" width="1254" height="1254" fill="#fff"/>
-  <g id="outline" stroke="#070707" stroke-width="14" stroke-linecap="round" stroke-linejoin="round">
+  <g id="outline" stroke="#070707" stroke-width="36" stroke-linecap="round" stroke-linejoin="round">
     <path id="box-body" d="M340 506V862C340 893 363 918 394 918H861C891 918 914 893 914 862V506"/>
     <path id="box-lid" d="M354 343.8H900C927 343.8 949 365.8 949 392.8V467C949 488.5 931.5 506 910 506H344.5C323 506 305.5 488.5 305.5 467V392.3C305.5 365.5 327.2 343.8 354 343.8Z"/>
   </g>
-  <path id="red-label" d="M547 635.5H707" stroke="#ff1025" stroke-width="33" stroke-linecap="round"/>
+  <path id="red-label" d="M547 635.5H707" stroke="#ff1025" stroke-width="36" stroke-linecap="round"/>
 </svg>

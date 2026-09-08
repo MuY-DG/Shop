@@ -3,9 +3,9 @@
   <title id="title">相机</title>
   <desc id="desc">白色背景上的黑色相机轮廓和圆形镜头，右上方有红色指示条。</desc>
   <rect id="background" width="1254" height="1254" fill="#fff"/>
-  <g id="outline" stroke="#080808" stroke-width="15" stroke-linecap="round" stroke-linejoin="round">
+  <g id="outline" stroke="#080808" stroke-width="36" stroke-linecap="round" stroke-linejoin="round">
     <path id="camera-body" d="M342 441.5H414C424 441.5 432 437 438 427L476 361C484 348 497 340 513 340H737C754 340 769 348 777 362L815 427C821 437 828 441.5 839 441.5H911C957 441.5 994.5 479 994.5 525V838.5C994.5 885 957 922.5 910.5 922.5H343.5C297 922.5 259.5 885 259.5 838.5V525.5C259.5 479 297 441.5 342 441.5Z"/>
     <circle id="lens" cx="625.7" cy="686.2" r="155.2"/>
   </g>
-  <path id="red-indicator" d="M823 529H914" stroke="#ff1026" stroke-width="27" stroke-linecap="round"/>
+  <path id="red-indicator" d="M823 529H914" stroke="#ff1026" stroke-width="36" stroke-linecap="round"/>
 </svg>

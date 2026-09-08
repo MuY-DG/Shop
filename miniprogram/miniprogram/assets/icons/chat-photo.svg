@@ -3,10 +3,10 @@
   <title id="title">相册</title>
   <desc id="desc">白色背景上的两张黑色圆角照片轮廓，前方照片中有山峰和红色太阳。</desc>
   <rect id="background" width="1254" height="1254" fill="#fff"/>
-  <g id="outline" stroke="#151515" stroke-width="14" stroke-linecap="round" stroke-linejoin="round">
+  <g id="outline" stroke="#151515" stroke-width="36" stroke-linecap="round" stroke-linejoin="round">
     <path id="back-photo" d="M379 497H333C307 497 286 518 286 544V849C286 876 307 897.5 334 897.5H759C785.5 897.5 807 876 807 849.5V836"/>
     <rect id="front-photo" x="416.5" y="356" width="551" height="446" rx="50"/>
     <path id="mountains" d="M484.5 702.5L622.5 568.5Q634.5 557 646 569L740.5 667.5L794.5 617Q807 605 819 617.5L902.5 705"/>
   </g>
-  <circle id="red-sun" cx="812" cy="491" r="55.5" stroke="#ff0829" stroke-width="14"/>
+  <circle id="red-sun" cx="812" cy="491" r="55.5" stroke="#ff0829" stroke-width="36"/>
 </svg>
