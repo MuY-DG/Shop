@@ -97,17 +97,19 @@ export function submitReturnShipment(
 
 export function uploadAfterSaleEvidence(
   orderId: number,
-  filePath: string
+  filePath: string,
+  mediaType: 'image' | 'video' = 'image'
 ): Promise<StorageAssetUploadResponse> {
   return uploadFileDirect<StorageAssetUploadResponse>({
     initUrl: API_ENDPOINTS.afterSales.evidenceUploads(orderId),
     filePath,
-    timeoutMs: 60_000,
-    legacyFallback: () => uploadFile<StorageAssetUploadResponse>({
+    mediaType,
+    timeoutMs: mediaType === 'video' ? 120_000 : 60_000,
+    legacyFallback: (fallbackFilePath) => uploadFile<StorageAssetUploadResponse>({
       url: API_ENDPOINTS.afterSales.evidence(orderId),
-      filePath,
+      filePath: fallbackFilePath,
       name: "file",
-      timeoutMs: 30_000
+      timeoutMs: mediaType === 'video' ? 120_000 : 30_000
     })
   });
 }

@@ -50,6 +50,42 @@ class UploadPolicyTest {
         assertThat(StorageUploadProfile.AFTER_SALE_EVIDENCE.scope()).isEqualTo(StorageAssetScope.ATTACHMENT);
         assertThat(StorageUploadProfile.AFTER_SALE_EVIDENCE.mediaKind()).isEqualTo(StorageMediaKind.IMAGE);
         assertThat(StorageUploadProfile.AFTER_SALE_EVIDENCE.visibility()).isEqualTo(FileVisibility.PRIVATE);
+        assertThat(StorageUploadProfile.AFTER_SALE_EVIDENCE_VIDEO.scope()).isEqualTo(StorageAssetScope.ATTACHMENT);
+        assertThat(StorageUploadProfile.AFTER_SALE_EVIDENCE_VIDEO.mediaKind()).isEqualTo(StorageMediaKind.VIDEO);
+        assertThat(StorageUploadProfile.AFTER_SALE_EVIDENCE_VIDEO.visibility()).isEqualTo(FileVisibility.PRIVATE);
+    }
+
+    @Test
+    void afterSaleMediaKeepsIndependentCapsEvenWhenTheLibraryAllowsLargerFiles() {
+        uploadPolicy = new UploadPolicy(new StorageProperties(new StorageProperties.Limits(
+                DataSize.ofMegabytes(20), DataSize.ofMegabytes(100))));
+        assertThat(uploadPolicy.detectAfterSaleProfile("proof.png", "image/png"))
+                .isEqualTo(StorageUploadProfile.AFTER_SALE_EVIDENCE);
+        assertThat(uploadPolicy.detectAfterSaleProfile("proof.mp4", "video/mp4"))
+                .isEqualTo(StorageUploadProfile.AFTER_SALE_EVIDENCE_VIDEO);
+        uploadPolicy.requireAllowed(StorageUploadProfile.AFTER_SALE_EVIDENCE,
+                "proof.png", "image/png", UploadPolicy.AFTER_SALE_IMAGE_MAX_SIZE_BYTES, true);
+        uploadPolicy.requireAllowed(StorageUploadProfile.AFTER_SALE_EVIDENCE_VIDEO,
+                "proof.mp4", "video/mp4", UploadPolicy.AFTER_SALE_VIDEO_MAX_SIZE_BYTES, false);
+        assertValidationFailure(() -> uploadPolicy.requireAllowed(StorageUploadProfile.AFTER_SALE_EVIDENCE,
+                "proof.png", "image/png", UploadPolicy.AFTER_SALE_IMAGE_MAX_SIZE_BYTES + 1, true));
+        assertValidationFailure(() -> uploadPolicy.requireAllowed(StorageUploadProfile.AFTER_SALE_EVIDENCE_VIDEO,
+                "proof.mp4", "video/mp4", UploadPolicy.AFTER_SALE_VIDEO_MAX_SIZE_BYTES + 1, false));
+        uploadPolicy.requireAllowed(StorageUploadProfile.LIBRARY_IMAGE,
+                "cover.png", "image/png", DataSize.ofMegabytes(10).toBytes(), true);
+        uploadPolicy.requireAllowed(StorageUploadProfile.LIBRARY_VIDEO,
+                "demo.mp4", "video/mp4", DataSize.ofMegabytes(75).toBytes(), false);
+    }
+
+    @Test
+    void afterSaleVideoRequiresAMatchingContainerHeader() {
+        byte[] mp4 = new byte[]{0, 0, 0, 24, 'f', 't', 'y', 'p', 'i', 's', 'o', 'm'};
+        byte[] webm = new byte[]{0x1a, 0x45, (byte) 0xdf, (byte) 0xa3};
+        uploadPolicy.requireAfterSaleVideoHeader("video/mp4", mp4);
+        uploadPolicy.requireAfterSaleVideoHeader("video/webm", webm);
+        assertValidationFailure(() -> uploadPolicy.requireAfterSaleVideoHeader("video/mp4", webm));
+        assertValidationFailure(() -> uploadPolicy.requireAfterSaleVideoHeader("video/webm", mp4));
+        assertValidationFailure(() -> uploadPolicy.requireAfterSaleVideoHeader("video/mp4", new byte[0]));
     }
 
     @Test

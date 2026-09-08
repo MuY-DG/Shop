@@ -627,6 +627,9 @@ export function buildOrderDetailView(order: AppOrderDetailResponse): OrderDetail
   const afterSaleActionMode = !latestAfterSaleView || latestAfterSaleView.status === "CANCELLED"
     ? "APPLY"
     : "DETAIL";
+  const afterSaleProductCount = order.items.filter(
+    (item) => Number.isSafeInteger(item.quantity) && item.quantity > 0
+  ).length;
   const orderActions = actions(order.status);
   const fulfillmentBlocked = order.latestAfterSale
     ? isActiveAfterSale(order.latestAfterSale.status)
@@ -687,7 +690,7 @@ export function buildOrderDetailView(order: AppOrderDetailResponse): OrderDetail
     showAfterSaleAction: afterSaleActionMode === "DETAIL" || canApply,
     afterSaleActionMode,
     afterSaleActionText: afterSaleActionMode === "APPLY"
-      ? "申请售后"
+      ? afterSaleProductCount > 1 ? "批量售后" : "申请售后"
       : latestAfterSaleView?.status === "REFUNDED" ? "退款成功" : "售后详细",
     latestAfterSaleView
   };

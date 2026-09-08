@@ -321,7 +321,7 @@ export function buildAfterSaleView(record: AfterSaleResponse): AfterSaleView {
     createdAtText: formatLocalDateTime(record.createdAt),
     reviewedAtText: formatLocalDateTime(record.reviewedAt),
     refundedAtText: formatLocalDateTime(record.refundOrder?.successAt),
-    evidenceCountText: evidenceFiles.length ? `${evidenceFiles.length} 张` : '未上传',
+    evidenceCountText: evidenceFiles.length ? `${evidenceFiles.length} 个` : '未上传',
     evidenceNames: evidenceFiles.map((file) => cleanText(file.originalFilename) || '售后凭证'),
     progressSteps: progressSteps(record.afterSaleType, record.status),
     returnAddressText: returnInfo
@@ -407,7 +407,8 @@ export function buildAfterSaleApplyPayload(input: {
     (Array.isArray(input.evidenceFileIds) ? input.evidenceFileIds : [])
       .map(Number)
       .filter((id) => Number.isSafeInteger(id) && id > 0)
-  )).slice(0, 3)
+  ))
+  if (evidenceFileIds.length > 4) throw new Error('凭证图片和视频合计最多 4 个')
   return {
     requestKey,
     quoteDigest: input.quote.quoteDigest,

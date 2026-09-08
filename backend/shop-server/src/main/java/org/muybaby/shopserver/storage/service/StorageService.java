@@ -243,9 +243,14 @@ public class StorageService {
             if (orderId == null || orderId <= 0 || !ownsOrder(principal.subjectId(), orderId)) {
                 throw new BusinessException(ErrorCode.VALIDATION_FAILED);
             }
+            if (file == null || file.isEmpty()) {
+                throw new BusinessException(ErrorCode.STORAGE_UPLOAD_POLICY_REJECTED);
+            }
+            StorageUploadProfile profile = uploadPolicy.detectAfterSaleProfile(
+                    file.getOriginalFilename(), file.getContentType());
             return upload(
                     principal,
-                    StorageUploadProfile.AFTER_SALE_EVIDENCE,
+                    profile,
                     null,
                     AFTER_SALE_ORDER_CONTEXT,
                     orderId,
@@ -970,6 +975,9 @@ public class StorageService {
                 profile, originalFilename, contentType, file.getSize(), true);
 
         byte[] sourceBytes = readBytes(file);
+        if (profile == StorageUploadProfile.AFTER_SALE_EVIDENCE_VIDEO) {
+            uploadPolicy.requireAfterSaleVideoHeader(contentType, sourceBytes);
+        }
         ImageMetadata sourceImage = readImageMetadataIfNeeded(
                 sourceBytes, profile.mediaKind(), preflight.contentType());
         UploadPolicy.UploadDecision sourceDecision = uploadPolicy.requireAllowed(

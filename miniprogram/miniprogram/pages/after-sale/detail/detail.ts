@@ -9,6 +9,7 @@ import { buildCustomerServiceUrl } from '../../../features/customer-service'
 import { buildOrderDetailUrl } from '../../../features/order-center'
 import { formatMoney } from '../../../features/product-catalog'
 import { getOrderDetail } from '../../../services/order'
+import { downloadAfterSaleEvidence } from '../../../services/after-sale-evidence'
 import {
   cancelAfterSale,
   getAfterSaleDetail,
@@ -28,6 +29,7 @@ interface DisplayItem {
   amountText: string
 }
 interface ProductTapEvent { currentTarget: { dataset: { orderItemId?: number | string } } }
+interface EvidenceTapEvent { currentTarget: { dataset: { fileId?: number | string } } }
 
 const SHIPMENT_COMPANIES = Object.freeze([
   { code: 'SF', name: '顺丰速运' },
@@ -79,10 +81,12 @@ Page({
   _productRequest: 0,
   _openingProduct: false,
   _productIds: {} as Record<number, number>,
+  _evidenceRequest: 0,
   data: {
     afterSaleId: 0,
     detail: null as AfterSaleView | null,
     displayItems: [] as DisplayItem[],
+    evidencePreviewFileId: 0,
     shipmentCompanies: SHIPMENT_COMPANIES,
     shipmentCompanyNames: SHIPMENT_COMPANIES.map((item) => item.name),
     shipmentCompanyIndex: 0,
@@ -117,10 +121,11 @@ Page({
     this._visible = false
     this._productRequest += 1
     this._openingProduct = false
+    this._evidenceRequest += 1
     this._request += 1
     if (this._pollTimer) clearTimeout(this._pollTimer)
     this._pollTimer = null
-    this.setData({ loading: false })
+    this.setData({ loading: false, evidencePreviewFileId: 0 })
   },
 
   scheduleRefresh() {
@@ -186,6 +191,36 @@ Page({
   onOrderTap() {
     const orderId = this.data.detail?.orderId
     if (orderId) wx.navigateTo({ url: buildOrderDetailUrl(orderId) })
+  },
+
+  async onEvidenceTap(event: EvidenceTapEvent) {
+    const detail = this.data.detail
+    const fileId = positiveAfterSaleId(event.currentTarget.dataset.fileId)
+    const file = detail?.evidenceFiles.find((item) => item.fileId === fileId)
+    if (!detail || !file || this.data.evidencePreviewFileId) return
+    if (file.status !== 'ACTIVE') {
+      wx.showToast({ title: '该凭证暂不可查看', icon: 'none' })
+      return
+    }
+    const request = ++this._evidenceRequest
+    this.setData({ evidencePreviewFileId: fileId })
+    try {
+      const url = await downloadAfterSaleEvidence(detail.id, file)
+      if (request !== this._evidenceRequest || !this._visible) return
+      this.setData({ evidencePreviewFileId: 0 })
+      wx.previewMedia({
+        sources: [{ url, type: file.mediaKind === 'VIDEO' ? 'video' : 'image' }],
+        current: 0,
+        showmenu: false,
+        fail: () => wx.showToast({ title: '凭证预览失败，请重试', icon: 'none' })
+      })
+    } catch {
+      if (request === this._evidenceRequest && this._visible) {
+        wx.showToast({ title: '凭证加载失败，请稍后重试', icon: 'none' })
+      }
+    } finally {
+      if (request === this._evidenceRequest) this.setData({ evidencePreviewFileId: 0 })
+    }
   },
 
   async onProductTap(event: ProductTapEvent) {

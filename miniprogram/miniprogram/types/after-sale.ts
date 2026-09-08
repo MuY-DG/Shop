@@ -88,7 +88,7 @@ export interface AfterSaleEvidenceFile {
   contentType: string
   sizeBytes: number
   scope: 'ATTACHMENT'
-  mediaKind: 'IMAGE'
+  mediaKind: 'IMAGE' | 'VIDEO'
   visibility: 'PRIVATE'
   status: string
   accessMode?: 'SIGNED_URL' | 'AUTHENTICATED_BLOB'
@@ -181,7 +181,7 @@ export interface ReturnShipmentRequest {
 export interface StorageAssetUploadResponse {
   id: number
   scope: 'ATTACHMENT'
-  mediaKind: 'IMAGE'
+  mediaKind: 'IMAGE' | 'VIDEO'
   visibility: 'PRIVATE'
   provider: string
   originalFilename: string

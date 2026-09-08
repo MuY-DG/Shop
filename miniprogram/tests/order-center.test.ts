@@ -254,6 +254,55 @@ test("订单详情使用零售金额与真实批发成交价生成可核对明�
   assert.equal(buildOrderDetailView(legacySingle).items[0]?.specText, "");
 });
 
+test("订单详情多种商品共用批量售后入口且单种多件保留申请售后", () => {
+  const single = detail("PAID");
+  assert.equal(single.items[0]?.quantity, 3);
+  assert.equal(buildOrderDetailView(single).afterSaleActionText, "申请售后");
+
+  const multiple = detail("PAID");
+  multiple.items.push({ ...multiple.items[0]!, orderItemId: 902, skuId: 22 });
+  const batchView = buildOrderDetailView(multiple);
+  assert.equal(batchView.afterSaleActionText, "批量售后");
+  assert.equal(batchView.afterSaleActionMode, "APPLY");
+  assert.equal(batchView.showAfterSaleAction, true);
+
+  multiple.items[1]!.quantity = 0;
+  assert.equal(buildOrderDetailView(multiple).afterSaleActionText, "申请售后");
+});
+
+test("批量售后入口保留已有售后详细和退款结果并支持撤销后重新申请", () => {
+  const order = detail("PAID");
+  order.items.push({ ...order.items[0]!, orderItemId: 902, skuId: 22 });
+  order.latestAfterSale = {
+    id: 301,
+    afterSaleNo: "AS-301",
+    orderId: order.orderId,
+    orderNo: order.orderNo,
+    userId: "USER-1",
+    afterSaleType: "REFUND_ONLY",
+    status: "REQUESTED",
+    reason: "不想要了",
+    requestedAmountCent: 4540,
+    createdAt: "2026-07-20T12:30:00Z",
+    evidenceFileIds: [],
+    evidenceFiles: [],
+    items: [],
+    allowedActions: ["CANCEL"]
+  };
+  const active = buildOrderDetailView(order);
+  assert.equal(active.afterSaleActionMode, "DETAIL");
+  assert.equal(active.afterSaleActionText, "售后详细");
+  assert.equal(active.canApplyAfterSale, false);
+
+  order.latestAfterSale.status = "REFUNDED";
+  assert.equal(buildOrderDetailView(order).afterSaleActionText, "退款成功");
+  assert.equal(buildOrderDetailView(order).afterSaleActionMode, "DETAIL");
+
+  order.latestAfterSale.status = "CANCELLED";
+  assert.equal(buildOrderDetailView(order).afterSaleActionText, "批量售后");
+  assert.equal(buildOrderDetailView(order).afterSaleActionMode, "APPLY");
+});
+
 test("订单详情为实体快递生成独立于 token 的静态物流视图", () => {
   const shipped = detail("SHIPPED");
   shipped.shippedAt = "2026-08-08T10:20:30Z";

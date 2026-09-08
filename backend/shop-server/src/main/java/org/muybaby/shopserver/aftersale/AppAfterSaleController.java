@@ -16,6 +16,8 @@ import org.muybaby.shopserver.storage.dto.StorageAssetResponse;
 import org.muybaby.shopserver.storage.dto.DirectUploadSessionRequest;
 import org.muybaby.shopserver.storage.dto.DirectUploadSessionResponse;
 import jakarta.validation.Valid;
+import org.springframework.core.io.InputStreamResource;
+import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -147,6 +149,15 @@ public class AppAfterSaleController {
             @PathVariable Long orderId
     ) {
         return ApiResponse.success(appAfterSaleQueryService.listForOrder(principal, orderId));
+    }
+
+    @GetMapping("/app/after-sales/{afterSaleId}/evidence/{fileId}")
+    public ResponseEntity<InputStreamResource> evidence(
+            @AuthenticationPrincipal AuthenticatedPrincipal principal,
+            @PathVariable Long afterSaleId,
+            @PathVariable Long fileId
+    ) {
+        return afterSaleEvidenceService.evidence(principal, afterSaleId, fileId);
     }
 
     @GetMapping("/app/after-sales/{afterSaleId}")

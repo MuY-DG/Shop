@@ -29,7 +29,8 @@ export function fetchAfterSaleRecords(afterSaleId: number) {
 export function fetchAfterSaleEvidence(afterSaleId: number, fileId: number) {
   return request.get<Blob>({
     url: `/admin/after-sales/${afterSaleId}/evidence/${fileId}`,
-    responseType: 'blob'
+    responseType: 'blob',
+    timeout: 120_000
   })
 }
 

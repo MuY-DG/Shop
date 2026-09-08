@@ -61,6 +61,8 @@ public class DirectUploadService {
     private static final Duration PROCESSING_LEASE = Duration.ofMinutes(5);
     private static final Duration PROCESSING_RETRY_BASE_DELAY = Duration.ofSeconds(5);
     private static final int MAX_PROCESSING_ATTEMPTS = 3;
+    private static final Set<StorageUploadProfile> AFTER_SALE_PROFILES = Set.of(
+            StorageUploadProfile.AFTER_SALE_EVIDENCE, StorageUploadProfile.AFTER_SALE_EVIDENCE_VIDEO);
     private static final String CLIENT_ABORTED = "CLIENT_ABORTED";
     private static final Duration AFTER_SALE_ASSET_TTL = Duration.ofHours(24);
     private static final Duration CUSTOMER_SERVICE_ASSET_TTL = Duration.ofHours(2);
@@ -245,6 +247,31 @@ public class DirectUploadService {
         return row;
     }
 
+    public DirectUploadSessionResponse createAfterSaleEvidence(
+            AuthenticatedPrincipal principal,
+            Long orderId,
+            DirectUploadSessionRequest request
+    ) {
+        if (request == null) {
+            throw new BusinessException(ErrorCode.VALIDATION_FAILED);
+        }
+        return create(principal,
+                uploadPolicy.detectAfterSaleProfile(request.originalFilename(), request.contentType()),
+                null, "ORDER", orderId, request);
+    }
+
+    public Completion completeAfterSaleEvidence(
+            AuthenticatedPrincipal principal, String uploadId, Long orderId
+    ) {
+        return complete(principal, uploadId, AFTER_SALE_PROFILES, orderId);
+    }
+
+    public void cancelAfterSaleEvidence(
+            AuthenticatedPrincipal principal, String uploadId, Long orderId
+    ) {
+        cancelSession(principal, uploadId, AFTER_SALE_PROFILES, orderId);
+    }
+
     public DirectUploadSessionResponse create(
             AuthenticatedPrincipal principal,
             StorageUploadProfile profile,
@@ -260,6 +287,7 @@ public class DirectUploadService {
                 || profile == StorageUploadProfile.LIBRARY_VIDEO
                 ? TokenKind.ADMIN
                 : profile == StorageUploadProfile.AFTER_SALE_EVIDENCE
+                        || profile == StorageUploadProfile.AFTER_SALE_EVIDENCE_VIDEO
                         || profile == StorageUploadProfile.USER_AVATAR
                         || profile == StorageUploadProfile.PRODUCT_REVIEW_IMAGE
                         ? TokenKind.APP
@@ -502,6 +530,14 @@ public class DirectUploadService {
             }
             DirectObjectMetadata staged = storageProvider.metadata(staging);
             validateStagedObject(session, staged);
+            if (session.profile() == StorageUploadProfile.AFTER_SALE_EVIDENCE_VIDEO) {
+                try (java.io.InputStream source = storageProvider.open(staging).inputStream()) {
+                    uploadPolicy.requireAfterSaleVideoHeader(
+                            session.sourceContentType(), source.readNBytes(32));
+                } catch (java.io.IOException ex) {
+                    throw new BusinessException(ErrorCode.STORAGE_UPLOAD_POLICY_REJECTED);
+                }
+            }
             if (!renewProcessingClaim(session.id(), processingToken)) {
                 throw new BusinessException(
                         ErrorCode.STORAGE_FILE_UNAVAILABLE);
@@ -988,6 +1024,10 @@ public class DirectUploadService {
                         normalizeContentType(metadata.contentType()))) {
             throw new BusinessException(ErrorCode.STORAGE_UPLOAD_POLICY_REJECTED);
         }
+        if (AFTER_SALE_PROFILES.contains(session.profile())) {
+            uploadPolicy.requireAllowed(session.profile(), session.originalFilename(),
+                    metadata.contentType(), metadata.sizeBytes(), true);
+        }
     }
 
     private List<StorageProvider.ImageProcessOutput> imageOutputs(SessionRow session) {
@@ -1044,6 +1084,9 @@ public class DirectUploadService {
         validateProcessedOutput(
                 main,
                 imageProfileSettings(session.profile()).maxDimension());
+        if (session.profile() == StorageUploadProfile.AFTER_SALE_EVIDENCE) {
+            uploadPolicy.requireAllowed(session.profile(), "evidence.webp", "image/webp", main.sizeBytes(), true);
+        }
         ProcessedImage thumbnail = session.profile()
                 == StorageUploadProfile.CUSTOMER_SERVICE_IMAGE
                 ? processed.stream()
@@ -1141,7 +1184,7 @@ public class DirectUploadService {
                 ? publicUrl(session)
                 : null;
         LocalDateTime assetExpiresAt = switch (session.profile()) {
-            case AFTER_SALE_EVIDENCE -> databaseNow().plus(AFTER_SALE_ASSET_TTL);
+            case AFTER_SALE_EVIDENCE, AFTER_SALE_EVIDENCE_VIDEO -> databaseNow().plus(AFTER_SALE_ASSET_TTL);
             case CUSTOMER_SERVICE_IMAGE -> databaseNow().plus(CUSTOMER_SERVICE_ASSET_TTL);
             case PRODUCT_REVIEW_IMAGE -> databaseNow().plus(PRODUCT_REVIEW_ASSET_TTL);
             default -> null;

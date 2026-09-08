@@ -36,6 +36,7 @@ function page(name: 'detail' | 'result', fetch: () => Promise<AfterSaleResponse>
       if (path.endsWith('features/customer-service')) return { buildCustomerServiceUrl: () => '' }
       if (path.endsWith('utils/api-error')) return { isApiError: () => false }
       if (path.endsWith('services/order')) return { getOrderDetail: fetchOrder }
+      if (path.endsWith('services/after-sale-evidence')) return { downloadAfterSaleEvidence: async () => '' }
       if (path.endsWith('services/after-sale')) return { getAfterSaleDetail: fetch }
       throw new Error(`Unexpected import: ${path}`)
     },

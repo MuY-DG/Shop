@@ -13,6 +13,10 @@ import java.util.Map;
 
 public class UploadPolicy {
 
+    public static final int AFTER_SALE_MAX_FILES = 4;
+    public static final long AFTER_SALE_IMAGE_MAX_SIZE_BYTES = 5L * 1024 * 1024;
+    public static final long AFTER_SALE_VIDEO_MAX_SIZE_BYTES = 50L * 1024 * 1024;
+
     private static final Map<String, String> IMAGE_CONTENT_TYPES_BY_EXTENSION = Map.of(
             "jpg", "image/jpeg",
             "jpeg", "image/jpeg",
@@ -52,6 +56,12 @@ public class UploadPolicy {
         } else {
             throw new BusinessException(ErrorCode.STORAGE_UPLOAD_POLICY_REJECTED);
         }
+        if (profile == StorageUploadProfile.AFTER_SALE_EVIDENCE
+                && sizeBytes > AFTER_SALE_IMAGE_MAX_SIZE_BYTES
+                || profile == StorageUploadProfile.AFTER_SALE_EVIDENCE_VIDEO
+                && sizeBytes > AFTER_SALE_VIDEO_MAX_SIZE_BYTES) {
+            throw new BusinessException(ErrorCode.STORAGE_UPLOAD_POLICY_REJECTED);
+        }
 
         return new UploadDecision(
                 profile,
@@ -78,6 +88,25 @@ public class UploadPolicy {
             return StorageUploadProfile.LIBRARY_VIDEO;
         }
         throw new BusinessException(ErrorCode.STORAGE_UPLOAD_POLICY_REJECTED);
+    }
+
+    public StorageUploadProfile detectAfterSaleProfile(String originalFilename, String contentType) {
+        return detectLibraryProfile(originalFilename, contentType) == StorageUploadProfile.LIBRARY_IMAGE
+                ? StorageUploadProfile.AFTER_SALE_EVIDENCE
+                : StorageUploadProfile.AFTER_SALE_EVIDENCE_VIDEO;
+    }
+
+    /** Reject files that only claim a video MIME type without a matching container header. */
+    public void requireAfterSaleVideoHeader(String contentType, byte[] header) {
+        boolean mp4 = "video/mp4".equals(normalizeContentType(contentType))
+                && header.length >= 12 && header[4] == 'f' && header[5] == 't'
+                && header[6] == 'y' && header[7] == 'p';
+        boolean webm = "video/webm".equals(normalizeContentType(contentType))
+                && header.length >= 4 && (header[0] & 0xff) == 0x1a && (header[1] & 0xff) == 0x45
+                && (header[2] & 0xff) == 0xdf && (header[3] & 0xff) == 0xa3;
+        if (!mp4 && !webm) {
+            throw new BusinessException(ErrorCode.STORAGE_UPLOAD_POLICY_REJECTED);
+        }
     }
 
     public void requireAllowedImageDimensions(int width, int height) {

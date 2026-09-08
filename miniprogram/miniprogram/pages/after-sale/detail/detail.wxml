@@ -128,16 +128,29 @@
           <view wx:if="{{detail.description}}" class="description-block"><view>补充说明</view><text>{{detail.description}}</text></view>
         </view>
 
-        <view wx:if="{{detail.evidenceNames.length}}" class="detail-card">
+        <view wx:if="{{detail.evidenceFiles.length}}" class="detail-card">
           <view class="section-heading">凭证信息</view>
-          <view class="info-row"><text>图片凭证</text><text>{{detail.evidenceCountText}}</text></view>
-          <view wx:if="{{detail.evidenceNames.length}}" class="evidence-list">
-            <view wx:for="{{detail.evidenceNames}}" wx:key="*this" class="evidence-file">
-              <view class="evidence-file__icon">图</view>
-              <text>{{item}}</text>
+          <view class="info-row"><text>图片 / 视频</text><text>共 {{detail.evidenceFiles.length}} 个</text></view>
+          <view class="evidence-previews">
+            <view
+              wx:for="{{detail.evidenceFiles}}"
+              wx:key="fileId"
+              class="evidence-preview evidence-preview--{{item.mediaKind === 'VIDEO' ? 'video' : 'image'}}"
+              data-file-id="{{item.fileId}}"
+              bindtap="onEvidenceTap"
+              hover-class="evidence-preview--pressed"
+              aria-role="button"
+              aria-label="{{item.status !== 'ACTIVE' ? '凭证暂不可查看' : item.mediaKind === 'VIDEO' ? '播放视频凭证' : '查看图片凭证'}}：{{item.originalFilename}}"
+            >
+              <view class="evidence-preview__symbol">{{item.mediaKind === 'VIDEO' ? '▶' : '图'}}</view>
+              <view class="evidence-preview__body">
+                <view class="evidence-preview__name">{{item.originalFilename || '售后凭证'}}</view>
+                <view class="evidence-preview__action">{{evidencePreviewFileId === item.fileId ? '正在加载…' : item.status !== 'ACTIVE' ? '暂不可查看' : item.mediaKind === 'VIDEO' ? '点击播放视频' : '点击查看图片'}}</view>
+              </view>
+              <text class="evidence-preview__arrow">›</text>
             </view>
           </view>
-          <view wx:if="{{detail.evidenceNames.length}}" class="privacy-note">凭证为私有业务附件，仅用于本次售后审核。</view>
+          <view class="privacy-note">凭证仅用于本次售后处理。</view>
         </view>
 
         <view class="detail-card">

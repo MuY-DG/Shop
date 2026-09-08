@@ -367,7 +367,7 @@ public class AdminAfterSaleService {
                           and sf.visibility = 'PRIVATE'
                           and sf.status = 'ACTIVE'
                           and sf.scope = 'ATTACHMENT'
-                          and sf.media_kind = 'IMAGE'
+                          and sf.media_kind in ('IMAGE', 'VIDEO')
                         """)
                 .param("afterSaleId", afterSaleId)
                 .param("fileId", fileId)

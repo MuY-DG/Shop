@@ -155,7 +155,7 @@ test("完整售后状态生成稳定文案、操作、进度和金额", () => {
   assert.equal(requested.statusTone, "warning");
   assert.deepEqual(requested.progressSteps.map((step) => step.state), ["done", "current", "pending"]);
   assert.equal(requested.requestedAmountText, "¥69.80");
-  assert.equal(requested.evidenceCountText, "1 张");
+  assert.equal(requested.evidenceCountText, "1 个");
   assert.equal(requested.canCancel, true);
   assert.equal(requested.listTypeText, "退款");
   assert.equal(requested.cardStatusText, "售后处理中");
@@ -423,7 +423,7 @@ test("小程序售后凭证使用选择器压缩结果并由云端统一处理",
   assert.match(applyLogic, /sizeType:\s*\[["']compressed["']\]/);
   assert.doesNotMatch(applyLogic, /sizeType:\s*\[["']original["']\]/);
   assert.doesNotMatch(applyLogic, /wx\.compressImage/);
-  assert.match(applyTemplate, /最多 3 张清晰图片，单张不超过 5MB/);
+  assert.match(applyTemplate, /最多 4 个，图片不超过 5MB，视频不超过 50MB/);
 
   const profileLogic = readFileSync(
     resolve(sourceRoot, "pages/account/profile/profile.ts"),

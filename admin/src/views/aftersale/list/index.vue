@@ -434,9 +434,10 @@
                   v-for="file in currentDetail.evidenceFiles"
                   :key="file.fileId"
                   class="evidence-file"
+                  :class="{ 'evidence-file--video': isPreviewableVideo(file) }"
                 >
                   <ElImage
-                    v-if="evidencePreviewUrls[file.fileId]"
+                    v-if="isPreviewableImage(file) && evidencePreviewUrls[file.fileId]"
                     class="evidence-file__preview"
                     :src="evidencePreviewUrls[file.fileId]"
                     :preview-src-list="evidencePreviewList"
@@ -445,9 +446,22 @@
                     preview-teleported
                     @error="handleEvidencePreviewError(file)"
                   />
-                  <div v-else-if="isPreviewableImage(file)" class="evidence-file__preview-state">
-                    <span v-if="evidencePreviewLoading">图片加载中...</span>
-                    <span v-else>图片加载失败</span>
+                  <video
+                    v-else-if="isPreviewableVideo(file) && evidencePreviewUrls[file.fileId]"
+                    class="evidence-file__video"
+                    :src="evidencePreviewUrls[file.fileId]"
+                    :aria-label="`售后视频凭证：${file.originalFilename}`"
+                    controls
+                    playsinline
+                    preload="metadata"
+                    @error="handleEvidencePreviewError(file)"
+                  />
+                  <div
+                    v-else-if="isPreviewableImage(file) || isPreviewableVideo(file)"
+                    class="evidence-file__preview-state"
+                  >
+                    <span v-if="evidencePreviewLoading">凭证加载中...</span>
+                    <span v-else>凭证加载失败</span>
                   </div>
                   <div class="evidence-file__content">
                     <div class="evidence-file__header">
@@ -1141,6 +1155,7 @@
     returnAddressText,
     type AfterSaleAdminAction
   } from './aftersale-workflow'
+  import { evidenceImageUrls, isPreviewableImage, isPreviewableVideo } from './aftersale-evidence'
 
   defineOptions({ name: 'AfterSaleList' })
 
@@ -1478,7 +1493,9 @@
     }
   ])
 
-  const evidencePreviewList = computed(() => Object.values(evidencePreviewUrls.value))
+  const evidencePreviewList = computed(() =>
+    evidenceImageUrls(currentDetail.value?.evidenceFiles || [], evidencePreviewUrls.value)
+  )
 
   const auditRules = computed<FormRules<AuditForm>>(() => ({
     approvedAmountYuan: [
@@ -1853,9 +1870,6 @@
     }
   )
 
-  const isPreviewableImage = (file: Api.AfterSale.EvidenceFile) =>
-    file.status === 'ACTIVE' && file.contentType?.toLowerCase().startsWith('image/')
-
   const evidencePreviewIndex = (fileId: number) => {
     const url = evidencePreviewUrls.value[fileId]
     return url ? evidencePreviewList.value.indexOf(url) : 0
@@ -1890,7 +1904,9 @@
   }
 
   const loadEvidencePreviews = async (detail: Api.AfterSale.Item, requestId: number) => {
-    const files = (detail.evidenceFiles || []).filter(isPreviewableImage)
+    const files = (detail.evidenceFiles || []).filter(
+      (file) => isPreviewableImage(file) || isPreviewableVideo(file)
+    )
     if (!files.length) return
 
     const signedPreviews = files
@@ -3007,6 +3023,18 @@
     flex: 0 0 112px;
     width: 112px;
     height: 112px;
+    border-radius: 6px;
+  }
+
+  .evidence-file--video {
+    flex-direction: column;
+  }
+
+  .evidence-file__video {
+    width: 100%;
+    height: 200px;
+    object-fit: contain;
+    background: #17191c;
     border-radius: 6px;
   }
 

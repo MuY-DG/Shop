@@ -1,183 +1,99 @@
 <view class="apply-page">
-  <navigation-bar
-    title="申请售后"
-    back="{{true}}"
-    color="#1c1c1e"
-    background="#f6f6f6"
-    show-divider="{{false}}"
-  />
-
-  <scroll-view
-    class="apply-scroll"
-    scroll-y="{{true}}"
-    enhanced="{{true}}"
-    bounces="{{false}}"
-    enable-passive="{{true}}"
-    show-scrollbar="{{false}}"
-  >
+  <navigation-bar title="{{isBatch ? '批量申请售后' : '申请售后'}}" back="{{true}}" color="#1c1c1e" background="#f6f6f6" show-divider="{{false}}" />
+  <scroll-view class="apply-scroll" scroll-y="{{true}}" enhanced="{{true}}" bounces="{{false}}" enable-passive="{{true}}" show-scrollbar="{{false}}">
     <view class="apply-content">
       <view wx:if="{{!loaded && loading}}" class="apply-state apply-state--skeleton">
         <ui-state type="loading" skeleton-type="workflow" title="正在核对售后资格" description="请稍候" />
       </view>
-      <view wx:elif="{{!loaded && errorText}}" class="apply-state">
-        <ui-state
-          type="error"
-          title="当前服务繁忙"
-          description="{{errorText}}"
-        />
+      <view wx:elif="{{!loaded && errorText}}" class="apply-state" bindtap="onRetry" aria-role="button" aria-label="重新加载售后资格">
+        <ui-state type="error" title="当前服务繁忙" description="{{errorText}}，点击重试" />
       </view>
-
       <block wx:elif="{{eligibility}}">
-        <view wx:if="{{blockedAfterSaleId}}" class="blocked-card" bindtap="onBlockedAfterSaleTap" hover-class="blocked-card--pressed" aria-role="button">
-          <view>
-            <view class="blocked-card__title">该订单已有进行中的售后</view>
-            <view class="blocked-card__copy">完成或取消当前申请后，才能再次申请</view>
-          </view>
-          <text>查看 ›</text>
+        <view wx:if="{{blockedAfterSaleId}}" class="blocked-card" bindtap="onBlockedAfterSaleTap" aria-role="button">
+          <view class="section-heading">该订单已有进行中的售后</view>
+          <view class="muted-copy">完成或取消当前申请后，才能再次申请</view>
+          <view class="blocked-card__link">查看售后详情 ›</view>
         </view>
         <view wx:elif="{{errorText}}" class="inline-error">{{errorText}}</view>
-
-        <view class="apply-card order-card">
-          <view class="section-heading">选择售后商品</view>
-          <view class="order-card__number">订单号 {{eligibility.orderNo}}</view>
-          <view wx:for="{{items}}" wx:key="orderItemId" class="order-item order-item--selectable">
-            <view
-              class="item-check {{item.selected ? 'item-check--active' : ''}}"
-              data-index="{{index}}"
-              bindtap="onItemToggle"
-              hover-class="item-check--pressed"
-              aria-role="checkbox"
-              aria-label="选择售后商品 {{item.productTitle}}"
-              aria-checked="{{item.selected}}"
-            >{{item.selected ? '✓' : ''}}</view>
-            <view class="order-item__image-shell">
-              <image wx:if="{{item.image}}" class="order-item__image" src="{{item.image}}" mode="aspectFill" />
-              <view wx:else class="order-item__fallback">灶</view>
+        <block wx:else>
+          <view class="apply-card type-card">
+            <view class="form-row form-row--tap" bindtap="onChooseType" hover-class="row--pressed" aria-role="button" aria-label="选择售后类型，当前{{selectedTypeText}}">
+              <text class="field-label">售后类型</text>
+              <view class="row-value"><text>{{selectedTypeText}}</text><image class="row-arrow" src="/assets/icons/chevron-right-detail.svg" /></view>
             </view>
-            <view class="order-item__body">
-              <view class="order-item__title">{{item.productTitle}}</view>
-              <view wx:if="{{item.specText}}" class="order-item__spec">{{item.specText}}</view>
-              <view class="order-item__price">{{selectedType === 'RETURN_REFUND' ? '可退货' : '可退款'}} {{item.selectableQuantity}} 件 · 可退上限 {{item.maxAmountText}}</view>
-              <view wx:if="{{item.selected}}" class="quantity-stepper">
-                <button data-index="{{index}}" bindtap="onQuantityMinus" disabled="{{item.quantity <= 1}}">−</button>
-                <text>{{item.quantity}}</text>
-                <button data-index="{{index}}" bindtap="onQuantityPlus" disabled="{{item.quantity >= item.selectableQuantity}}">＋</button>
-              </view>
-              <view wx:if="{{item.selected}}" class="item-amount">
-                <text class="item-amount__label">退款金额</text>
-                <view class="item-amount__field">
-                  <text class="item-amount__currency">¥</text>
-                  <input
-                    class="item-amount__input"
-                    type="digit"
-                    value="{{item.amountText}}"
-                    data-index="{{index}}"
-                    bindinput="onItemAmountInput"
-                    bindblur="onItemAmountBlur"
-                    placeholder="{{item.maxAmountText}}"
-                    disabled="{{submitting}}"
-                    aria-label="调整商品退款金额，上限 {{item.maxAmountText}}"
-                  />
+          </view>
+
+          <view class="apply-card refund-card">
+            <view class="form-row reason-row form-row--tap" bindtap="onChooseReason" hover-class="row--pressed" aria-role="button" aria-label="选择退款原因">
+              <text class="field-label">退款原因</text>
+              <view class="row-value {{!selectedReason ? 'row-value--placeholder' : ''}}"><text>{{selectedReason || '请选择'}}</text><image class="row-arrow" src="/assets/icons/chevron-right-detail.svg" /></view>
+            </view>
+            <view wx:if="{{isBatch}}" class="batch-heading">
+              <view><text class="section-heading">售后商品</text><text class="batch-count">已选 {{selectedCount}} 种</text></view>
+              <button class="select-all" bindtap="onToggleAll" disabled="{{submitting}}">{{allSelected ? '取消全选' : '全选'}}</button>
+            </view>
+            <view wx:for="{{items}}" wx:key="orderItemId" class="refund-item {{item.selectableQuantity <= 0 ? 'refund-item--unavailable' : ''}}">
+              <view class="product-summary">
+                <button wx:if="{{isBatch}}" class="item-select" data-index="{{index}}" bindtap="onItemToggle" disabled="{{submitting || item.selectableQuantity <= 0}}" aria-role="checkbox" aria-checked="{{item.selected}}" aria-label="选择{{item.productTitle}}">
+                  <view class="item-check {{item.selected ? 'item-check--active' : ''}}">{{item.selected ? '✓' : ''}}</view>
+                </button>
+                <view class="product-image-shell">
+                  <image wx:if="{{item.image}}" class="product-image" src="{{item.image}}" mode="aspectFill" />
+                  <view wx:else class="product-fallback">灶</view>
                 </view>
-                <text class="item-amount__hint">上限 {{item.maxAmountText}}</text>
+                <view class="product-copy">
+                  <view class="product-title">{{item.productTitle}}</view>
+                  <view wx:if="{{item.specText}}" class="product-spec">{{item.specText}}</view>
+                  <view class="product-quantity">{{item.selectableQuantity > 0 ? '可申请 ' + item.selectableQuantity + ' 件' : selectedType === 'RETURN_REFUND' && item.availableQuantity > 0 ? '未发货，可切换为退款（无需退货）' : '已无可售后数量'}}</view>
+                </view>
               </view>
+              <block wx:if="{{item.selected}}">
+                <view class="form-row quantity-row">
+                  <text class="field-label">退款件数</text>
+                  <view class="quantity-stepper">
+                    <button data-index="{{index}}" bindtap="onQuantityMinus" disabled="{{submitting || item.quantity <= 1}}" aria-label="减少{{item.productTitle}}退款件数">−</button>
+                    <text>{{item.quantity}}</text>
+                    <button data-index="{{index}}" bindtap="onQuantityPlus" disabled="{{submitting || item.quantity >= item.selectableQuantity}}" aria-label="增加{{item.productTitle}}退款件数">＋</button>
+                  </view>
+                </view>
+                <view class="form-row amount-row">
+                  <text class="field-label">申请退款金额</text>
+                  <view class="amount-field">
+                    <text class="amount-currency">¥</text>
+                    <input class="amount-input" style="width: {{item.amountInputWidth}}rpx" type="digit" value="{{item.amountText}}" maxlength="12" data-index="{{index}}" bindinput="onItemAmountInput" bindblur="onItemAmountBlur" focus="{{editingIndex === index}}" disabled="{{submitting}}" aria-label="{{item.productTitle}}申请退款金额，最多{{item.maxAmountText}}" />
+                    <button class="amount-edit" data-index="{{index}}" bindtap="onEditAmount" disabled="{{submitting}}" aria-label="编辑{{item.productTitle}}退款金额"><image src="/assets/icons/edit-square-outline-mdi-iconify.svg" /></button>
+                  </view>
+                </view>
+                <view class="amount-hint {{item.amountError ? 'amount-hint--error' : ''}}">{{item.amountError || '最多可输入 ' + item.maxAmountText}}</view>
+              </block>
             </view>
+            <view wx:if="{{isBatch}}" class="batch-note">所选商品共用退款原因和凭证，将合并为一笔售后申请</view>
           </view>
-        </view>
 
-        <view class="apply-card policy-card">
-          <view class="section-heading">选择售后方式</view>
-          <view class="type-options">
-            <view
-              wx:for="{{availableTypes}}"
-              wx:key="value"
-              class="type-option {{selectedType === item.value ? 'type-option--active' : ''}}"
-              data-type="{{item.value}}"
-              bindtap="onTypeTap"
-              hover-class="type-option--pressed"
-              hover-stay-time="80"
-              aria-role="radio"
-              aria-label="{{item.text}}"
-              aria-checked="{{selectedType === item.value}}"
-            >{{item.text}}</view>
-          </view>
-          <view class="policy-card__copy">退款金额默认按订单实付分摊计算，可按商品自行调低，不超过各商品可退上限。</view>
-          <view class="refund-amount">
-            <text>退款金额</text>
-            <text>{{quoting ? '计算中…' : (quoteAmountText || '请选择商品')}}</text>
-          </view>
-        </view>
-
-        <view class="apply-card">
-          <view class="section-heading">售后原因</view>
-          <view class="reason-list">
-            <view
-              wx:for="{{reasons}}"
-              wx:key="*this"
-              class="reason-item {{selectedReason === item ? 'reason-item--active' : ''}}"
-              data-reason="{{item}}"
-              bindtap="onReasonTap"
-              hover-class="reason-item--pressed"
-              hover-stay-time="80"
-              aria-role="radio"
-              aria-label="{{item}}"
-              aria-checked="{{selectedReason === item}}"
-            >
-              <view class="reason-item__radio">{{selectedReason === item ? '✓' : ''}}</view>
-              <text>{{item}}</text>
+          <view class="apply-card evidence-card">
+            <view class="section-heading">补充说明<text class="optional">选填</text></view>
+            <textarea class="description-input" value="{{description}}" maxlength="500" placeholder="描述具体问题，帮助我们更快处理" placeholder-class="description-input__placeholder" show-confirm-bar="{{false}}" disabled="{{submitting}}" bindinput="onDescriptionInput" />
+            <view class="description-count">{{description.length}}/500</view>
+            <view class="evidence-heading"><view class="section-heading">凭证图片 / 视频<text class="optional">选填</text></view><text class="evidence-count">{{evidenceFiles.length}}/4</text></view>
+            <view class="evidence-grid">
+              <view wx:for="{{evidenceFiles}}" wx:key="fileId" class="evidence-item">
+                <view class="evidence-preview" data-index="{{index}}" bindtap="onPreviewEvidenceTap" aria-role="button" aria-label="预览第{{index + 1}}个{{item.type === 'video' ? '视频' : '图片'}}凭证">
+                  <image wx:if="{{item.type === 'image' || item.thumbnail}}" class="evidence-image" src="{{item.type === 'video' ? item.thumbnail : item.tempFilePath}}" mode="aspectFill" />
+                  <view wx:if="{{item.type === 'video'}}" class="video-badge"><text>▶</text><text>视频</text></view>
+                </view>
+                <button class="evidence-remove" data-index="{{index}}" catchtap="onRemoveEvidenceTap" disabled="{{uploading || submitting}}" aria-label="移除第{{index + 1}}个凭证">×</button>
+              </view>
+              <button wx:if="{{evidenceFiles.length < 4}}" class="evidence-add" loading="{{uploading}}" disabled="{{uploading || submitting}}" bindtap="onChooseEvidenceTap"><text class="evidence-plus">＋</text><text>图片 / 视频</text></button>
             </view>
+            <view class="evidence-copy">最多 4 个，图片不超过 5MB，视频不超过 50MB</view>
           </view>
-          <view class="field-label">补充说明（选填）</view>
-          <textarea
-            class="description-input"
-            value="{{description}}"
-            maxlength="500"
-            placeholder="请补充问题和诉求，最多 500 字"
-            placeholder-class="description-input__placeholder"
-            show-confirm-bar="{{false}}"
-            bindinput="onDescriptionInput"
-          />
-          <view class="description-count">{{description.length}}/500</view>
-        </view>
-
-        <view class="apply-card">
-          <view class="evidence-heading">
-            <view>
-              <view class="section-heading">图片凭证（选填）</view>
-              <view class="evidence-copy">最多 3 张清晰图片，单张不超过 5MB</view>
-            </view>
-            <text>{{evidenceFiles.length}}/3</text>
-          </view>
-          <view class="evidence-grid">
-            <view wx:for="{{evidenceFiles}}" wx:key="fileId" class="evidence-item">
-              <image class="evidence-image" src="{{item.tempFilePath}}" mode="aspectFill" data-index="{{index}}" bindtap="onPreviewEvidenceTap" />
-              <view class="evidence-remove" data-index="{{index}}" bindtap="onRemoveEvidenceTap" aria-role="button" aria-label="移除第 {{index + 1}} 张凭证">×</view>
-            </view>
-            <button
-              wx:if="{{evidenceFiles.length < 3 && !blockedAfterSaleId}}"
-              class="evidence-add"
-              loading="{{uploading}}"
-              disabled="{{uploading || submitting}}"
-              bindtap="onChooseEvidenceTap"
-              hover-class="evidence-add--pressed"
-            >
-              <text>＋</text>
-              <view>上传凭证</view>
-            </button>
-          </view>
-        </view>
+          <view wx:if="{{quoteError}}" class="quote-error"><text>{{quoteError}}</text><button bindtap="onRetryQuote" disabled="{{quoting || submitting}}">重新核算</button></view>
+        </block>
       </block>
     </view>
   </scroll-view>
-
   <view wx:if="{{eligibility && !blockedAfterSaleId && availableTypes.length}}" class="submit-bar">
-    <button
-      class="submit-button"
-      loading="{{submitting}}"
-      disabled="{{submitting || uploading || quoting || !quote}}"
-      bindtap="onSubmitTap"
-      hover-class="submit-button--pressed"
-      hover-stay-time="80"
-    >{{uploading ? '正在上传凭证' : quoting ? '正在计算报价' : '确认并提交售后'}}</button>
+    <view wx:if="{{isBatch}}" class="submit-summary"><view class="muted-copy">已选 {{selectedCount}} 种 {{selectedQuantity}} 件</view><view class="summary-amount">合计 <text>{{quoteAmountText || '—'}}</text></view></view>
+    <button class="submit-button" loading="{{submitting}}" disabled="{{submitting || uploading || quoting || !quote}}" bindtap="onSubmitTap" hover-class="submit-button--pressed">{{uploading ? '正在上传凭证' : quoting ? '正在核算金额' : '提交申请'}}</button>
   </view>
 </view>

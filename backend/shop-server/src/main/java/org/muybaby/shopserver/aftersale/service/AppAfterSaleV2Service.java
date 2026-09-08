@@ -20,7 +20,7 @@ import org.muybaby.shopserver.order.service.OrderStatusLogService;
 import org.muybaby.shopserver.security.AuthenticatedPrincipal;
 import org.muybaby.shopserver.storage.StorageAssetScope;
 import org.muybaby.shopserver.storage.StorageFileUsageType;
-import org.muybaby.shopserver.storage.StorageMediaKind;
+import org.muybaby.shopserver.storage.service.UploadPolicy;
 import org.muybaby.shopserver.storage.StorageUsageOwnerType;
 import org.muybaby.shopserver.storage.service.StorageUsageService;
 import org.muybaby.shopserver.user.service.AppUserService;
@@ -724,7 +724,11 @@ public class AppAfterSaleV2Service {
                         where asset.id in (:ids)
                           and asset.expires_at > current_timestamp
                           and asset.scope = :scope
-                          and asset.media_kind = :mediaKind
+                          and asset.size_bytes > 0
+                          and ((asset.media_kind = 'IMAGE' and asset.size_bytes <= :imageMaxSize
+                                and asset.content_type in ('image/jpeg', 'image/png', 'image/webp', 'image/gif', 'image/svg+xml'))
+                            or (asset.media_kind = 'VIDEO' and asset.size_bytes <= :videoMaxSize
+                                and asset.content_type in ('video/mp4', 'video/webm')))
                           and asset.visibility = 'PRIVATE'
                           and asset.status = 'ACTIVE'
                           and asset.uploaded_by_type = 'APP'
@@ -738,7 +742,8 @@ public class AppAfterSaleV2Service {
                         """)
                 .param("ids", fileIds)
                 .param("scope", StorageAssetScope.ATTACHMENT.name())
-                .param("mediaKind", StorageMediaKind.IMAGE.name())
+                .param("imageMaxSize", UploadPolicy.AFTER_SALE_IMAGE_MAX_SIZE_BYTES)
+                .param("videoMaxSize", UploadPolicy.AFTER_SALE_VIDEO_MAX_SIZE_BYTES)
                 .param("userId", userId)
                 .param("orderId", orderId)
                 .query(Long.class)
@@ -817,7 +822,8 @@ public class AppAfterSaleV2Service {
             return List.of();
         }
         List<Long> result = new ArrayList<>(new LinkedHashSet<>(ids));
-        if (result.size() > 3 || result.stream().anyMatch(id -> id == null || id <= 0)) {
+        if (result.size() > UploadPolicy.AFTER_SALE_MAX_FILES
+                || result.stream().anyMatch(id -> id == null || id <= 0)) {
             throw new BusinessException(ErrorCode.STORAGE_FILE_UNAVAILABLE);
         }
         return List.copyOf(result);

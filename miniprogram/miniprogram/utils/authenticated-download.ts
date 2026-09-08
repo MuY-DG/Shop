@@ -27,7 +27,7 @@ function buildUrl(path: string): string {
   return `${origin}${path.startsWith("/") ? path : `/${path}`}`;
 }
 
-function rawDownload(path: string, token: string | null): Promise<DownloadResult> {
+function rawDownload(path: string, token: string | null, timeoutMs: number): Promise<DownloadResult> {
   const authTokenUsed = token?.trim() || null;
   const header: Record<string, string> = {};
   if (authTokenUsed) {
@@ -37,7 +37,7 @@ function rawDownload(path: string, token: string | null): Promise<DownloadResult
     wx.downloadFile({
       url: buildUrl(path),
       header,
-      timeout: APP_CONFIG.requestTimeoutMs,
+      timeout: timeoutMs,
       success: (response) => resolve({
         statusCode: response.statusCode,
         tempFilePath: response.tempFilePath,
@@ -54,7 +54,7 @@ function rawDownload(path: string, token: string | null): Promise<DownloadResult
   });
 }
 
-function rawExternalDownload(url: string): Promise<DownloadResult> {
+function rawExternalDownload(url: string, timeoutMs: number): Promise<DownloadResult> {
   if (!/^https:\/\/[^/\s]+(?:\/|$)/i.test(url)) {
     return Promise.reject(new ApiError({
       kind: "PROTOCOL",
@@ -64,7 +64,7 @@ function rawExternalDownload(url: string): Promise<DownloadResult> {
   return new Promise((resolve, reject) => {
     wx.downloadFile({
       url,
-      timeout: APP_CONFIG.requestTimeoutMs,
+      timeout: timeoutMs,
       success: (response) => resolve({
         statusCode: response.statusCode,
         tempFilePath: response.tempFilePath,
@@ -100,16 +100,22 @@ function requireSuccessfulDownload(result: DownloadResult): string {
   return result.tempFilePath;
 }
 
-export async function downloadExternalFile(url: string): Promise<string> {
-  return requireSuccessfulDownload(await rawExternalDownload(url.trim()));
+export async function downloadExternalFile(
+  url: string,
+  timeoutMs = APP_CONFIG.requestTimeoutMs
+): Promise<string> {
+  return requireSuccessfulDownload(await rawExternalDownload(url.trim(), timeoutMs));
 }
 
-export async function downloadAuthenticatedFile(path: string): Promise<string> {
+export async function downloadAuthenticatedFile(
+  path: string,
+  timeoutMs = APP_CONFIG.requestTimeoutMs
+): Promise<string> {
   await ensureSession();
-  let result = await rawDownload(path, getSessionState().accessToken || null);
+  let result = await rawDownload(path, getSessionState().accessToken || null, timeoutMs);
   if (result.statusCode === 401) {
     await recoverAfterUnauthorized(result.authTokenUsed);
-    result = await rawDownload(path, getSessionState().accessToken || null);
+    result = await rawDownload(path, getSessionState().accessToken || null, timeoutMs);
     if (result.statusCode === 401) {
       clearSessionIfCurrent(result.authTokenUsed);
     }

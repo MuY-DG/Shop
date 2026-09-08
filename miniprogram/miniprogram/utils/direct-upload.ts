@@ -17,10 +17,11 @@ export interface DirectUploadInitRequest extends WechatMiniprogram.IAnyObject {
 export interface DirectUploadOptions<T> {
   initUrl: string;
   filePath: string;
+  mediaType?: 'image' | 'video';
   completeUrl?: (uploadId: string) => string;
   timeoutMs?: number;
   completeTimeoutMs?: number;
-  legacyFallback?: () => Promise<T>;
+  legacyFallback?: (fallbackFilePath: string) => Promise<T>;
 }
 
 interface LocalUploadFile {
@@ -56,6 +57,8 @@ const IMAGE_CONTENT_TYPES: Record<string, string> = {
   tiff: "image/tiff",
   webp: "image/webp"
 };
+const VIDEO_CONTENT_TYPES: Record<string, string> = { mp4: 'video/mp4', webm: 'video/webm' };
+let fallbackFileSequence = 0;
 
 function cleanPath(path: string): string {
   return path.trim().split(/[?#]/, 1)[0] || "";
@@ -114,13 +117,26 @@ function getImageType(filePath: string): Promise<string> {
   });
 }
 
-async function localUploadFile(filePath: string): Promise<LocalUploadFile> {
+async function localUploadFile(filePath: string, mediaType: 'image' | 'video' = 'image'): Promise<LocalUploadFile> {
   const normalizedPath = filePath.trim();
   if (!normalizedPath) {
     throw new ApiError({ kind: "PROTOCOL", message: "待上传图片不存在" });
   }
   let originalFilename = pathFilename(normalizedPath);
   const pathExtension = filenameExtension(originalFilename);
+  if (mediaType === 'video') {
+    const sizeBytes = await getFileSize(normalizedPath);
+    const detectedType = VIDEO_CONTENT_TYPES[pathExtension] ? pathExtension : await new Promise<string>((resolve) => {
+      wx.getVideoInfo({ src: normalizedPath,
+        success: (result) => resolve(String(result.type || '').toLowerCase()), fail: () => resolve('') });
+    });
+    const contentType = VIDEO_CONTENT_TYPES[detectedType];
+    if (!contentType) throw new ApiError({ kind: 'PROTOCOL', message: '请选择 MP4 或 WebM 格式的视频' });
+    if (!VIDEO_CONTENT_TYPES[pathExtension]) {
+      originalFilename = `${originalFilename.replace(/\.[a-z0-9]{1,8}$/i, '')}.${detectedType}`;
+    }
+    return { originalFilename, contentType, sizeBytes };
+  }
   const [sizeBytes, detectedType] = await Promise.all([
     getFileSize(normalizedPath),
     IMAGE_CONTENT_TYPES[pathExtension]
@@ -131,11 +147,46 @@ async function localUploadFile(filePath: string): Promise<LocalUploadFile> {
     ? pathExtension
     : detectedType;
   const contentType = IMAGE_CONTENT_TYPES[extension] || "application/octet-stream";
-  if (!pathExtension && IMAGE_CONTENT_TYPES[extension]) {
+  if (!IMAGE_CONTENT_TYPES[pathExtension] && IMAGE_CONTENT_TYPES[extension]) {
     const safeExtension = extension === "jpeg" ? "jpg" : extension;
-    originalFilename = `${originalFilename}.${safeExtension}`;
+    originalFilename = `${originalFilename.replace(/\.[a-z0-9]{1,8}$/i, '')}.${safeExtension}`;
   }
   return { originalFilename, contentType, sizeBytes };
+}
+
+async function uploadWithLegacyFilename<T>(
+  options: DirectUploadOptions<T>,
+  file: LocalUploadFile,
+  fallback: (filePath: string) => Promise<T>
+): Promise<T> {
+  const sourcePath = options.filePath.trim();
+  if (pathFilename(sourcePath) === file.originalFilename) {
+    return fallback(sourcePath);
+  }
+
+  // wx.uploadFile 从本地路径生成 multipart 文件名；仅修正初始化元数据不足以支持兼容上传。
+  const directory = wx.env.USER_DATA_PATH.replace(/\/$/, '');
+  const extension = filenameExtension(file.originalFilename);
+  let copiedPath: string;
+  do {
+    copiedPath = `${directory}/upload-fallback-${Date.now()}-${++fallbackFileSequence}.${extension}`;
+  } while (copiedPath === sourcePath);
+  const fs = wx.getFileSystemManager();
+  try {
+    await new Promise<void>((resolve, reject) => {
+      fs.copyFile({ srcPath: sourcePath, destPath: copiedPath,
+        success: () => resolve(),
+        fail: (cause) => reject(new ApiError({
+          kind: 'PROTOCOL', message: '无法准备兼容上传文件，请重试', cause
+        })) });
+    });
+    return await fallback(copiedPath);
+  } finally {
+    // 只清理本次创建的副本；上传失败时也保留用户原文件供预览或重试。
+    await new Promise<void>((resolve) => {
+      fs.unlink({ filePath: copiedPath, success: () => resolve(), fail: () => resolve() });
+    });
+  }
 }
 
 function requireGrant(value: DirectUploadGrant): DirectUploadGrant {
@@ -231,7 +282,7 @@ export function shouldFallbackToLegacyUpload(error: unknown): boolean {
 export async function uploadFileDirect<T>(
   options: DirectUploadOptions<T>
 ): Promise<T> {
-  const file = await localUploadFile(options.filePath);
+  const file = await localUploadFile(options.filePath, options.mediaType);
   let grant: DirectUploadGrant;
   try {
     grant = requireGrant(await request<
@@ -244,7 +295,7 @@ export async function uploadFileDirect<T>(
     }));
   } catch (error) {
     if (options.legacyFallback && shouldFallbackToLegacyUpload(error)) {
-      return options.legacyFallback();
+      return uploadWithLegacyFilename(options, file, options.legacyFallback);
     }
     throw error;
   }

@@ -1086,7 +1086,7 @@ test("图片缺失与加载占位背景统一为白色", () => {
     ["pages/order/preview/preview.less", ["preview-item__image-shell"]],
     ["pages/order/detail/detail.less", ["detail-item__image-shell"]],
     ["pages/order/list/list.less", ["order-product__image-shell"]],
-    ["pages/after-sale/apply/apply.less", ["order-item__image-shell"]],
+    ["pages/after-sale/apply/apply.less", ["product-image-shell"]],
     ["pages/order/review/review.less", ["product-option__image", "review-product__image-shell", "review-image-item__image"]],
     ["pages/product/detail/detail.less", ["purchase-image", "review-image-gallery__image", "review-spec-product__image"]]
   ]);
