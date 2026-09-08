@@ -57,6 +57,8 @@ shop:
       delivery:
         claim-timeout: 10m
   pay:
+    auto-refund:
+      initial-delay: 1h
     mock-enabled: true
     initiation:
       claim-timeout: 2m

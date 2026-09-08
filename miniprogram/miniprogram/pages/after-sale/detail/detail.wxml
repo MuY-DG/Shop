@@ -2,7 +2,7 @@
   <navigation-bar
     title="售后详情"
     back="{{true}}"
-    color="#2E1D16"
+    color="#1c1c1e"
     background="#f6f6f6"
     show-divider="{{false}}"
   />
@@ -28,10 +28,10 @@
       </view>
 
       <block wx:elif="{{detail}}">
-        <view wx:if="{{errorText}}" class="inline-error">{{errorText}}</view>
+        <view wx:if="{{errorText}}" class="inline-error" bindtap="onRetry" aria-role="button">{{errorText}} · 点击重试</view>
 
         <view class="status-card status-card--{{detail.statusTone}}">
-          <view class="status-card__icon">{{detail.status === 'REFUNDED' ? '✓' : detail.status === 'REJECTED' || detail.status === 'RETURN_REJECTED' || detail.status === 'REFUND_FAILED' ? '!' : '退'}}</view>
+          <view class="status-card__icon {{detail.status === 'REQUESTED' || detail.status === 'APPROVED' || detail.status === 'REFUNDING' ? 'status-card__icon--processing' : ''}}">{{detail.status === 'REFUNDED' ? '✓' : detail.status === 'REJECTED' || detail.status === 'RETURN_REJECTED' || detail.status === 'REFUND_FAILED' ? '!' : '退'}}</view>
           <view class="status-card__body">
             <view class="status-card__title">{{detail.statusText}}</view>
             <view class="status-card__description">{{detail.statusDescription}}</view>
@@ -122,7 +122,7 @@
           <view wx:if="{{detail.description}}" class="description-block"><view>补充说明</view><text>{{detail.description}}</text></view>
         </view>
 
-        <view class="detail-card">
+        <view wx:if="{{detail.evidenceNames.length}}" class="detail-card">
           <view class="section-heading">凭证信息</view>
           <view class="info-row"><text>图片凭证</text><text>{{detail.evidenceCountText}}</text></view>
           <view wx:if="{{detail.evidenceNames.length}}" class="evidence-list">

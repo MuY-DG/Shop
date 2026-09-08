@@ -126,8 +126,8 @@
 }
 
 .item-check--active {
-  border-color: #b72b22;
-  background: #b72b22;
+  border-color: @color-action-primary;
+  background: @color-action-primary;
 }
 
 .quantity-stepper {
@@ -222,9 +222,9 @@
 }
 
 .type-option--active {
-  border-color: #b72b22;
-  background: @color-brand-soft;
-  color: #b72b22;
+  border-color: @color-action-primary;
+  background: fade(@color-action-primary, 8%);
+  color: @color-action-primary;
   font-weight: 600;
 }
 
@@ -247,7 +247,7 @@
   height: 100%;
   align-items: center;
   justify-content: center;
-  color: @color-brand;
+  color: @color-action-primary;
   font-family: serif;
   font-size: @font-size-lg;
 }
@@ -343,8 +343,8 @@
 }
 
 .reason-item--active .reason-item__radio {
-  border-color: @color-brand;
-  background: @color-brand;
+  border-color: @color-action-primary;
+  background: @color-action-primary;
 }
 
 .field-label {
@@ -430,11 +430,11 @@ button.evidence-add {
   width: 100%;
   margin: 0;
   padding: 0;
-  border: 2rpx dashed fade(@color-brand, 34%);
+  border: 2rpx dashed fade(@color-action-primary, 34%);
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  color: @color-brand;
+  color: @color-action-primary;
   font-size: @font-size-xs;
   line-height: @line-height-base;
   background: @color-surface-white;
@@ -468,7 +468,7 @@ button.submit-button {
   margin: 0;
   border-radius: @radius-pill;
   color: @color-text-inverse;
-  background: @color-brand;
+  background: @color-action-primary;
   box-shadow: @shadow-action;
   font-size: @font-size-base;
   font-weight: 700;
@@ -483,4 +483,18 @@ button.submit-button {
 button.submit-button[disabled] {
   box-shadow: none;
   opacity: 0.55;
+}
+
+
+button.submit-button,
+button.order-button,
+button.cancel-button,
+button.shipment-submit {
+  display: flex;
+  min-width: 0;
+  padding: 0 24rpx;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  line-height: 1.4;
 }

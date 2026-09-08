@@ -79,6 +79,7 @@ public class AppAfterSaleV2Service {
     private final AfterSaleV2ReadService readService;
     private final AfterSaleReturnExpiryService returnExpiryService;
     private final OrderItemFulfillmentRepository fulfillmentRepository;
+    private final UnshippedRefundPolicy unshippedRefundPolicy;
 
     public AppAfterSaleV2Service(
             JdbcClient jdbcClient,
@@ -89,7 +90,8 @@ public class AppAfterSaleV2Service {
             AfterSaleStatusLogService statusLogService,
             AfterSaleV2ReadService readService,
             AfterSaleReturnExpiryService returnExpiryService,
-            OrderItemFulfillmentRepository fulfillmentRepository
+            OrderItemFulfillmentRepository fulfillmentRepository,
+            UnshippedRefundPolicy unshippedRefundPolicy
     ) {
         this.jdbcClient = jdbcClient;
         this.namedParameterJdbcTemplate = namedParameterJdbcTemplate;
@@ -100,6 +102,7 @@ public class AppAfterSaleV2Service {
         this.readService = readService;
         this.returnExpiryService = returnExpiryService;
         this.fulfillmentRepository = fulfillmentRepository;
+        this.unshippedRefundPolicy = unshippedRefundPolicy;
     }
 
     public AfterSaleEligibilityResponse eligibility(
@@ -227,6 +230,10 @@ public class AppAfterSaleV2Service {
         orderStatusLogService.record(
                 orderId, afterSaleId, order.status(), order.status(),
                 "AFTER_SALE_REQUESTED", "APP", userId, "用户申请售后", now);
+        if (unshippedRefundPolicy.eligible(afterSaleId)) {
+            statusLogService.record(afterSaleId, AfterSaleStatus.REQUESTED.name(), AfterSaleStatus.REQUESTED.name(),
+                    "AUTO_REFUND_QUEUED", "SYSTEM", null, "未发货商品退款申请，等待自动审核", now);
+        }
         return requireDecorated(afterSaleId, userId);
     }
 

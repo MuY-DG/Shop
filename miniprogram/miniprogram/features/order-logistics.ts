@@ -27,7 +27,7 @@ export function buildOrderDeliverySummary(
   shipment: OrderShipmentView | undefined = detail.shipmentView,
   tracking?: ShipmentTrackingResponse | null
 ): OrderDeliverySummary | null {
-  if (!shipment) return null;
+  if (!shipment || detail.status === "REFUNDED") return null;
   const view = tracking?.shipmentId === shipment.shipmentId && tracking.orderId === detail.orderId
     ? buildOrderTrackingView(tracking) : null;
   const latest = view?.pathItems[0];

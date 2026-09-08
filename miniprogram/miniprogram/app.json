@@ -28,6 +28,7 @@
     "pages/after-sale/apply/apply",
     "pages/after-sale/list/list",
     "pages/after-sale/detail/detail",
+    "pages/after-sale/result/result",
     "pages/compliance/merchant/merchant",
     "pages/compliance/document/document"
   ],

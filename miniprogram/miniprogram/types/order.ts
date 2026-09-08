@@ -41,6 +41,12 @@ export interface OrderSummaryResponse {
   items: OrderSummaryItemResponse[];
   pendingReviewCount: number;
   latestAfterSale?: OrderAfterSaleSummaryResponse;
+  logisticsSummary?: {
+    shipmentId: number;
+    statusText: string;
+    latestMessage?: string;
+    packageCount: number;
+  } | null;
   createdAt: string;
 }
 

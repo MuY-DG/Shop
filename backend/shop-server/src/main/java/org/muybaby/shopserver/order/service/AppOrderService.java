@@ -29,6 +29,8 @@ import org.muybaby.shopserver.order.OrderStatusGroup;
 import org.muybaby.shopserver.order.StockLockStatus;
 import org.muybaby.shopserver.order.cleanup.PurgedOrderIdentityDigests;
 import org.muybaby.shopserver.order.dto.AppOrderAfterSaleSummaryResponse;
+import org.muybaby.shopserver.order.dto.AppOrderLogisticsSummaryResponse;
+import org.muybaby.shopserver.logistics.tracking.WechatLogisticsStatus;
 import org.muybaby.shopserver.order.dto.AppOrderDetailResponse;
 import org.muybaby.shopserver.order.dto.AppOrderPreviewRequest;
 import org.muybaby.shopserver.order.dto.AppOrderReceiverUpdateRequest;
@@ -451,10 +453,12 @@ public class AppOrderService {
                 orderIds
         );
 
+        var logisticsByOrderId = findLogisticsSummaries(orderIds);
         List<OrderSummaryResponse> records = headers.stream()
                 .map(header -> toOrderSummary(header,
                         itemsByOrderId.getOrDefault(header.orderId(), List.of()),
-                        latestAfterSalesByOrderId.get(header.orderId())))
+                        latestAfterSalesByOrderId.get(header.orderId()),
+                        logisticsByOrderId.get(header.orderId())))
                 .toList();
         return PageResult.of(records, total == null ? 0L : total, pageCurrent, pageSize);
     }
@@ -1472,7 +1476,8 @@ public class AppOrderService {
     private OrderSummaryResponse toOrderSummary(
             OrderSummaryHeader header,
             List<OrderSummaryItemResponse> items,
-            AppOrderAfterSaleSummaryResponse latestAfterSale
+            AppOrderAfterSaleSummaryResponse latestAfterSale,
+            AppOrderLogisticsSummaryResponse logisticsSummary
     ) {
         int itemCount = items.stream().mapToInt(OrderSummaryItemResponse::quantity).sum();
         int pendingReviewCount = (int) items.stream()
@@ -1493,8 +1498,33 @@ public class AppOrderService {
                 items,
                 pendingReviewCount,
                 latestAfterSale,
+                logisticsSummary,
                 header.createdAt()
         );
+    }
+
+    private Map<Long, AppOrderLogisticsSummaryResponse> findLogisticsSummaries(List<Long> orderIds) {
+        Map<Long, AppOrderLogisticsSummaryResponse> result = new HashMap<>();
+        jdbcClient.sql("""
+                        select s.order_id, s.id, packages.package_count, t.logistics_status,
+                               (select e.action_message from shipment_tracking_event e
+                                where e.shipment_id = s.id order by e.action_time desc, e.id desc limit 1) as latest_message
+                        from order_shipment s
+                        join (select order_id, max(id) as latest_id, count(*) as package_count
+                              from order_shipment where order_id in (:ids) and logistics_type = 1
+                              group by order_id) packages on packages.latest_id = s.id
+                        join shop_order o on o.id = s.order_id
+                        left join shipment_tracking_snapshot t on t.shipment_id = s.id
+                        where o.status in ('PARTIALLY_SHIPPED', 'SHIPPED', 'COMPLETED', 'REFUNDING')
+                        """).param("ids", orderIds).query((rs, rowNum) -> {
+                    var logisticsStatus = WechatLogisticsStatus.fromCode(rs.getObject("logistics_status", Integer.class));
+                    var summary = new AppOrderLogisticsSummaryResponse(rs.getLong("id"),
+                            logisticsStatus == null || logisticsStatus == WechatLogisticsStatus.NOT_FOUND
+                                    ? "已发货" : logisticsStatus.displayText(),
+                            rs.getString("latest_message"), rs.getInt("package_count"));
+                    return Map.entry(rs.getLong("order_id"), summary);
+                }).list().forEach(entry -> result.put(entry.getKey(), entry.getValue()));
+        return result;
     }
 
     private Map<Long, AppOrderAfterSaleSummaryResponse> findLatestAfterSaleSummaries(

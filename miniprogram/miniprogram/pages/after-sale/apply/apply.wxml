@@ -2,7 +2,7 @@
   <navigation-bar
     title="申请售后"
     back="{{true}}"
-    color="#2E1D16"
+    color="#1c1c1e"
     background="#f6f6f6"
     show-divider="{{false}}"
   />

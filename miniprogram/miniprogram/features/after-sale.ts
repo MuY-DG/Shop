@@ -115,7 +115,7 @@ export function buildAfterSaleCardStatus(
 
   switch (record.status) {
     case 'REQUESTED':
-      return { text: '售后处理中', description: '后台客服正在加速审核' }
+      return { text: '售后处理中', description: '申请正在审核，请稍候' }
     case 'APPROVED':
       return {
         text: isReturn ? '退货处理中' : '退款处理中',
@@ -152,7 +152,7 @@ export function buildAfterSaleCardStatus(
 
 export function afterSaleStatusText(status: AfterSaleStatus): string {
   const labels: Record<AfterSaleStatus, string> = {
-    REQUESTED: '待商家审核',
+    REQUESTED: '正在审核',
     APPROVED: '审核已通过',
     WAITING_RETURN: '待寄回商品',
     RETURNING: '退货运输中',
@@ -179,7 +179,7 @@ function afterSaleStatusTone(status: AfterSaleStatus): AfterSaleStatusTone {
 
 function afterSaleStatusDescription(status: AfterSaleStatus): string {
   const descriptions: Record<AfterSaleStatus, string> = {
-    REQUESTED: '申请已提交，商家审核后会更新处理结果',
+    REQUESTED: '申请已提交，正在核对商品和退款信息，处理结果将自动更新',
     APPROVED: '申请已通过，系统正在准备发起原路退款',
     WAITING_RETURN: '商家已提供退货地址，请在截止时间前寄回并填写物流',
     RETURNING: '退货物流已提交，商家收货后会进行验收',
@@ -197,7 +197,7 @@ function afterSaleStatusDescription(status: AfterSaleStatus): string {
 function progressSteps(type: AfterSaleType, status: AfterSaleStatus): AfterSaleProgressStep[] {
   const labels = type === 'RETURN_REFUND'
     ? ['提交申请', '商家审核', '寄回商品', '商家验收', '退款到账']
-    : ['提交申请', '商家审核', '退款到账']
+    : ['提交申请', '审核处理', '退款到账']
   const indexByStatus: Record<AfterSaleStatus, number> = type === 'RETURN_REFUND'
     ? {
         REQUESTED: 2,
@@ -449,4 +449,15 @@ export function buildAfterSaleDetailUrl(afterSaleId: number): string {
   const id = positiveAfterSaleId(afterSaleId)
   if (!id) throw new Error('售后参数无效')
   return `/pages/after-sale/detail/detail?after_sale_id=${id}`
+}
+
+
+export function shouldPollAfterSale(status: AfterSaleStatus): boolean {
+  return ['REQUESTED', 'APPROVED', 'REFUNDING', 'REFUND_FAILED', 'RETURNING', 'WAITING_INSPECTION'].includes(status)
+}
+
+export function buildAfterSaleResultUrl(afterSaleId: number): string {
+  const id = positiveAfterSaleId(afterSaleId)
+  if (!id) throw new Error('售后参数无效')
+  return `/pages/after-sale/result/result?after_sale_id=${id}`
 }

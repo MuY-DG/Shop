@@ -176,6 +176,15 @@
             <view wx:else class="order-card__empty-product">商品信息暂不可用</view>
           </view>
 
+          <view wx:if="{{item.logisticsStatusText}}" class="order-logistics"
+            data-id="{{item.orderId}}" catchtap="onLogisticsTap" hover-class="order-logistics--pressed"
+            aria-role="button" aria-label="{{item.logisticsStatusText}}，查看物流">
+            <image class="order-logistics__icon" src="/assets/icons/delivery-truck.svg" mode="aspectFit" aria-hidden="true" />
+            <text class="order-logistics__status">{{item.logisticsStatusText}}</text>
+            <text class="order-logistics__description">{{item.logisticsDescription}}</text>
+            <image class="order-logistics__arrow" src="/assets/icons/chevron-right-detail.svg" mode="aspectFit" aria-hidden="true" />
+          </view>
+
           <view class="order-card__actions">
             <view class="order-more">
               <button

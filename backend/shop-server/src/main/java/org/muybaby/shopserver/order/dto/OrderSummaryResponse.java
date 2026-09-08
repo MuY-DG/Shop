@@ -17,6 +17,7 @@ public record OrderSummaryResponse(
         List<OrderSummaryItemResponse> items,
         Integer pendingReviewCount,
         AppOrderAfterSaleSummaryResponse latestAfterSale,
+        AppOrderLogisticsSummaryResponse logisticsSummary,
         LocalDateTime createdAt
 ) {
     public OrderSummaryResponse {

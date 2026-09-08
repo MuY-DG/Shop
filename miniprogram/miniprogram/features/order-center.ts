@@ -254,6 +254,8 @@ export interface OrderSummaryView extends Omit<OrderSummaryResponse, "items">, O
   itemCountText: string;
   afterSaleStatusText: string;
   afterSaleStatusDescription: string;
+  logisticsStatusText: string;
+  logisticsDescription: string;
 }
 
 export interface OrderItemView extends OrderItemResponse {
@@ -348,6 +350,7 @@ function normalizedShipmentView(
 }
 
 function normalizedShipmentViews(order: AppOrderDetailResponse): OrderShipmentView[] {
+  if (order.status === "REFUNDED") return [];
   const shipments = Array.isArray(order.shipments) && order.shipments.length > 0
     ? order.shipments
     : order.shipment ? [order.shipment] : [];
@@ -525,6 +528,8 @@ export function buildOrderSummaryView(order: OrderSummaryResponse): OrderSummary
     ? Math.max(0, order.pendingReviewCount)
     : 0;
   const orderActions = summaryActions(order.status, pendingReviewCount);
+  const logistics = order.status !== "REFUNDED" && order.status !== "CLOSED" ? order.logisticsSummary : null;
+  if (logistics) orderActions.canViewLogistics = true;
   const afterSaleStatus = order.latestAfterSale
     ? buildAfterSaleCardStatus(order.latestAfterSale)
     : undefined;
@@ -533,6 +538,10 @@ export function buildOrderSummaryView(order: OrderSummaryResponse): OrderSummary
   return {
     ...order,
     ...orderActions,
+    logisticsStatusText: orderActions.canViewLogistics ? logistics?.statusText || "已发货" : "",
+    logisticsDescription: logistics?.packageCount && logistics.packageCount > 1
+      ? `共 ${logistics.packageCount} 个包裹 · ${logistics.latestMessage || "查看包裹进度"}`
+      : logistics?.latestMessage || "等待物流更新",
     pendingReviewCount,
     items: (Array.isArray(order.items) ? order.items : []).map(buildOrderSummaryItemView),
     statusText: orderActions.canReview

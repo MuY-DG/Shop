@@ -387,7 +387,7 @@ Page({
       const result = await applyAfterSale(this.data.orderId, payload)
       wx.showToast({ title: '申请已提交', icon: 'success' })
       wx.redirectTo({
-        url: buildAfterSaleDetailUrl(result.id),
+        url: `${buildAfterSaleDetailUrl(result.id)}&follow_refund=1`,
         fail: () => this.setData({ submitting: false })
       })
     } catch (error) {

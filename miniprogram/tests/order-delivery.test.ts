@@ -230,3 +230,15 @@ test("物流刷新失败保留地址和已有轨迹，页面卸载后丢弃响�
   await request;
   assert.equal(instance.data.deliverySummary.statusText, "运输中");
 });
+
+test('整单退款成功隐藏所有物流，部分退款仍保留剩余订单的物流', () => {
+  const refunded = orderCenter.buildOrderDetailView({ ...order(), status: 'REFUNDED' });
+  assert.equal(refunded.shipmentView, undefined);
+  assert.deepEqual(refunded.shipmentViews, []);
+  assert.equal(logistics.buildOrderDeliverySummary(refunded), null);
+  const original = orderCenter.buildOrderDetailView(order());
+  assert.equal(logistics.buildOrderDeliverySummary(refunded, original.shipmentView, tracking(2)), null);
+  const partial = orderCenter.buildOrderDetailView({ ...order(), status: 'PARTIALLY_SHIPPED' });
+  assert.equal(partial.shipmentViews.length, 2);
+  assert.notEqual(logistics.buildOrderDeliverySummary(partial), null);
+});

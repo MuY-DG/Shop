@@ -105,6 +105,7 @@ public class AdminAfterSaleService {
     private final RefundFinalizationService refundFinalizationService;
     private final RefundProviderAttemptService refundProviderAttemptService;
     private final Clock clock;
+    private final UnshippedRefundPolicy unshippedRefundPolicy;
 
     public AdminAfterSaleService(
             JdbcClient jdbcClient,
@@ -121,7 +122,8 @@ public class AdminAfterSaleService {
             AfterSaleStatusLogService afterSaleStatusLogService,
             RefundFinalizationService refundFinalizationService,
             RefundProviderAttemptService refundProviderAttemptService,
-            Clock clock
+            Clock clock,
+            UnshippedRefundPolicy unshippedRefundPolicy
     ) {
         this.jdbcClient = jdbcClient;
         this.paymentConfigResolver = paymentConfigResolver;
@@ -144,6 +146,7 @@ public class AdminAfterSaleService {
         this.refundFinalizationService = refundFinalizationService;
         this.refundProviderAttemptService = refundProviderAttemptService;
         this.clock = clock;
+        this.unshippedRefundPolicy = unshippedRefundPolicy;
     }
 
     public PageResult<AdminAfterSaleSummaryResponse> page(
@@ -466,6 +469,16 @@ public class AdminAfterSaleService {
         return response;
     }
 
+    // Internal scheduler entry only; no synthetic administrator identity or public endpoint.
+    public void approveUnshippedAutomatically(long afterSaleId) {
+        if (!unshippedRefundPolicy.eligible(afterSaleId)) {
+            throw new BusinessException(ErrorCode.ORDER_STATE_CONFLICT);
+        }
+        long amount = afterSaleV2WorkflowService.previewApproval(afterSaleId, null).approvedAmountCent();
+        withoutTransaction.execute(status -> approveOutsideTransaction(
+                null, afterSaleId, amount, "未发货商品，系统自动审核通过", null, null));
+    }
+
     public AfterSaleResponse receiveReturn(
             AuthenticatedPrincipal principal,
             Long afterSaleId,
@@ -742,7 +755,7 @@ public class AdminAfterSaleService {
         );
     }
 
-    private void submitRefund(PreparedRefundRequest refundContext) {
+    private void submitRefund(PreparedRefundRequest refundContext, String operatorType) {
         WechatRefundResult refundResult;
 
         try {
@@ -754,7 +767,7 @@ public class AdminAfterSaleService {
                     WechatRefundFailureClassifier.classify(providerErrorCode);
             RequestLogContext.markProviderError(providerErrorCode);
             refundProviderAttemptService.recordRefund(
-                    refundContext.refundOrderId(), "SUBMISSION", "ADMIN", "FAILURE", "",
+                    refundContext.refundOrderId(), "SUBMISSION", operatorType, "FAILURE", "",
                     "QUERY_REQUIRED", ex);
 
             WechatRefundQueryResult queryResult;
@@ -762,14 +775,14 @@ public class AdminAfterSaleService {
                 queryResult = wechatPayProvider.queryRefund(
                         refundContext.config(), refundContext.outRefundNo());
                 refundProviderAttemptService.recordRefund(
-                        refundContext.refundOrderId(), "QUERY", "ADMIN", "SUCCESS",
+                        refundContext.refundOrderId(), "QUERY", operatorType, "SUCCESS",
                         queryResult.status(),
                         "NOT_FOUND".equalsIgnoreCase(queryResult.status())
                                 ? "NOT_FOUND" : "PROVIDER_CONFIRMED",
                         null);
             } catch (RuntimeException queryFailure) {
                 refundProviderAttemptService.recordRefund(
-                        refundContext.refundOrderId(), "QUERY", "ADMIN", "FAILURE", "",
+                        refundContext.refundOrderId(), "QUERY", operatorType, "FAILURE", "",
                         "RECOVERY_SCHEDULED", queryFailure);
                 markRefundRequestUncertain(refundContext, ex);
                 throw new BusinessException(ErrorCode.WECHAT_REFUND_RECONCILIATION_PENDING);
@@ -789,20 +802,20 @@ public class AdminAfterSaleService {
                 refundFinalizationService.rejectSubmission(
                         refundContext.outRefundNo(), providerErrorCode, refundContext.config());
                 refundProviderAttemptService.recordRefund(
-                        refundContext.refundOrderId(), "DECISION", "ADMIN", "FAILURE", "",
+                        refundContext.refundOrderId(), "DECISION", operatorType, "FAILURE", "",
                         "MERCHANT_ACTION_REQUIRED", ex);
                 throw new BusinessException(classification.errorCode());
             }
             markRefundRequestUncertain(refundContext, ex);
             refundProviderAttemptService.recordRefund(
-                    refundContext.refundOrderId(), "DECISION", "ADMIN", "FAILURE", "",
+                    refundContext.refundOrderId(), "DECISION", operatorType, "FAILURE", "",
                     "RECOVERY_SCHEDULED", ex);
             throw new BusinessException(ErrorCode.WECHAT_REFUND_RECONCILIATION_PENDING);
         }
 
         markRefundProviderAccepted(refundContext, refundResult);
         refundProviderAttemptService.recordRefund(
-                refundContext.refundOrderId(), "SUBMISSION", "ADMIN", "SUCCESS",
+                refundContext.refundOrderId(), "SUBMISSION", operatorType, "SUCCESS",
                 refundResult.status(), "ACCEPTED", null);
     }
 
@@ -815,7 +828,7 @@ public class AdminAfterSaleService {
             AdminReturnInspectionRequest inspectionRequest
     ) {
         RefundProviderPreflight providerPreflight = preflightRefundProvider(
-                afterSaleId, RefundPreflightMode.APPROVE, approvedAmountCent);
+                afterSaleId, RefundPreflightMode.APPROVE, approvedAmountCent, adminUserId == null ? "SYSTEM" : "ADMIN");
         PreparedRefundRequest refundContext = refundStateTransaction.execute(status ->
                 prepareRefundRequest(
                         adminUserId, afterSaleId, approvedAmountCent, auditNote,
@@ -823,7 +836,7 @@ public class AdminAfterSaleService {
         if (refundContext == null) {
             throw new BusinessException(ErrorCode.ORDER_STATE_CONFLICT);
         }
-        submitRefund(refundContext);
+        submitRefund(refundContext, adminUserId == null ? "SYSTEM" : "ADMIN");
         return requireResponse(afterSaleId);
     }
 
@@ -833,20 +846,21 @@ public class AdminAfterSaleService {
             String note
     ) {
         RefundProviderPreflight providerPreflight = preflightRefundProvider(
-                afterSaleId, RefundPreflightMode.CLOSED_RETRY, null);
+                afterSaleId, RefundPreflightMode.CLOSED_RETRY, null, "ADMIN");
         PreparedRefundRequest refundContext = refundStateTransaction.execute(status ->
                 prepareClosedRefundRetry(adminUserId, afterSaleId, note, providerPreflight));
         if (refundContext == null) {
             throw new BusinessException(ErrorCode.ORDER_STATE_CONFLICT);
         }
-        submitRefund(refundContext);
+        submitRefund(refundContext, "ADMIN");
         return requireResponse(afterSaleId);
     }
 
     private RefundProviderPreflight preflightRefundProvider(
             Long afterSaleId,
             RefundPreflightMode mode,
-            Long approvedAmountCent
+            Long approvedAmountCent,
+            String operatorType
     ) {
         RefundPaymentIdentity identity = jdbcClient.sql("""
                         select po.id as payment_order_id,
@@ -915,7 +929,7 @@ public class AdminAfterSaleService {
         requireEligibleRefundPreflight(mode, identity, approvedAmountCent);
         ResolvedPaymentConfig resolvedConfig = paymentConfigResolver.resolveForPayment(
                 identity.paymentConfigId(), identity.paymentConfigFingerprint());
-        verifyWechatPaidOrder(afterSaleId, identity, resolvedConfig);
+        verifyWechatPaidOrder(afterSaleId, identity, resolvedConfig, operatorType);
         String notificationRouteToken = paymentNotificationRouteService.issueToken();
         String refundNotifyUrl = paymentNotificationRouteService.refundNotifyUrl(
                 resolvedConfig.refundNotifyUrl(), notificationRouteToken);
@@ -926,7 +940,8 @@ public class AdminAfterSaleService {
     private void verifyWechatPaidOrder(
             Long afterSaleId,
             RefundPaymentIdentity identity,
-            ResolvedPaymentConfig resolvedConfig
+            ResolvedPaymentConfig resolvedConfig,
+            String operatorType
     ) {
         WechatPayOrderQueryResult providerOrder;
         try {
@@ -935,7 +950,7 @@ public class AdminAfterSaleService {
             String providerErrorCode = ProviderFailureCode.safeCode(failure);
             RequestLogContext.markProviderError(providerErrorCode);
             refundProviderAttemptService.recordPreflight(
-                    afterSaleId, identity.orderId(), identity.outTradeNo(), "ADMIN",
+                    afterSaleId, identity.orderId(), identity.outTradeNo(), operatorType,
                     "FAILURE", "", "PREFLIGHT_REJECTED", failure);
             throw new BusinessException(ErrorCode.WECHAT_REFUND_PREFLIGHT_FAILED);
         }
@@ -949,7 +964,7 @@ public class AdminAfterSaleService {
                 || identity.transactionId().equals(providerOrder.transactionId()))
                 && paidWithinRefundWindow;
         refundProviderAttemptService.recordPreflight(
-                afterSaleId, identity.orderId(), identity.outTradeNo(), "ADMIN",
+                afterSaleId, identity.orderId(), identity.outTradeNo(), operatorType,
                 verified ? "SUCCESS" : "FAILURE", providerOrder.tradeState(),
                 verified ? "VERIFIED_PAID" : "PREFLIGHT_REJECTED", null);
         if (!verified) {
@@ -1043,6 +1058,9 @@ public class AdminAfterSaleService {
         AfterSaleAuditRow afterSale = findAfterSaleForUpdate(afterSaleId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.VALIDATION_FAILED));
         if (!order.orderId().equals(afterSale.orderId())) {
+            throw new BusinessException(ErrorCode.ORDER_STATE_CONFLICT);
+        }
+        if (adminUserId == null && !unshippedRefundPolicy.eligible(afterSaleId)) {
             throw new BusinessException(ErrorCode.ORDER_STATE_CONFLICT);
         }
         boolean expectedAfterSaleStatus =
@@ -1185,11 +1203,11 @@ public class AdminAfterSaleService {
         requireUpdated(orderRows);
         afterSaleStatusLogService.record(
                 afterSaleId, afterSale.status(), AfterSaleStatus.REFUNDING.name(),
-                "REFUND_STARTED", "ADMIN", adminUserId,
+                "REFUND_STARTED", adminUserId == null ? "SYSTEM" : "ADMIN", adminUserId,
                 "售后审核通过，开始退款", now);
         orderStatusLogService.record(
                 order.orderId(), afterSaleId, order.status(), targetOrderStatus,
-                "REFUND_STARTED", "ADMIN", adminUserId,
+                "REFUND_STARTED", adminUserId == null ? "SYSTEM" : "ADMIN", adminUserId,
                 "售后审核通过，开始退款", now);
         return new PreparedRefundRequest(
                 refundOrderId,

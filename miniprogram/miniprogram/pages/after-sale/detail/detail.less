@@ -17,7 +17,7 @@
 
 .detail-content {
   box-sizing: border-box;
-  padding: @space-4 12rpx @space-8;
+  padding: @space-4 @page-gutter @space-8;
 }
 
 .detail-state {
@@ -72,8 +72,8 @@
 }
 
 .status-card--brand .status-card__icon {
-  color: @color-brand;
-  background: @color-brand-soft;
+  color: @color-action-primary;
+  background: fade(@color-action-primary, 8%);
 }
 
 .status-card--success .status-card__icon {
@@ -169,13 +169,13 @@
 
 .progress-step--done .progress-step__dot,
 .progress-step--current .progress-step__dot {
-  border-color: @color-brand;
+  border-color: @color-action-primary;
   color: @color-text-inverse;
-  background: @color-brand;
+  background: @color-action-primary;
 }
 
 .progress-step--done .progress-step__line {
-  background: @color-brand;
+  background: @color-action-primary;
 }
 
 .progress-step--error .progress-step__dot {
@@ -277,8 +277,8 @@
   flex: none;
   align-items: center;
   justify-content: center;
-  color: @color-brand;
-  background: @color-brand-soft;
+  color: @color-action-primary;
+  background: fade(@color-action-primary, 8%);
   font-size: @font-size-xs;
   font-weight: 700;
 }
@@ -321,7 +321,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  color: @color-brand;
+  color: @color-action-primary;
 }
 
 .sale-item__body {
@@ -345,7 +345,7 @@
 .address-panel {
   padding: @space-4;
   border-radius: @radius-md;
-  background: @color-brand-soft;
+  background: fade(@color-action-primary, 8%);
   color: @color-text-primary;
   font-size: @font-size-sm;
   line-height: @line-height-relaxed;
@@ -353,7 +353,7 @@
 
 .address-panel__label {
   margin-bottom: @space-2;
-  color: @color-brand;
+  color: @color-action-primary;
   font-weight: 700;
 }
 
@@ -425,7 +425,7 @@ button.shipment-submit {
   margin-top: @space-4;
   border-radius: @radius-pill;
   color: @color-text-inverse;
-  background: @color-brand;
+  background: @color-action-primary;
   font-size: @font-size-base;
   font-weight: 700;
   line-height: 82rpx;
@@ -450,7 +450,7 @@ button.order-button {
   margin: 0;
   border: 1rpx solid @color-border;
   border-radius: @radius-pill;
-  color: @color-brand;
+  color: @color-action-primary;
   background: @color-surface-white;
   font-size: @font-size-base;
   font-weight: 700;
@@ -476,3 +476,40 @@ button.cancel-button::after {
 button.order-button::after {
   border: 0;
 }
+
+
+button.submit-button,
+button.order-button,
+button.cancel-button,
+button.shipment-submit {
+  display: flex;
+  min-width: 0;
+  padding: 0 24rpx;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  line-height: 1.4;
+}
+
+button.order-button {
+  border-color: @color-action-primary;
+  color: @color-text-inverse;
+  background: @color-action-primary;
+}
+
+.status-card__icon--processing {
+  position: relative;
+  color: @color-action-primary;
+  background: fade(@color-action-primary, 8%);
+}
+.status-card__icon--processing::after {
+  position: absolute;
+  inset: 0;
+  border: 3rpx solid transparent;
+  border-top-color: @color-action-primary;
+  border-right-color: fade(@color-action-primary, 35%);
+  border-radius: 50%;
+  content: '';
+  animation: refund-processing 1.2s linear infinite;
+}
+@keyframes refund-processing { to { transform: rotate(360deg); } }

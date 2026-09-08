@@ -491,3 +491,20 @@ button.order-action[disabled] {
   font-size: @font-size-xs;
   text-align: center;
 }
+
+.order-logistics {
+  display: flex;
+  min-height: 72rpx;
+  margin: 0 @space-5 @space-4;
+  padding: @space-3 @space-4;
+  border-radius: @radius-md;
+  align-items: center;
+  gap: @space-3;
+  background: @color-page;
+}
+
+.order-logistics--pressed { opacity: 0.72; }
+.order-logistics__icon { width: 38rpx; height: 38rpx; flex: none; }
+.order-logistics__status { flex: none; color: @color-text-primary; font-size: @font-size-base; font-weight: 650; }
+.order-logistics__description { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: @color-text-muted; font-size: @font-size-sm; }
+.order-logistics__arrow { width: 24rpx; height: 24rpx; flex: none; }

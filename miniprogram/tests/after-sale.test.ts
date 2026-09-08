@@ -151,7 +151,7 @@ function order(status: OrderStatus, latestAfterSale?: AfterSaleResponse): AppOrd
 
 test("完整售后状态生成稳定文案、操作、进度和金额", () => {
   const requested = buildAfterSaleView(afterSale("REQUESTED"));
-  assert.equal(requested.statusText, "待商家审核");
+  assert.equal(requested.statusText, "正在审核");
   assert.equal(requested.statusTone, "warning");
   assert.deepEqual(requested.progressSteps.map((step) => step.state), ["done", "current", "pending"]);
   assert.equal(requested.requestedAmountText, "¥69.80");
@@ -159,7 +159,7 @@ test("完整售后状态生成稳定文案、操作、进度和金额", () => {
   assert.equal(requested.canCancel, true);
   assert.equal(requested.listTypeText, "退款");
   assert.equal(requested.cardStatusText, "售后处理中");
-  assert.equal(requested.cardStatusDescription, "后台客服正在加速审核");
+  assert.equal(requested.cardStatusDescription, "申请正在审核，请稍候");
   assert.equal(requested.items[0]?.titleText, "牛油火锅底料");
   assert.equal(requested.items[0]?.specificationText, "500g");
   assert.equal(requested.items[0]?.requestedQuantityText, "申请数量 x1");
@@ -232,7 +232,7 @@ test("进行中售后阻止重复申请并允许终态后重新申请", () => {
   assert.equal(blockedOrder.canApplyAfterSale, false);
   assert.equal(blockedOrder.canConfirmReceipt, false);
   assert.equal(blockedOrder.hasAfterSale, true);
-  assert.equal(blockedOrder.latestAfterSaleView?.statusText, "待商家审核");
+  assert.equal(blockedOrder.latestAfterSaleView?.statusText, "正在审核");
   assert.equal(blockedOrder.showAfterSaleAction, true);
   assert.equal(blockedOrder.afterSaleActionMode, "DETAIL");
   assert.equal(blockedOrder.afterSaleActionText, "售后详细");

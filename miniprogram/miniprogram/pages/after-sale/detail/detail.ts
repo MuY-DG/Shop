@@ -1,5 +1,7 @@
 import {
   buildAfterSaleView,
+  buildAfterSaleResultUrl,
+  shouldPollAfterSale,
   positiveAfterSaleId,
   type AfterSaleView
 } from '../../../features/after-sale'
@@ -37,8 +39,6 @@ const SHIPMENT_COMPANIES = Object.freeze([
   { code: 'EMS', name: '中国邮政 EMS' }
 ])
 
-let latestDetailRequest = 0
-
 function actionError(error: unknown, fallback: string): string {
   return isApiError(error) ? error.message : error instanceof Error ? error.message : fallback
 }
@@ -69,6 +69,11 @@ function displayItems(detail: AfterSaleView): DisplayItem[] {
 }
 
 Page({
+  _visible: false,
+  _request: 0,
+  _pollCount: 0,
+  _pollTimer: null as ReturnType<typeof setTimeout> | null,
+  _followRefund: false,
   data: {
     afterSaleId: 0,
     detail: null as AfterSaleView | null,
@@ -89,44 +94,84 @@ Page({
       this.setData({ loading: false, errorText: '售后参数无效' })
       return
     }
+    this._visible = true
+    this._followRefund = query.follow_refund === '1'
     this.setData({ afterSaleId })
     void this.loadDetail()
   },
 
   onShow() {
-    if (this.data.loaded && !this.data.loading) void this.loadDetail()
+    this._visible = true
+    if (this.data.afterSaleId && !this.data.loading) void this.loadDetail()
   },
 
-  onUnload() { latestDetailRequest += 1 },
+  onHide() { this.stopPolling() },
+  onUnload() { this.stopPolling() },
+
+  stopPolling() {
+    this._visible = false
+    this._request += 1
+    if (this._pollTimer) clearTimeout(this._pollTimer)
+    this._pollTimer = null
+    this.setData({ loading: false })
+  },
+
+  scheduleRefresh() {
+    if (this._pollTimer) clearTimeout(this._pollTimer)
+    this._pollTimer = null
+    if (!this._visible || !this.data.detail || !shouldPollAfterSale(this.data.detail.status)) return
+    const delay = this._pollCount++ < 20 ? 3000 : 10000
+    this._pollTimer = setTimeout(() => {
+      this._pollTimer = null
+      void this.loadDetail()
+    }, delay)
+  },
 
   onRetry() { void this.loadDetail() },
 
   async loadDetail() {
     if (!this.data.afterSaleId) return
-    const requestId = ++latestDetailRequest
+    if (this._pollTimer) clearTimeout(this._pollTimer)
+    this._pollTimer = null
+    const requestId = ++this._request
     this.setData({ loading: true, errorText: '' })
     try {
       const detail = buildAfterSaleView(await getAfterSaleDetail(this.data.afterSaleId))
-      if (requestId !== latestDetailRequest) return
+      if (requestId !== this._request || !this._visible) return
+      const becameRefunded = detail.status === 'REFUNDED'
+        && (this._followRefund || (this.data.detail !== null && this.data.detail.status !== 'REFUNDED'))
       const companyIndex = Math.max(0, SHIPMENT_COMPANIES.findIndex((company) =>
         company.code === detail.returnInfo?.deliveryCompanyCode
       ))
       this.setData({
         detail,
         displayItems: displayItems(detail),
-        shipmentCompanyIndex: companyIndex,
-        trackingNo: detail.returnInfo?.trackingNo || '',
+        shipmentCompanyIndex: this.data.loaded ? this.data.shipmentCompanyIndex : companyIndex,
+        trackingNo: this.data.loaded ? this.data.trackingNo : detail.returnInfo?.trackingNo || '',
         loading: false,
         loaded: true,
         errorText: ''
       })
+      if (becameRefunded) {
+        this._followRefund = false
+        wx.redirectTo({
+          url: buildAfterSaleResultUrl(detail.id),
+          fail: () => {
+            this._followRefund = true
+            this.setData({ errorText: '退款已完成，点击查看退款结果' })
+          }
+        })
+      } else {
+        this.scheduleRefresh()
+      }
     } catch (error) {
-      if (requestId === latestDetailRequest) {
+      if (requestId === this._request && this._visible) {
         this.setData({
           loading: false,
           loaded: this.data.detail !== null,
           errorText: actionError(error, '售后详情加载失败，请稍后重试')
         })
+        this.scheduleRefresh()
       }
     }
   },
@@ -155,7 +200,9 @@ Page({
     this.setData({ operating: true })
     try {
       const next = buildAfterSaleView(await cancelAfterSale(detail.id))
-      this.setData({ detail: next, displayItems: displayItems(next) })
+      this._request += 1
+      this.setData({ detail: next, displayItems: displayItems(next), loading: false })
+      this.scheduleRefresh()
       wx.showToast({ title: '售后已取消', icon: 'success' })
     } catch (error) {
       wx.showToast({ title: actionError(error, '取消失败'), icon: 'none' })
@@ -185,7 +232,9 @@ Page({
         deliveryCompanyName: company.name,
         trackingNo
       }))
-      this.setData({ detail: next, displayItems: displayItems(next) })
+      this._request += 1
+      this.setData({ detail: next, displayItems: displayItems(next), loading: false })
+      this.scheduleRefresh()
       wx.showToast({ title: '退货物流已提交', icon: 'success' })
     } catch (error) {
       wx.showToast({ title: actionError(error, '物流提交失败'), icon: 'none' })

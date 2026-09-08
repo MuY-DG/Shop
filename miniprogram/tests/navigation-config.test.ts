@@ -107,7 +107,7 @@ test("自定义底部导航注册四个可用的 Tab 根页面", () => {
       packages: ["logistics"]
     }
   });
-  assert.equal(appConfig.pages.length, 30);
+  assert.equal(appConfig.pages.length, 31);
   assert.deepEqual(
     appConfig.tabBar?.list?.map((item) => [item.pagePath, item.text]),
     expectedTabs

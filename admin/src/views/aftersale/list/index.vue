@@ -1352,6 +1352,8 @@
 
   const recordEventLabels: Record<string, string> = {
     AFTER_SALE_REQUESTED: '用户提交售后申请',
+    AUTO_REFUND_QUEUED: '未发货退款进入自动审核',
+    AUTO_REFUND_REVIEW_REQUIRED: '自动退款需商家核查',
     AFTER_SALE_REJECTED: '管理员拒绝售后申请',
     AFTER_SALE_CANCELLED: '用户取消售后申请',
     AFTER_SALE_WAITING_RETURN: '审核通过，等待用户寄回',
@@ -1382,6 +1384,8 @@
 
   const recordStateLabels: Record<string, string> = {
     AFTER_SALE_REQUESTED: '待审核',
+    AUTO_REFUND_QUEUED: '自动审核中',
+    AUTO_REFUND_REVIEW_REQUIRED: '待商家核查',
     AFTER_SALE_REJECTED: '已拒绝',
     AFTER_SALE_CANCELLED: '已取消',
     AFTER_SALE_WAITING_RETURN: '待寄回',
@@ -1626,7 +1630,7 @@
   const formatRefundAttemptSource = (value: string) => {
     const labels: Record<string, string> = {
       ADMIN: '管理员操作',
-      SYSTEM: '系统自动恢复'
+      SYSTEM: '系统自动处理'
     }
     return labels[value] || value
   }
@@ -1669,6 +1673,7 @@
     if (record.eventType === 'REFUND_SUCCEEDED') return 'success'
     if (
       record.eventType === 'AFTER_SALE_REJECTED' ||
+      record.eventType === 'AUTO_REFUND_REVIEW_REQUIRED' ||
       record.eventType.endsWith('_FAILED') ||
       record.eventType === 'REFUND_MANUAL_INTERVENTION'
     ) {
