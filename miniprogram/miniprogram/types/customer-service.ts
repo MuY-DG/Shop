@@ -1,10 +1,11 @@
-export type CustomerServiceContextType = "GENERAL" | "PRODUCT" | "ORDER";
+export type CustomerServiceContextType = "GENERAL" | "PRODUCT" | "ORDER" | "AFTER_SALE";
 export type CustomerServiceConversationStatus = "DRAFT" | "WAITING" | "ACTIVE" | "CLOSED";
 export type CustomerServiceSenderType = "APP_USER" | "ADMIN" | "BOT" | "SYSTEM";
 export type CustomerServiceMessageType =
   | "TEXT"
   | "AUTO_REPLY"
   | "IMAGE"
+  | "AFTER_SALE_CARD"
   | "ORDER_CARD"
   | "PRODUCT_CARD"
   | "SYSTEM";
@@ -59,6 +60,18 @@ export interface CustomerServiceOrder {
   createdAt: string;
 }
 
+export interface CustomerServiceAfterSale {
+  afterSaleId: number;
+  afterSaleNo: string;
+  orderId: number;
+  status: string;
+  reason: string;
+  requestedAmountCent: number;
+  primaryProductTitle: string;
+  primaryProductImage?: string;
+  createdAt: string;
+}
+
 export interface CustomerServiceProduct {
   productId: number;
   title: string;
@@ -81,6 +94,7 @@ export interface CustomerServiceMessage {
   resourceId?: number;
   order?: CustomerServiceOrder;
   product?: CustomerServiceProduct;
+  afterSale?: CustomerServiceAfterSale;
   image?: CustomerServiceImage;
   clientMessageId?: string;
   createdAt: string;
@@ -91,6 +105,7 @@ export interface CustomerServiceContext {
   resourceId?: number;
   order?: CustomerServiceOrder;
   product?: CustomerServiceProduct;
+  afterSale?: CustomerServiceAfterSale;
 }
 
 export interface CustomerServiceConversation {
@@ -113,6 +128,7 @@ export interface CustomerServiceConversation {
   messages: CustomerServiceMessage[];
   linkedOrders: CustomerServiceOrder[];
   linkedProducts: CustomerServiceProduct[];
+  linkedAfterSales: CustomerServiceAfterSale[];
 }
 
 export interface CustomerServiceRealtimeTicket {

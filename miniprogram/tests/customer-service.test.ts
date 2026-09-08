@@ -8,6 +8,7 @@ import {
   CustomerServiceHistoryLoadGate,
   customerServiceBottomScrollTop,
   customerServiceEntryContext,
+  customerServiceContextCard,
   isCustomerServiceBottomScrollSettled,
   isPersistedCustomerServiceMessageId,
   customerServiceOrderStatusText,
@@ -71,12 +72,12 @@ test("客服会话状态、订单状态和商品价格生成稳定文案", () =>
   assert.equal(customerServicePriceRange(undefined, undefined), "价格以商品详情为准");
 });
 
-test("常见问题只在尚未发起咨询的草稿会话展示", () => {
+test("常见问题在咨询进行中仍保留展示", () => {
   assert.equal(shouldShowCustomerServiceCommonQuestions("DRAFT", 3, false), true);
   assert.equal(shouldShowCustomerServiceCommonQuestions("DRAFT", 0, false), false);
-  assert.equal(shouldShowCustomerServiceCommonQuestions("DRAFT", 3, true), false);
-  assert.equal(shouldShowCustomerServiceCommonQuestions("WAITING", 3, false), false);
-  assert.equal(shouldShowCustomerServiceCommonQuestions("ACTIVE", 3, false), false);
+  assert.equal(shouldShowCustomerServiceCommonQuestions("DRAFT", 3, true), true);
+  assert.equal(shouldShowCustomerServiceCommonQuestions("WAITING", 3, false), true);
+  assert.equal(shouldShowCustomerServiceCommonQuestions("ACTIVE", 3, false), true);
 });
 
 test("客服时间按带偏移的 API 时间契约解析", () => {
@@ -182,7 +183,7 @@ test("客服历史恢复期间合并最新位置请求且支持取消", () => {
   assert.equal(gate.takeDeferredLatestPosition(), false);
 });
 
-test("小程序客服使用自建接口、即时图片预览和两级商品来源面板", () => {
+test("小程序客服使用自建接口、即时图片预览和带标签的咨询弹层", () => {
   const endpointSource = readFileSync(
     resolve(sourceRoot, "constants/api-endpoints.ts"),
     "utf8"
@@ -369,11 +370,11 @@ test("小程序客服使用自建接口、即时图片预览和两级商品来�
   assert.match(template, /message-send-error/);
   assert.match(
     template,
-    /message-bubble message-bubble--other common-question-bubble[\s\S]*common-question-opening[\s\S]*common-question-list/
+    /welcome-card[\s\S]*common-question-opening[\s\S]*common-question-list/
   );
   assert.doesNotMatch(template, /common-question-title/);
   assert.doesNotMatch(template, /common-question-message/);
-  assert.doesNotMatch(template, /showCommonQuestions && !commonQuestionAnchorMessageId/);
+  assert.match(template, /showCommonQuestions && !commonQuestionAnchorMessageId/);
   assert.match(template, /onCommonQuestionTap/);
   assert.match(template, /commonQuestionAnchorMessageId === item\.messageId/);
   assert.match(pageSource, /commonQuestionMessageIds\.delete\(messageId\)/);
@@ -770,25 +771,22 @@ test("小程序客服使用自建接口、即时图片预览和两级商品来�
   assert.match(template, />拍摄</);
   assert.match(template, />订单</);
   assert.match(template, />商品</);
-  assert.match(template, />浏览</);
-  assert.match(template, />收藏</);
-  assert.match(template, />购物车</);
+  assert.match(template, /onPickerTabTap/);
+  assert.match(pageSource, /label: "浏览"/);
+  assert.match(pageSource, /label: "收藏"/);
+  assert.match(pageSource, /label: "购物车"/);
   for (const icon of [
-    "chat-add.svg",
+    "close-material-symbols.svg",
     "chat-photo.svg",
-    "chat-camera.svg",
-    "chat-order.svg",
+    "chat-attachment-camera.svg",
+    "order-all.svg",
     "chat-product.svg",
-    "chat-history.svg",
-    "chat-favorite.svg",
-    "chat-cart.svg",
-    "chat-back.svg",
     "chat-error.svg"
   ]) {
     assert.match(template, new RegExp(`/assets/icons/${icon.replace(".", "\\.")}`));
     assert.match(
       readFileSync(resolve(sourceRoot, "assets/icons", icon), "utf8"),
-      /<svg[\s\S]*fill="#[0-9a-fA-F]{6}"/
+      /<svg[\s\S]*(?:fill|stroke)="#[0-9a-fA-F]{3,6}"/
     );
   }
   const staticIconPaths = new Set(
@@ -804,4 +802,22 @@ test("小程序客服使用自建接口、即时图片预览和两级商品来�
     );
   });
   assert.doesNotMatch(`${profileTemplate}\n${detailTemplate}`, /open-type="contact"/);
+});
+
+
+test("售后入口携带售后 ID，卡片优先显示售后而非关联订单商品", () => {
+  assert.equal(buildCustomerServiceUrl("AFTER_SALE", 37), "/pages/customer-service/chat/chat?contextType=AFTER_SALE&contextId=37");
+  assert.deepEqual(customerServiceEntryContext("AFTER_SALE", -1), { contextType: "GENERAL" });
+  const card = customerServiceContextCard({
+    type: "AFTER_SALE", resourceId: 37,
+    afterSale: { afterSaleId: 37, afterSaleNo: "AS37", orderId: 9, status: "REFUNDED", reason: "破损", requestedAmountCent: 1290, primaryProductTitle: "酸菜底料", createdAt: "2026-09-08T00:00:00Z" },
+    order: { orderId: 9, orderNo: "O9", status: "REFUNDED", payableAmountCent: 2590, primaryProductTitle: "订单商品", itemCount: 2, createdAt: "2026-09-08T00:00:00Z" },
+    product: { productId: 8, title: "商品", status: "ON_SALE" }
+  });
+  assert.equal(card?.kind, "afterSale");
+  assert.equal(card?.id, 37);
+  assert.equal(card?.sendText, "发送售后");
+  assert.equal(card?.priceText, "申请退款 ¥12.90");
+  assert.match(card?.description ?? "", /退款已完成/);
+  assert.equal(customerServiceContextCard({ type: "GENERAL" }), null);
 });

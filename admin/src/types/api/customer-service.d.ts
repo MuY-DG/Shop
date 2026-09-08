@@ -2,7 +2,7 @@ declare namespace Api {
   namespace CustomerService {
     type ConversationStatus = 'DRAFT' | 'WAITING' | 'ACTIVE' | 'CLOSED'
     type SenderType = 'APP_USER' | 'ADMIN' | 'SYSTEM' | 'BOT' | 'AUTO_REPLY'
-    type ContextType = 'GENERAL' | 'PRODUCT' | 'ORDER'
+    type ContextType = 'GENERAL' | 'PRODUCT' | 'ORDER' | 'AFTER_SALE'
     type AgentWorkStatus = 'OFFLINE' | 'AVAILABLE' | 'BUSY'
     type TransferRequestStatus = 'PENDING' | 'ACCEPTED' | 'REJECTED' | 'TIMEOUT' | 'CANCELLED'
 
@@ -28,10 +28,18 @@ declare namespace Api {
       senderId: string | null
       senderName: string
       senderAvatar: string
-      messageType: 'TEXT' | 'IMAGE' | 'ORDER_CARD' | 'PRODUCT_CARD' | 'SYSTEM' | 'AUTO_REPLY'
+      messageType:
+        | 'TEXT'
+        | 'IMAGE'
+        | 'AFTER_SALE_CARD'
+        | 'ORDER_CARD'
+        | 'PRODUCT_CARD'
+        | 'SYSTEM'
+        | 'AUTO_REPLY'
       content: string
       resourceId: number | null
       order: LinkedOrder | null
+      afterSale?: LinkedAfterSale | null
       product: LinkedProduct | null
       image: ImageMessage | null
       clientMessageId: string | null
@@ -49,6 +57,18 @@ declare namespace Api {
       createdAt: string
     }
 
+    interface LinkedAfterSale {
+      afterSaleId: number
+      afterSaleNo: string
+      orderId: number
+      status: string
+      reason: string
+      requestedAmountCent: number
+      primaryProductTitle: string | null
+      primaryProductImage: string | null
+      createdAt: string
+    }
+
     interface LinkedProduct {
       productId: number
       title: string
@@ -62,6 +82,7 @@ declare namespace Api {
       type: ContextType
       resourceId: number | null
       order: LinkedOrder | null
+      afterSale?: LinkedAfterSale | null
       product: LinkedProduct | null
     }
 
@@ -89,6 +110,7 @@ declare namespace Api {
       messages: Message[]
       linkedOrders: LinkedOrder[]
       linkedProducts: LinkedProduct[]
+      linkedAfterSales?: LinkedAfterSale[]
     }
 
     type ConversationPage = Api.Common.PaginatedResponse<ConversationSummary>

@@ -1,6 +1,7 @@
 import { API_ENDPOINTS } from "../constants/api-endpoints";
 import { isPersistedCustomerServiceMessageId } from "../features/customer-service";
 import type {
+  CustomerServiceAfterSale,
   CustomerServiceConversation,
   CustomerServiceCommonQuestion,
   CustomerServiceImage,
@@ -217,6 +218,13 @@ export function refreshCustomerServiceImageAccess(
 export function issueCustomerServiceRealtimeTicket(): Promise<CustomerServiceRealtimeTicket> {
   return request<CustomerServiceRealtimeTicket>({
     url: API_ENDPOINTS.realtime.ticket,
+    method: "POST"
+  });
+}
+
+export function sendCustomerServiceAfterSale(afterSaleId: number): Promise<CustomerServiceAfterSale> {
+  return request<CustomerServiceAfterSale>({
+    url: API_ENDPOINTS.customerService.afterSales(afterSaleId),
     method: "POST"
   });
 }

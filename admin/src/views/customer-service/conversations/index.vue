@@ -293,6 +293,26 @@
                   </span>
                 </button>
                 <button
+                  v-else-if="message.messageType === 'AFTER_SALE_CARD' && message.afterSale"
+                  type="button"
+                  class="message-card"
+                  @click="openAfterSale(message.afterSale.afterSaleId)"
+                >
+                  <img
+                    v-if="message.afterSale.primaryProductImage"
+                    :src="message.afterSale.primaryProductImage"
+                    alt=""
+                  />
+                  <span>
+                    <strong>售后 {{ message.afterSale.afterSaleNo }}</strong>
+                    <small>{{ message.afterSale.primaryProductTitle || '售后申请' }}</small>
+                    <small
+                      >{{ afterSaleStatusLabel(message.afterSale.status) }} ·
+                      {{ formatMoney(message.afterSale.requestedAmountCent) }}</small
+                    >
+                  </span>
+                </button>
+                <button
                   v-else-if="message.messageType === 'PRODUCT_CARD' && message.product"
                   type="button"
                   class="message-card"
@@ -448,6 +468,18 @@
 
           <div class="context-section-title">当前咨询对象</div>
           <button
+            v-if="currentDetail.currentContext.afterSale"
+            type="button"
+            class="linked-order"
+            @click="openAfterSale(currentDetail.currentContext.afterSale.afterSaleId)"
+          >
+            <strong>售后 {{ currentDetail.currentContext.afterSale.afterSaleNo }}</strong>
+            <span
+              >{{ afterSaleStatusLabel(currentDetail.currentContext.afterSale.status) }} ·
+              {{ currentDetail.currentContext.afterSale.reason }}</span
+            >
+          </button>
+          <button
             v-if="currentDetail.currentContext.order"
             type="button"
             class="linked-order"
@@ -461,7 +493,7 @@
             >
           </button>
           <button
-            v-else-if="currentDetail.currentContext.product"
+            v-if="currentDetail.currentContext.product"
             type="button"
             class="linked-order"
             @click="openProduct(currentDetail.currentContext.product.productId)"
@@ -469,8 +501,31 @@
             <strong>{{ currentDetail.currentContext.product.title }}</strong>
             <span>{{ productPrice(currentDetail.currentContext.product) }}</span>
           </button>
-          <ElEmpty v-else description="普通咨询" :image-size="48" />
+          <ElEmpty
+            v-if="currentDetail.currentContext.type === 'GENERAL'"
+            description="普通咨询"
+            :image-size="48"
+          />
 
+          <template v-if="currentDetail.linkedAfterSales?.length">
+            <div class="context-section-title">本次相关售后</div>
+            <div class="linked-orders">
+              <button
+                v-for="sale in currentDetail.linkedAfterSales"
+                :key="sale.afterSaleId"
+                type="button"
+                class="linked-order"
+                @click="openAfterSale(sale.afterSaleId)"
+              >
+                <strong>{{ sale.afterSaleNo }}</strong>
+                <span
+                  >{{ afterSaleStatusLabel(sale.status) }} ·
+                  {{ formatMoney(sale.requestedAmountCent) }}</span
+                >
+                <span>{{ sale.reason }}</span>
+              </button>
+            </div>
+          </template>
           <div class="context-section-title">本次相关订单</div>
           <div v-if="currentDetail.linkedOrders.length" class="linked-orders">
             <button
@@ -959,6 +1014,7 @@
     return `${formatMoney(product.minPriceCent)} - ${formatMoney(product.maxPriceCent)}`
   }
   const contextLabel = (context: Api.CustomerService.ConsultationContext) => {
+    if (context.afterSale) return `咨询售后：${context.afterSale.afterSaleNo}`
     if (context.order) return `咨询订单：${context.order.orderNo}`
     if (context.product) return `咨询商品：${context.product.title}`
     return '普通咨询'
@@ -2047,6 +2103,26 @@
 
   const openOrder = (orderNo: string) => {
     void router.push({ path: '/trade/orders', query: { orderNo } })
+  }
+
+  const afterSaleStatusLabel = (status: string) => {
+    const labels: Record<string, string> = {
+      REQUESTED: '待审核',
+      APPROVED: '审核已通过',
+      REJECTED: '申请未通过',
+      WAITING_RETURN: '待寄回商品',
+      RETURNING: '退货运输中',
+      WAITING_INSPECTION: '待商家验收',
+      RETURN_REJECTED: '退货验收未通过',
+      REFUNDING: '退款处理中',
+      REFUNDED: '退款已完成',
+      REFUND_FAILED: '退款处理异常',
+      CANCELLED: '申请已取消'
+    }
+    return labels[status] || '售后处理中'
+  }
+  const openAfterSale = (afterSaleId: number) => {
+    void router.push({ path: '/trade/after-sales', query: { afterSaleId: String(afterSaleId) } })
   }
 
   const openProduct = (productId: number) => {

@@ -29,6 +29,14 @@
   </view>
 
   <block wx:else>
+    <view wx:if="{{contextCard && !pendingContextCard}}" class="context-bar" bindtap="onContextCardTap" aria-role="button">
+      <image wx:if="{{contextCard.image}}" class="context-bar__image" src="{{contextCard.image}}" mode="aspectFill" />
+      <view class="context-bar__body">
+        <text class="context-bar__title">{{contextCard.title}}</text>
+        <text class="context-bar__price">{{contextCard.priceText}}</text>
+      </view>
+      <text class="context-bar__link">{{contextCard.viewText}}</text>
+    </view>
     <scroll-view
       class="message-scroll {{historyAnchoring ? 'message-scroll--history-anchoring' : ''}}"
       scroll-y
@@ -65,7 +73,30 @@
           <view wx:if="{{item.showTime}}" class="message-time">{{item.timeText}}</view>
 
           <view
-            wx:if="{{item.isSystem}}"
+            wx:if="{{commonQuestionAnchorMessageId === item.messageId}}"
+            id="message-{{item.messageId}}"
+            class="welcome-message"
+          >
+            <view class="welcome-greeting">
+              <image src="{{item.senderAvatar}}" mode="aspectFill" />
+              <text>您好，很高兴为您服务！</text>
+            </view>
+            <view class="welcome-card">
+              <text class="welcome-card__title">欢迎您光临本店</text>
+              <text class="common-question-opening">{{item.content}}</text>
+              <view wx:if="{{showCommonQuestions}}" class="common-question-list">
+                <view wx:for="{{commonQuestions}}" wx:key="questionId"
+                  class="common-question-item {{commonQuestionSending ? 'common-question-item--disabled' : ''}}"
+                  data-question="{{item.question}}" bindtap="onCommonQuestionTap" aria-role="button">
+                  <text>{{item.question}}</text>
+                  <image src="/assets/icons/chevron-right-light.svg" mode="aspectFit" aria-hidden="true" />
+                </view>
+              </view>
+            </view>
+          </view>
+
+          <view
+            wx:elif="{{item.isSystem}}"
             id="message-{{item.messageId}}"
             class="system-message"
           >
@@ -88,24 +119,7 @@
               <text wx:if="{{!item.isMine}}" class="message-sender">{{item.senderName}}</text>
 
               <view
-                wx:if="{{showCommonQuestions && commonQuestionAnchorMessageId === item.messageId}}"
-                class="message-bubble message-bubble--other common-question-bubble"
-              >
-                <text class="common-question-opening">{{item.content}}</text>
-                <view class="common-question-list">
-                  <view
-                    wx:for="{{commonQuestions}}"
-                    wx:key="questionId"
-                    class="common-question-item {{commonQuestionSending ? 'common-question-item--disabled' : ''}}"
-                    data-question="{{item.question}}"
-                    bindtap="onCommonQuestionTap"
-                    aria-role="button"
-                  >{{item.question}}</view>
-                </view>
-              </view>
-
-              <view
-                wx:elif="{{item.messageType === 'TEXT'}}"
+                wx:if="{{item.messageType === 'TEXT'}}"
                 class="message-delivery"
               >
                 <button
@@ -204,7 +218,7 @@
                     <image
                       wx:else
                       class="chat-card__placeholder-icon"
-                      src="/assets/icons/chat-order.svg"
+                      src="/assets/icons/order-all.svg"
                       mode="aspectFit"
                       aria-hidden="true"
                     />
@@ -222,6 +236,16 @@
                     <image src="/assets/icons/chevron-right-light.svg" mode="aspectFit" />
                   </view>
                 </view>
+              </view>
+
+              <view wx:elif="{{item.messageType === 'AFTER_SALE_CARD'}}" class="chat-card"
+                data-id="{{item.afterSaleId}}" bindtap="onAfterSaleCardTap" aria-role="button">
+                <view class="chat-card__eyebrow"><text>售后 {{item.afterSaleNo}}</text><text class="chat-card__status">{{item.afterSaleStatusText}}</text></view>
+                <view class="chat-card__main">
+                  <view class="chat-card__image-shell"><image wx:if="{{item.afterSaleImage}}" src="{{item.afterSaleImage}}" mode="aspectFill" /></view>
+                  <view class="chat-card__body"><text class="chat-card__title">{{item.afterSaleTitle}}</text><text class="chat-card__price">申请退款 {{item.afterSaleAmountText}}</text></view>
+                </view>
+                <view class="chat-card__footer"><text>售后详情</text><view class="chat-card__link"><text>查看</text><image src="/assets/icons/chevron-right-light.svg" mode="aspectFit" /></view></view>
               </view>
 
               <view
@@ -279,13 +303,34 @@
           </view>
         </block>
 
+        <view wx:if="{{showCommonQuestions && !commonQuestionAnchorMessageId}}" class="welcome-message">
+          <view class="welcome-card">
+            <text class="welcome-card__title">常见问题</text>
+            <view class="common-question-list">
+              <view wx:for="{{commonQuestions}}" wx:key="questionId"
+                class="common-question-item {{commonQuestionSending ? 'common-question-item--disabled' : ''}}"
+                data-question="{{item.question}}" bindtap="onCommonQuestionTap" aria-role="button">
+                <text>{{item.question}}</text>
+                <image src="/assets/icons/chevron-right-light.svg" mode="aspectFit" aria-hidden="true" />
+              </view>
+            </view>
+          </view>
+        </view>
         <view id="message-list-bottom" class="message-list__bottom"></view>
       </view>
     </scroll-view>
 
-    <view wx:if="{{contextPreview}}" class="context-preview">
-      <text class="context-preview__mark">已关联</text>
-      <text class="context-preview__text">{{contextPreview}}</text>
+    <view wx:if="{{pendingContextCard}}" class="pending-context">
+      <image wx:if="{{pendingContextCard.image}}" class="pending-context__image" src="{{pendingContextCard.image}}" mode="aspectFill" />
+      <view class="pending-context__body">
+        <text class="pending-context__title">{{pendingContextCard.title}}</text>
+        <text wx:if="{{pendingContextCard.description}}" class="pending-context__description">{{pendingContextCard.description}}</text>
+        <text class="pending-context__price {{pendingContextCard.kind === 'product' ? 'pending-context__price--product' : ''}}">{{pendingContextCard.priceText}}</text>
+      </view>
+      <view class="pending-context__actions">
+        <button class="pending-context__close" disabled="{{contextSending}}" bindtap="onPendingContextClose" aria-label="收起待发送信息"><image src="/assets/icons/close-material-symbols.svg" mode="aspectFit" /></button>
+        <button size="mini" class="pending-context__send" loading="{{contextSending}}" disabled="{{contextSending}}" bindtap="onPendingContextSend">{{pendingContextCard.sendText}}</button>
+      </view>
     </view>
 
     <view class="composer {{panelMode ? 'composer--panel-open' : ''}}">
@@ -300,7 +345,7 @@
           confirm-hold="{{true}}"
           show-confirm-bar="{{false}}"
           cursor-spacing="18"
-          placeholder="发送消息"
+          placeholder="请输入您要咨询的内容…"
           placeholder-class="composer__placeholder"
           bindinput="onInput"
           bindfocus="onInputFocus"
@@ -317,7 +362,7 @@
       >
         <image
           class="composer__plus-icon"
-          src="/assets/icons/chat-add.svg"
+          src="/assets/icons/close-material-symbols.svg"
           mode="aspectFit"
           aria-hidden="true"
         />
@@ -334,13 +379,13 @@
         </view>
         <view class="attachment-action" bindtap="onCameraTap" aria-role="button">
           <view class="attachment-action__icon">
-            <image src="/assets/icons/chat-camera.svg" mode="aspectFit" aria-hidden="true" />
+            <image src="/assets/icons/chat-attachment-camera.svg" mode="aspectFit" aria-hidden="true" />
           </view>
           <text>拍摄</text>
         </view>
         <view class="attachment-action" bindtap="onOrderActionTap" aria-role="button">
           <view class="attachment-action__icon">
-            <image src="/assets/icons/chat-order.svg" mode="aspectFit" aria-hidden="true" />
+            <image class="attachment-action__order-icon" src="/assets/icons/order-all.svg" mode="aspectFit" aria-hidden="true" />
           </view>
           <text>订单</text>
         </view>
@@ -352,61 +397,26 @@
         </view>
       </view>
 
-      <view wx:elif="{{panelMode === 'product'}}" class="product-source-panel">
-        <view class="product-source-panel__heading">
-          <button bindtap="onPanelBackTap" aria-label="返回更多选项">
-            <image src="/assets/icons/chat-back.svg" mode="aspectFit" aria-hidden="true" />
-          </button>
-          <text>从哪里选择商品</text>
-        </view>
-        <view class="attachment-grid attachment-grid--three">
-          <view
-            class="attachment-action"
-            data-source="browse"
-            bindtap="onProductSourceTap"
-            aria-role="button"
-          >
-            <view class="attachment-action__icon">
-              <image src="/assets/icons/chat-history.svg" mode="aspectFit" aria-hidden="true" />
-            </view>
-            <text>浏览</text>
-          </view>
-          <view
-            class="attachment-action"
-            data-source="favorite"
-            bindtap="onProductSourceTap"
-            aria-role="button"
-          >
-            <view class="attachment-action__icon">
-              <image src="/assets/icons/chat-favorite.svg" mode="aspectFit" aria-hidden="true" />
-            </view>
-            <text>收藏</text>
-          </view>
-          <view
-            class="attachment-action"
-            data-source="cart"
-            bindtap="onProductSourceTap"
-            aria-role="button"
-          >
-            <view class="attachment-action__icon">
-              <image src="/assets/icons/chat-cart.svg" mode="aspectFit" aria-hidden="true" />
-            </view>
-            <text>购物车</text>
-          </view>
-        </view>
-      </view>
     </view>
   </block>
 
-  <view wx:if="{{pickerOpen}}" class="picker-layer">
+  <view wx:if="{{pickerOpen}}" class="picker-layer" catchtouchmove="onPickerTouchMove">
     <view class="picker-mask" bindtap="onPickerCloseTap"></view>
     <view class="picker-sheet">
-      <view class="picker-sheet__handle"></view>
       <view class="picker-sheet__header">
         <text>{{pickerTitle}}</text>
         <button bindtap="onPickerCloseTap" aria-label="关闭">
           <image src="/assets/icons/close-material-symbols.svg" mode="aspectFit" aria-hidden="true" />
         </button>
+      </view>
+
+      <view class="picker-tabs">
+        <button wx:for="{{pickerTabs}}" wx:key="key" class="picker-tab {{pickerTab === item.key ? 'picker-tab--active' : ''}}"
+          data-tab="{{item.key}}" bindtap="onPickerTabTap" disabled="{{candidateSendingId}}">{{item.label}}</button>
+      </view>
+      <view wx:if="{{pickerTab === 'order'}}" class="picker-search">
+        <image src="/assets/icons/search-material-symbols-iconify.svg" mode="aspectFit" aria-hidden="true" />
+        <input value="{{pickerSearch}}" bindinput="onPickerSearchInput" placeholder="搜索商品名称或订单号" confirm-type="search" />
       </view>
 
       <view wx:if="{{pickerLoading}}" class="picker-state">
@@ -424,35 +434,25 @@
       </view>
 
       <scroll-view wx:else class="candidate-list" scroll-y enhanced show-scrollbar="{{false}}">
-        <view
-          wx:for="{{candidates}}"
-          wx:key="id"
-          class="candidate {{item.disabled ? 'candidate--disabled' : ''}}"
-          data-id="{{item.id}}"
-          bindtap="onCandidateTap"
-          aria-role="button"
-        >
-          <view class="candidate__image-shell">
-            <image wx:if="{{item.hasImage}}" src="{{item.imageUrl}}" mode="aspectFill" />
-            <image
-              wx:else
-              class="candidate__placeholder-icon"
-              src="{{pickerKind === 'order' ? '/assets/icons/chat-order.svg' : '/assets/icons/chat-product.svg'}}"
-              mode="aspectFit"
-              aria-hidden="true"
-            />
+        <view wx:for="{{candidates}}" wx:key="id" class="candidate {{item.disabled ? 'candidate--disabled' : ''}}">
+          <view wx:if="{{pickerKind === 'order'}}" class="candidate__heading">
+            <text>下单时间 {{item.timeText}}</text><text class="candidate__status">{{item.statusText}}</text>
           </view>
-          <view class="candidate__body">
-            <text class="candidate__title">{{item.title}}</text>
-            <text wx:if="{{item.subtitle}}" class="candidate__subtitle">{{item.subtitle}}</text>
-            <text class="candidate__meta">{{item.metaText}}</text>
-          </view>
-          <view class="candidate__aside">
-            <text class="candidate__price">{{item.priceText}}</text>
-            <button
-              loading="{{candidateSendingId === item.id}}"
-              disabled="{{item.disabled || candidateSendingId}}"
-            >{{item.disabled ? '不可用' : '发送'}}</button>
+          <view class="candidate__main">
+            <view class="candidate__image-shell">
+              <image wx:if="{{item.hasImage}}" src="{{item.imageUrl}}" mode="aspectFill" />
+              <image wx:else class="candidate__placeholder-icon" src="{{pickerKind === 'order' ? '/assets/icons/order-all.svg' : '/assets/icons/chat-product.svg'}}" mode="aspectFit" aria-hidden="true" />
+            </view>
+            <view class="candidate__body">
+              <text class="candidate__title">{{item.title}}</text>
+              <text wx:if="{{item.subtitle}}" class="candidate__subtitle">{{item.subtitle}}</text>
+              <text wx:if="{{pickerKind === 'order'}}" class="candidate__meta">{{item.metaText}}</text>
+              <text wx:if="{{pickerKind === 'product'}}" class="candidate__product-price">{{item.priceText}}</text>
+            </view>
+            <view class="candidate__aside">
+              <text wx:if="{{pickerKind === 'order'}}" class="candidate__price">{{item.priceText}}</text>
+              <button data-id="{{item.id}}" bindtap="onCandidateTap" loading="{{candidateSendingId === item.id}}" disabled="{{item.disabled || candidateSendingId}}">{{item.disabled ? '不可用' : '发送'}}</button>
+            </view>
           </view>
         </view>
       </scroll-view>

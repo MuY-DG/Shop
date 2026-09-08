@@ -255,9 +255,9 @@ Page({
   },
 
   onCustomerServiceTap() {
-    const orderId = this.data.detail?.orderId
-    if (!orderId) return
-    wx.navigateTo({ url: buildCustomerServiceUrl('ORDER', orderId) })
+    const afterSaleId = this.data.afterSaleId
+    if (!afterSaleId) return
+    wx.navigateTo({ url: buildCustomerServiceUrl('AFTER_SALE', afterSaleId) })
   },
 
   onShipmentCompanyChange(event: PickerEvent) {

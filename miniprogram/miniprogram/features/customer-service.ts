@@ -1,7 +1,10 @@
 import type {
+  CustomerServiceContext,
   CustomerServiceContextType,
   CustomerServiceConversationStatus
 } from "../types/customer-service";
+import { afterSaleStatusText } from "./after-sale";
+import type { AfterSaleStatus } from "../types/after-sale";
 import { parseApiDateTime } from "../utils/date-time";
 
 export const CUSTOMER_SERVICE_ROUTE = "/pages/customer-service/chat/chat";
@@ -168,7 +171,7 @@ export function customerServiceEntryContext(
   contextType: unknown,
   contextId: unknown
 ): CustomerServiceEntryContext {
-  const normalizedType = contextType === "PRODUCT" || contextType === "ORDER"
+  const normalizedType = contextType === "PRODUCT" || contextType === "ORDER" || contextType === "AFTER_SALE"
     ? contextType
     : "GENERAL";
   const normalizedId = positiveId(contextId);
@@ -211,11 +214,11 @@ export function customerServiceStatusHint(
 }
 
 export function shouldShowCustomerServiceCommonQuestions(
-  status: CustomerServiceConversationStatus,
+  _status: CustomerServiceConversationStatus,
   questionCount: number,
-  hasPendingUserMessage: boolean
+  _hasPendingUserMessage: boolean
 ): boolean {
-  return status === "DRAFT" && questionCount > 0 && !hasPendingUserMessage;
+  return questionCount > 0;
 }
 
 export function formatCustomerServiceMoney(value: unknown): string {
@@ -271,4 +274,50 @@ export function customerServicePriceRange(
 export function customerServiceMessageId(): string {
   const random = Math.random().toString(36).slice(2, 12);
   return `app-${Date.now().toString(36)}-${random}`;
+}
+
+export interface CustomerServiceContextCard {
+  id: number;
+  kind: "order" | "product" | "afterSale";
+  title: string;
+  image: string;
+  description: string;
+  priceText: string;
+  sendText: string;
+  viewText: string;
+}
+
+export function customerServiceAfterSaleStatusText(status: string): string {
+  return afterSaleStatusText(status as AfterSaleStatus) || "售后处理中";
+}
+
+export function customerServiceContextCard(context: CustomerServiceContext): CustomerServiceContextCard | null {
+  if (context.type === "AFTER_SALE" && context.afterSale) {
+    const sale = context.afterSale;
+    return {
+      id: sale.afterSaleId, kind: "afterSale", title: sale.primaryProductTitle || "售后申请",
+      image: sale.primaryProductImage || "", description: `售后 ${sale.afterSaleNo} · ${customerServiceAfterSaleStatusText(sale.status)}`,
+      priceText: `申请退款 ${formatCustomerServiceMoney(sale.requestedAmountCent)}`,
+      sendText: "发送售后", viewText: "查看售后"
+    };
+  }
+  if (context.type === "ORDER" && context.order) {
+    const order = context.order;
+    return {
+      id: order.orderId, kind: "order", title: order.primaryProductTitle || "商品订单",
+      image: order.primaryProductImage || "", description: customerServiceOrderStatusText(order.status),
+      priceText: `合计 ${formatCustomerServiceMoney(order.payableAmountCent)} | 共 ${order.itemCount} 件`,
+      sendText: "发送订单", viewText: "查看订单"
+    };
+  }
+  if (context.type === "PRODUCT" && context.product) {
+    const product = context.product;
+    return {
+      id: product.productId, kind: "product", title: product.title,
+      image: product.image || "", description: "",
+      priceText: customerServicePriceRange(product.minPriceCent, product.maxPriceCent),
+      sendText: "发送", viewText: "查看商品"
+    };
+  }
+  return null;
 }

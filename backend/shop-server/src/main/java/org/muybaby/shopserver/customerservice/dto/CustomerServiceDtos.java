@@ -76,6 +76,7 @@ public final class CustomerServiceDtos {
             Long resourceId,
             LinkedOrderResponse order,
             LinkedProductResponse product,
+            LinkedAfterSaleResponse afterSale,
             ImageMessageResponse image,
             String clientMessageId,
             LocalDateTime createdAt
@@ -119,11 +120,25 @@ public final class CustomerServiceDtos {
     ) {
     }
 
+    public record LinkedAfterSaleResponse(
+            Long afterSaleId,
+            String afterSaleNo,
+            Long orderId,
+            String status,
+            String reason,
+            long requestedAmountCent,
+            String primaryProductTitle,
+            String primaryProductImage,
+            LocalDateTime createdAt
+    ) {
+    }
+
     public record ConsultationContextResponse(
             String type,
             Long resourceId,
             LinkedOrderResponse order,
-            LinkedProductResponse product
+            LinkedProductResponse product,
+            LinkedAfterSaleResponse afterSale
     ) {
     }
 
@@ -168,7 +183,8 @@ public final class CustomerServiceDtos {
             ConsultationContextResponse currentContext,
             List<MessageResponse> messages,
             List<LinkedOrderResponse> linkedOrders,
-            List<LinkedProductResponse> linkedProducts
+            List<LinkedProductResponse> linkedProducts,
+            List<LinkedAfterSaleResponse> linkedAfterSales
     ) {
     }
 

@@ -87,7 +87,7 @@ class CustomerServiceControllerTest {
                                 {"orderId":%d}
                                 """.formatted(ownedOrderId)))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.status").value("DRAFT"))
+                .andExpect(jsonPath("$.data.status").value("WAITING"))
                 .andExpect(jsonPath("$.data.appUserId").value(String.valueOf(app.userId())))
                 .andExpect(jsonPath("$.data.consultationNo").value(1))
                 .andExpect(jsonPath("$.data.currentContext.type").value("ORDER"))
@@ -114,9 +114,8 @@ class CustomerServiceControllerTest {
                         .header("Authorization", bearer(app.token())))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.status").value("WAITING"))
-                .andExpect(jsonPath("$.data.messages.length()").value(2))
-                .andExpect(jsonPath("$.data.messages[0].messageType").value("ORDER_CARD"))
-                .andExpect(jsonPath("$.data.messages[1].messageId").value(messageId));
+                .andExpect(jsonPath("$.data.messages.length()").value(1))
+                .andExpect(jsonPath("$.data.messages[0].messageId").value(messageId));
 
         mockMvc.perform(post("/app/customer-service/conversation/messages")
                         .header("Authorization", bearer(app.token()))
@@ -335,7 +334,7 @@ class CustomerServiceControllerTest {
                                 {"contextType":"PRODUCT","contextId":%d}
                                 """.formatted(productId)))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.status").value("DRAFT"))
+                .andExpect(jsonPath("$.data.status").value("WAITING"))
                 .andExpect(jsonPath("$.data.currentContext.type").value("PRODUCT"))
                 .andExpect(jsonPath("$.data.currentContext.product.productId").value(productId))
                 .andExpect(jsonPath("$.data.linkedProducts[0].productId").value(productId))
@@ -366,7 +365,7 @@ class CustomerServiceControllerTest {
                                 {"contextType":"ORDER","contextId":%d}
                                 """.formatted(orderId)))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.status").value("DRAFT"))
+                .andExpect(jsonPath("$.data.status").value("WAITING"))
                 .andExpect(jsonPath("$.data.consultationNo").value(2))
                 .andExpect(jsonPath("$.data.currentContext.type").value("ORDER"))
                 .andExpect(jsonPath("$.data.currentContext.order.orderId").value(orderId))
@@ -374,7 +373,8 @@ class CustomerServiceControllerTest {
                 .andExpect(jsonPath("$.data.linkedProducts.length()").value(0))
                 .andExpect(jsonPath("$.data.messages.length()").value(4))
                 .andExpect(jsonPath("$.data.messages[0].consultationNo").value(1))
-                .andExpect(jsonPath("$.data.messages[3].content").value("本次会话已结束"));
+                .andExpect(jsonPath("$.data.messages[2].content").value("本次会话已结束"))
+                .andExpect(jsonPath("$.data.messages[3].content").value("新的咨询已开始"));
 
         mockMvc.perform(post("/app/customer-service/conversation/messages")
                         .header("Authorization", bearer(app.token()))
@@ -388,62 +388,121 @@ class CustomerServiceControllerTest {
                         .header("Authorization", bearer(app.token())))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.status").value("WAITING"))
-                .andExpect(jsonPath("$.data.messages.length()").value(7))
-                .andExpect(jsonPath("$.data.messages[4].messageType").value("SYSTEM"))
-                .andExpect(jsonPath("$.data.messages[5].messageType").value("ORDER_CARD"))
-                .andExpect(jsonPath("$.data.messages[6].messageType").value("TEXT"));
+                .andExpect(jsonPath("$.data.messages.length()").value(5))
+                .andExpect(jsonPath("$.data.messages[3].messageType").value("SYSTEM"))
+                .andExpect(jsonPath("$.data.messages[4].messageType").value("TEXT"));
     }
 
     @Test
-    void draftConversationIsHiddenFromAgentsAndLatestEntryReplacesPendingContext() throws Exception {
-        AppLogin app = appLogin("customer-service-draft-user");
-        long productId = insertProduct("草稿咨询商品", 3990);
-        long orderId = insertOrder(app.userId(), "CS-DRAFT-ORDER");
+    void entryIsVisibleWithoutSendingAndExplicitProductCardIsIndependentAndIdempotent() throws Exception {
+        AppLogin app = appLogin("customer-service-unsent-user");
+        long productId = insertProduct("未发送咨询商品", 3990);
         String adminToken = adminLogin("Super", "123456");
-        prepareAdminForService(adminToken, 1L);
-
-        String opened = mockMvc.perform(post("/app/customer-service/conversation/open")
-                        .header("Authorization", bearer(app.token()))
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("""
-                                {"contextType":"PRODUCT","contextId":%d}
-                                """.formatted(productId)))
+        String entry = "{\"contextType\":\"PRODUCT\",\"contextId\":" + productId + "}";
+        JsonNode opened = objectMapper.readTree(mockMvc.perform(post("/app/customer-service/conversation/open")
+                        .header("Authorization", bearer(app.token())).contentType(MediaType.APPLICATION_JSON).content(entry))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.status").value("DRAFT"))
+                .andExpect(jsonPath("$.data.status").value("WAITING"))
                 .andExpect(jsonPath("$.data.messages.length()").value(0))
-                .andReturn().getResponse().getContentAsString();
-        long conversationId = objectMapper.readTree(opened).path("data").path("conversationId").asLong();
-
-        mockMvc.perform(get("/admin/customer-service/conversations")
-                        .header("Authorization", bearer(adminToken)))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.total").value(0));
-        mockMvc.perform(get("/admin/customer-service/conversations/{conversationId}", conversationId)
-                        .header("Authorization", bearer(adminToken)))
-                .andExpect(status().isBadRequest());
-
-        mockMvc.perform(post("/app/customer-service/conversation/open")
-                        .header("Authorization", bearer(app.token()))
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("""
-                                {"contextType":"ORDER","contextId":%d}
-                                """.formatted(orderId)))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.status").value("DRAFT"))
-                .andExpect(jsonPath("$.data.currentContext.type").value("ORDER"))
-                .andExpect(jsonPath("$.data.linkedOrders.length()").value(1))
-                .andExpect(jsonPath("$.data.linkedProducts.length()").value(0))
-                .andExpect(jsonPath("$.data.messages.length()").value(0));
-
-        mockMvc.perform(post("/app/customer-service/conversation/open")
-                        .header("Authorization", bearer(app.token()))
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("{}"))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.currentContext.type").value("GENERAL"))
+                .andExpect(jsonPath("$.data.linkedProducts.length()").value(1))
                 .andExpect(jsonPath("$.data.linkedOrders.length()").value(0))
-                .andExpect(jsonPath("$.data.linkedProducts.length()").value(0))
-                .andExpect(jsonPath("$.data.messages.length()").value(0));
+                .andExpect(jsonPath("$.data.linkedAfterSales.length()").value(0))
+                .andReturn().getResponse().getContentAsString()).path("data");
+        long conversationId = opened.path("conversationId").asLong();
+        mockMvc.perform(get("/admin/customer-service/conversations").header("Authorization", bearer(adminToken)))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.data.total").value(1));
+        mockMvc.perform(get("/admin/customer-service/conversations/{id}", conversationId)
+                        .header("Authorization", bearer(adminToken)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.linkedProducts[0].productId").value(productId));
+        // Reentering, or returning through the general entry, does not send or erase context.
+        for (String body : List.of(entry, "{}")) {
+            mockMvc.perform(post("/app/customer-service/conversation/open")
+                            .header("Authorization", bearer(app.token())).contentType(MediaType.APPLICATION_JSON).content(body))
+                    .andExpect(status().isOk()).andExpect(jsonPath("$.data.messages.length()").value(0))
+                    .andExpect(jsonPath("$.data.currentContext.product.productId").value(productId));
+        }
+        for (int i = 0; i < 2; i++) {
+            mockMvc.perform(post("/app/customer-service/conversation/products/{id}", productId)
+                            .header("Authorization", bearer(app.token())))
+                    .andExpect(status().isOk());
+        }
+        mockMvc.perform(get("/app/customer-service/conversation").header("Authorization", bearer(app.token())))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.data.messages.length()").value(1))
+                .andExpect(jsonPath("$.data.messages[0].messageType").value("PRODUCT_CARD"));
+    }
+
+    @Test
+    void afterSaleEntryBindsItsOrderAndOnlyItsProductsBeforeAnyCardIsSent() throws Exception {
+        AppLogin app = appLogin("customer-service-after-sale-user");
+        AppLogin other = appLogin("customer-service-after-sale-other");
+        long productId = insertProduct("售后商品", 3990);
+        long extraProductId = insertProduct("同订单其他商品", 1000);
+        long orderId = insertOrder(app.userId(), "CS-AFTER-SALE-ORDER");
+        long itemId = insertOrderItem(orderId, productId);
+        insertOrderItem(orderId, extraProductId);
+        long saleId = insertAfterSale(app.userId(), orderId, itemId);
+        String entry = "{\"contextType\":\"AFTER_SALE\",\"contextId\":" + saleId + "}";
+        String adminToken = adminLogin("Super", "123456");
+        JsonNode opened = objectMapper.readTree(mockMvc.perform(post("/app/customer-service/conversation/open")
+                        .header("Authorization", bearer(app.token())).contentType(MediaType.APPLICATION_JSON).content(entry))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.data.status").value("WAITING"))
+                .andExpect(jsonPath("$.data.messages.length()").value(0))
+                .andExpect(jsonPath("$.data.currentContext.type").value("AFTER_SALE"))
+                .andExpect(jsonPath("$.data.currentContext.afterSale.afterSaleId").value(saleId))
+                .andExpect(jsonPath("$.data.currentContext.order.orderId").value(orderId))
+                .andExpect(jsonPath("$.data.currentContext.product.productId").value(productId))
+                .andExpect(jsonPath("$.data.linkedAfterSales.length()").value(1))
+                .andExpect(jsonPath("$.data.linkedOrders.length()").value(1))
+                .andExpect(jsonPath("$.data.linkedProducts.length()").value(1))
+                .andReturn().getResponse().getContentAsString()).path("data");
+        long conversationId = opened.path("conversationId").asLong();
+        mockMvc.perform(get("/admin/customer-service/conversations/{id}", conversationId)
+                        .header("Authorization", bearer(adminToken)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.linkedAfterSales[0].afterSaleId").value(saleId))
+                .andExpect(jsonPath("$.data.linkedOrders[0].orderId").value(orderId))
+                .andExpect(jsonPath("$.data.linkedProducts[0].productId").value(productId));
+        mockMvc.perform(post("/app/customer-service/conversation/messages")
+                        .header("Authorization", bearer(app.token())).contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"content\":\"想咨询退款进度\",\"clientMessageId\":\"sale-text\"}"))
+                .andExpect(status().isOk());
+        mockMvc.perform(get("/app/customer-service/conversation").header("Authorization", bearer(app.token())))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.data.messages.length()").value(1))
+                .andExpect(jsonPath("$.data.messages[0].messageType").value("TEXT"));
+        for (int i = 0; i < 2; i++) {
+            mockMvc.perform(post("/app/customer-service/conversation/after-sales/{id}", saleId)
+                            .header("Authorization", bearer(app.token()))).andExpect(status().isOk());
+        }
+        mockMvc.perform(get("/app/customer-service/conversation").header("Authorization", bearer(app.token())))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.data.messages.length()").value(2))
+                .andExpect(jsonPath("$.data.messages[1].messageType").value("AFTER_SALE_CARD"))
+                .andExpect(jsonPath("$.data.messages[1].afterSale.afterSaleId").value(saleId));
+        mockMvc.perform(post("/app/customer-service/conversation/open")
+                        .header("Authorization", bearer(other.token())).contentType(MediaType.APPLICATION_JSON).content(entry))
+                .andExpect(status().isBadRequest());
+        mockMvc.perform(post("/app/customer-service/conversation/after-sales/{id}", saleId)
+                        .header("Authorization", bearer(other.token()))).andExpect(status().isBadRequest());
+        // A fresh order entry binds all order items, including items outside this after-sale request.
+        jdbcClient.sql("update customer_service_conversation set status = 'CLOSED' where id = :id")
+                .param("id", conversationId).update();
+        mockMvc.perform(post("/app/customer-service/conversation/open")
+                        .header("Authorization", bearer(app.token())).contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"contextType\":\"ORDER\",\"contextId\":" + orderId + "}"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.data.linkedAfterSales.length()").value(0))
+                .andExpect(jsonPath("$.data.linkedOrders.length()").value(1))
+                .andExpect(jsonPath("$.data.linkedProducts.length()").value(2));
+        mockMvc.perform(post("/app/customer-service/conversation/orders/{id}", orderId)
+                        .header("Authorization", bearer(app.token()))).andExpect(status().isOk());
+        assertThat(jdbcClient.sql("select count(*) from customer_service_message where conversation_id = :id and message_type = 'ORDER_CARD'")
+                .param("id", conversationId).query(Integer.class).single()).isEqualTo(1);
+        mockMvc.perform(post("/app/customer-service/conversation/open")
+                        .header("Authorization", bearer(app.token())).contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"contextType\":\"PRODUCT\",\"contextId\":" + productId + "}"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.data.currentContext.type").value("PRODUCT"))
+                .andExpect(jsonPath("$.data.linkedAfterSales.length()").value(0))
+                .andExpect(jsonPath("$.data.linkedOrders.length()").value(0))
+                .andExpect(jsonPath("$.data.linkedProducts.length()").value(1));
     }
 
     @Test
@@ -702,6 +761,37 @@ class CustomerServiceControllerTest {
                 .param("orderNo", orderNo)
                 .query(Long.class)
                 .single();
+    }
+
+    private long insertOrderItem(long orderId, long productId) {
+        long skuId = jdbcClient.sql("select id from product_sku where spu_id = :id").param("id", productId).query(Long.class).single();
+        jdbcClient.sql("""
+                        insert into order_item (order_id, sku_id, spu_id, product_title, sku_code,
+                            unit_price_cent, quantity, line_amount_cent)
+                        values (:orderId, :skuId, :productId, '订单商品快照', :code, 3990, 1, 3990)
+                        """)
+                .param("orderId", orderId).param("skuId", skuId).param("productId", productId)
+                .param("code", "CS-" + productId).update();
+        return jdbcClient.sql("select id from order_item where order_id = :orderId and spu_id = :productId")
+                .param("orderId", orderId).param("productId", productId).query(Long.class).single();
+    }
+
+    private long insertAfterSale(long userId, long orderId, long itemId) {
+        jdbcClient.sql("""
+                        insert into after_sale_request (order_id, user_id, after_sale_type, status,
+                            reason, requested_amount_cent, after_sale_no)
+                        values (:orderId, :userId, 'REFUND_ONLY', 'REQUESTED', '商品破损', 3990, :saleNo)
+                        """)
+                .param("orderId", orderId).param("userId", userId).param("saleNo", "CS-AS-" + orderId).update();
+        long saleId = jdbcClient.sql("select id from after_sale_request where after_sale_no = :no")
+                .param("no", "CS-AS-" + orderId).query(Long.class).single();
+        jdbcClient.sql("""
+                        insert into after_sale_item (after_sale_id, order_item_id, sku_id, order_quantity_snapshot,
+                            paid_amount_basis_cent, requested_quantity, requested_amount_cent)
+                        select :saleId, id, sku_id, 1, 3990, 1, 3990 from order_item where id = :itemId
+                        """)
+                .param("saleId", saleId).param("itemId", itemId).update();
+        return saleId;
     }
 
     private long insertProduct(String title, long priceCent) {

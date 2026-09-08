@@ -24,7 +24,8 @@
 - `search-material-symbols-iconify.svg`、`tune-outline-rounded.svg`：[Iconify Material Symbols](https://icon-sets.iconify.design/material-symbols/)，Apache 2.0，用于搜索和筛选。
 - `trash-can-outline-iconify.svg`、`trash-can-outline-muted-iconify.svg`：[Iconify Material Design Icons `mdi:trash-can-outline`](https://icon-sets.iconify.design/mdi/trash-can-outline/)，Apache 2.0，分别用于删除入口和弱化状态。
 - `empty-products.svg`、`empty-cart.svg`、`empty-orders.svg`、`empty-favorites.svg`、`empty-history.svg`、`empty-coupons.svg`、`empty-addresses.svg`、`empty-after-sale.svg`、`empty-search.svg`：[Iconify Material Symbols](https://icon-sets.iconify.design/material-symbols/)，Apache 2.0；分别使用 `inventory-2-outline-rounded`、`remove-shopping-cart-outline-rounded`、`receipt-long-outline-rounded`、`favorite-outline-rounded`、`history-rounded`、`confirmation-number-outline-rounded`、`location-off-outline-rounded`、`assignment-return-outline-rounded`、`search-off-rounded`，统一为页面空状态的暖灰色线性图标。
-- `chat-add.svg`、`chat-photo.svg`、`chat-camera.svg`、`chat-order.svg`、`chat-product.svg`、`chat-history.svg`、`chat-favorite.svg`、`chat-cart.svg`、`chat-back.svg`、`chat-error.svg`：[Iconify Material Symbols](https://icon-sets.iconify.design/material-symbols/)，Apache 2.0；分别使用 `add-circle-outline-rounded`、`photo-library-outline-rounded`、`photo-camera-outline-rounded`、`receipt-long-outline-rounded`、`inventory-2-outline-rounded`、`history-rounded`、`favorite-outline-rounded`、`shopping-cart-outline-rounded`、`arrow-back-rounded`、`error-outline-rounded`，用于客服输入栏、附件面板及逐条发送状态。
+- `chat-photo.svg`、`chat-attachment-camera.svg`、`chat-product.svg`：使用用户提供的 `07-gallery.svg`、`06-camera.svg`、`08-archive.svg` 原始素材，用于客服相册、拍摄及商品入口；订单入口复用 `order-all.svg`（我的页面的全部订单）。
+- 客服加号复用 `close-material-symbols.svg` 并旋转，点击展开时顺时针旋转 45 度；`chat-camera.svg`（个人资料）、`chat-history.svg`（商品详情）及 `chat-error.svg` 继续使用 Iconify Material Symbols 的原图。已移除不再使用的客服来源选择图标。
 
 个人资料页头像右下角的相机标记复用 `chat-camera.svg`（`material-symbols:photo-camera-outline-rounded`）。
 

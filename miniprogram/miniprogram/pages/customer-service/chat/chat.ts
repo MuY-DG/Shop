@@ -3,6 +3,9 @@ import {
   CustomerServiceHistoryLoadGate,
   customerServiceBottomScrollTop,
   customerServiceEntryContext,
+  customerServiceContextCard,
+  customerServiceAfterSaleStatusText,
+  type CustomerServiceContextCard,
   customerServiceMessageId,
   customerServiceOrderStatusText,
   customerServicePriceRange,
@@ -25,6 +28,7 @@ import {
   getCustomerServiceOrderCandidates,
   openCustomerServiceConversation,
   sendCustomerServiceMessage,
+  sendCustomerServiceAfterSale,
   sendCustomerServiceOrder,
   sendCustomerServiceProduct,
   uploadCustomerServiceImage
@@ -90,6 +94,7 @@ interface DatasetEvent {
       id?: number | string;
       question?: string;
       source?: "browse" | "favorite" | "cart";
+      tab?: "order" | "browse" | "favorite" | "cart";
     };
   };
 }
@@ -113,6 +118,12 @@ interface MessageView {
   imageFailed: boolean;
   sending: boolean;
   sendFailed: boolean;
+  afterSaleId: number;
+  afterSaleNo: string;
+  afterSaleStatusText: string;
+  afterSaleTitle: string;
+  afterSaleImage: string;
+  afterSaleAmountText: string;
   orderId: number;
   orderNo: string;
   orderTitle: string;
@@ -141,9 +152,11 @@ interface CandidateView {
   priceText: string;
   metaText: string;
   disabled: boolean;
+  timeText?: string;
+  statusText?: string;
 }
 
-type PanelMode = "" | "main" | "product";
+type PanelMode = "" | "main";
 type PickerKind = "" | "order" | "product";
 type ProductSource = "browse" | "favorite" | "cart";
 
@@ -455,6 +468,12 @@ function messageViews(
       imageFailed: false,
       sending: false,
       sendFailed: false,
+      afterSaleId: message.afterSale?.afterSaleId ?? 0,
+      afterSaleNo: message.afterSale?.afterSaleNo ?? "",
+      afterSaleStatusText: customerServiceAfterSaleStatusText(message.afterSale?.status ?? ""),
+      afterSaleTitle: message.afterSale?.primaryProductTitle ?? "售后申请",
+      afterSaleImage: message.afterSale?.primaryProductImage ?? "",
+      afterSaleAmountText: formatCustomerServiceMoney(message.afterSale?.requestedAmountCent),
       orderId: order?.orderId ?? 0,
       orderNo: cleanText(order?.orderNo),
       orderTitle: cleanText(order?.primaryProductTitle) || "商品订单",
@@ -565,7 +584,9 @@ function orderCandidateViews(orders: CustomerServiceOrder[]): CandidateView[] {
     imageUrl: cleanText(order.primaryProductImage),
     hasImage: Boolean(cleanText(order.primaryProductImage)),
     priceText: formatCustomerServiceMoney(order.payableAmountCent),
-    metaText: `${customerServiceOrderStatusText(order.status)} · 共 ${order.itemCount || 1} 件`,
+    metaText: `共 ${order.itemCount || 1} 件`,
+    timeText: messageTimeText(order.createdAt),
+    statusText: customerServiceOrderStatusText(order.status),
     disabled: false
   }));
 }
@@ -577,7 +598,9 @@ Page({
     errorText: "",
     conversationId: 0,
     conversationStatus: "DRAFT",
-    contextPreview: "",
+    contextCard: null as CustomerServiceContextCard | null,
+    pendingContextCard: null as CustomerServiceContextCard | null,
+    contextSending: false,
     messages: [] as MessageView[],
     commonQuestions: [] as CustomerServiceCommonQuestion[],
     showCommonQuestions: false,
@@ -593,7 +616,11 @@ Page({
     panelMode: "" as PanelMode,
     pickerOpen: false,
     pickerKind: "" as PickerKind,
-    pickerTitle: "",
+    pickerTitle: "请选择您要咨询的内容",
+    pickerTab: "order",
+    pickerTabs: [{ key: "order", label: "订单" }, { key: "browse", label: "浏览" }, { key: "favorite", label: "收藏" }, { key: "cart", label: "购物车" }],
+    pickerSearch: "",
+    allCandidates: [] as CandidateView[],
     pickerLoading: false,
     pickerErrorText: "",
     pickerProductSource: "" as "" | ProductSource,
@@ -750,6 +777,7 @@ Page({
       }
       initialized = true;
       this.applyConversation(conversation);
+      this.setData({ pendingContextCard: entryContext.contextType === "GENERAL" ? null : customerServiceContextCard(conversation.currentContext) });
       this.setData(
         { loading: false, loaded: true, errorText: "" },
         () => {
@@ -971,18 +999,11 @@ Page({
         conversation.consultationNo
       );
     const context = conversation.currentContext;
-    const contextPreview = conversation.status === "DRAFT"
-      ? context?.product?.title
-        ? `将咨询商品：${context.product.title}`
-        : context?.order?.orderNo
-          ? `将咨询订单：${context.order.orderNo}`
-          : ""
-      : "";
     this.setData(
       {
         conversationId: conversation.conversationId,
         conversationStatus: conversation.status,
-        contextPreview,
+        contextCard: customerServiceContextCard(context),
         messages: views,
         hasMoreHistory: isInitialPositioning
           ? rawMessages.length >= HISTORY_PAGE_SIZE
@@ -1860,7 +1881,7 @@ Page({
       {
         inputValue: clearInput ? "" : this.data.inputValue,
         panelMode: "",
-        showCommonQuestions: fromCommonQuestion || commonQuestionEngaged,
+        showCommonQuestions: this.data.commonQuestions.length > 0,
         messages
       },
       () => this.scrollToLatest()
@@ -1965,13 +1986,59 @@ Page({
   },
 
   onProductActionTap() {
-    panelInteractionGeneration += 1;
-    this.setData({ panelMode: "product" }, () => this.scrollToLatest());
+    this.openProductPicker("browse");
   },
 
-  onPanelBackTap() {
-    panelInteractionGeneration += 1;
-    this.setData({ panelMode: "main" }, () => this.scrollToLatest());
+  onPickerTabTap(event: DatasetEvent) {
+    if (this.data.candidateSendingId) return;
+    const tab = event.currentTarget.dataset.tab;
+    if (!tab || tab === this.data.pickerTab) return;
+    if (tab === "order") this.onOrderActionTap();
+    else this.openProductPicker(tab);
+  },
+
+  onPickerSearchInput(event: InputEvent) {
+    const keyword = event.detail.value.trim();
+    this.setData({
+      pickerSearch: event.detail.value,
+      candidates: this.data.allCandidates.filter(item => `${item.title} ${item.subtitle}`.includes(keyword))
+    });
+  },
+
+  onPendingContextClose() {
+    if (!this.data.contextSending) this.setData({ pendingContextCard: null }, () => this.scrollToLatest());
+  },
+
+  async onPendingContextSend() {
+    const card = this.data.pendingContextCard;
+    if (!card || this.data.contextSending) return;
+    const generation = initializeGeneration;
+    this.setData({ contextSending: true });
+    try {
+      if (card.kind === "afterSale") await sendCustomerServiceAfterSale(card.id);
+      else if (card.kind === "order") await sendCustomerServiceOrder(card.id);
+      else await sendCustomerServiceProduct(card.id);
+      if (generation !== initializeGeneration) return;
+      this.setData({ pendingContextCard: null });
+      await this.refreshConversation(true);
+    } catch (error) {
+      if (generation === initializeGeneration) wx.showToast({ title: errorMessage(error, "发送失败，请重试"), icon: "none" });
+    } finally {
+      if (generation === initializeGeneration) this.setData({ contextSending: false });
+    }
+  },
+
+  onContextCardTap() {
+    const card = this.data.contextCard;
+    if (!card) return;
+    const url = card.kind === "afterSale" ? `/pages/after-sale/detail/detail?after_sale_id=${card.id}`
+      : card.kind === "order" ? buildOrderDetailUrl(card.id) : `/pages/product/detail/detail?id=${card.id}`;
+    wx.navigateTo({ url });
+  },
+
+  onAfterSaleCardTap(event: DatasetEvent) {
+    const id = positiveId(event.currentTarget.dataset.id);
+    if (id) wx.navigateTo({ url: `/pages/after-sale/detail/detail?after_sale_id=${id}` });
   },
 
   closePanels() {
@@ -2166,7 +2233,7 @@ Page({
         {
           uploading: true,
           panelMode: "",
-          showCommonQuestions: false,
+          showCommonQuestions: this.data.commonQuestions.length > 0,
           messages: nextMessages
         },
         () => this.scrollToLatest()
@@ -2302,7 +2369,9 @@ Page({
       panelMode: "",
       pickerOpen: true,
       pickerKind: "order",
-      pickerTitle: "选择订单",
+      pickerTab: "order",
+      pickerSearch: "",
+      allCandidates: [],
       pickerLoading: true,
       pickerErrorText: "",
       pickerProductSource: "",
@@ -2321,6 +2390,7 @@ Page({
         this.setData({
           pickerLoading: false,
           candidates: orderCandidateViews(orders),
+          allCandidates: orderCandidateViews(orders),
           pickerErrorText: ""
         });
       }
@@ -2337,23 +2407,16 @@ Page({
     }
   },
 
-  onProductSourceTap(event: DatasetEvent) {
-    const source = event.currentTarget.dataset.source;
-    if (!source) {
-      return;
-    }
-    const title = source === "browse"
-      ? "最近浏览"
-      : source === "favorite"
-        ? "我的收藏"
-        : "购物车商品";
+  openProductPicker(source: ProductSource) {
     panelInteractionGeneration += 1;
     const requestGeneration = ++pickerRequestGeneration;
     this.setData({
       panelMode: "",
       pickerOpen: true,
       pickerKind: "product",
-      pickerTitle: title,
+      pickerTab: source,
+      pickerSearch: "",
+      allCandidates: [],
       pickerLoading: true,
       pickerErrorText: "",
       pickerProductSource: source,
@@ -2422,6 +2485,7 @@ Page({
         this.setData({
           pickerLoading: false,
           candidates,
+          allCandidates: candidates,
           pickerErrorText: ""
         });
       }
@@ -2450,7 +2514,6 @@ Page({
     ) {
       return;
     }
-    this.setData({ showCommonQuestions: false });
     void this.sendCandidate(id, this.data.pickerKind);
   },
 
@@ -2469,6 +2532,7 @@ Page({
       pickerRequestGeneration += 1;
       this.setData({
         candidateSendingId: 0,
+        pendingContextCard: null,
         pickerOpen: false,
         pickerKind: "",
         pickerProductSource: "",
@@ -2486,6 +2550,8 @@ Page({
       });
     }
   },
+
+  onPickerTouchMove() {},
 
   onPickerCloseTap() {
     if (!this.data.candidateSendingId) {

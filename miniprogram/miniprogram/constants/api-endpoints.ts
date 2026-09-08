@@ -26,6 +26,7 @@ export const API_ENDPOINTS = Object.freeze({
     ticket: "/app/realtime/tickets"
   },
   customerService: {
+    afterSales: (id: number) => `/app/customer-service/conversation/after-sales/${id}`,
     presence: "/app/customer-service/presence",
     conversation: "/app/customer-service/conversation",
     open: "/app/customer-service/conversation/open",

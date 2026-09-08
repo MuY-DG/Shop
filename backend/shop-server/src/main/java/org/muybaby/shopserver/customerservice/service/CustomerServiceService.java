@@ -11,6 +11,7 @@ import org.muybaby.shopserver.customerservice.dto.CustomerServiceDtos.AgentRespo
 import org.muybaby.shopserver.customerservice.dto.CustomerServiceDtos.AgentStateResponse;
 import org.muybaby.shopserver.customerservice.dto.CustomerServiceDtos.AgentProfileResponse;
 import org.muybaby.shopserver.customerservice.dto.CustomerServiceDtos.ConsultationContextResponse;
+import org.muybaby.shopserver.customerservice.dto.CustomerServiceDtos.LinkedAfterSaleResponse;
 import org.muybaby.shopserver.customerservice.dto.CustomerServiceDtos.ConversationDetailResponse;
 import org.muybaby.shopserver.customerservice.dto.CustomerServiceDtos.ConversationSummaryResponse;
 import org.muybaby.shopserver.customerservice.dto.CustomerServiceDtos.ConversationWorkspaceResponse;
@@ -72,7 +73,7 @@ public class CustomerServiceService {
     private static final int DEFAULT_MESSAGE_PAGE_SIZE = 50;
     private static final int MAX_MESSAGE_PAGE_SIZE = 100;
     private static final Set<String> CONVERSATION_STATUSES = Set.of("WAITING", "ACTIVE", "CLOSED");
-    private static final Set<String> CONTEXT_TYPES = Set.of("GENERAL", "PRODUCT", "ORDER");
+    private static final Set<String> CONTEXT_TYPES = Set.of("GENERAL", "PRODUCT", "ORDER", "AFTER_SALE");
     private static final Set<String> AGENT_WORK_STATUSES = Set.of("AVAILABLE", "BUSY", "OFFLINE");
     private static final long TRANSFER_REQUEST_TTL_SECONDS = 60L;
 
@@ -118,24 +119,23 @@ public class CustomerServiceService {
     ) {
         Long appUserId = requirePrincipal(principal, TokenKind.APP);
         ConversationRow conversation = findOrCreateConversation(appUserId);
+        lockConversation(conversation.id());
+        conversation = requireConversation(conversation.id());
         ContextRequest context = normalizeContext(requestedContextType, requestedContextId, legacyOrderId);
         if ("CLOSED".equals(conversation.status())) {
             conversation = startDraftConsultation(conversation);
         }
-        if ("DRAFT".equals(conversation.status())) {
-            replaceDraftContext(conversation, context, appUserId);
-            notifyAutomationMessage(
-                    conversation,
-                    replyService.openingMessage(
-                            conversation.id(), conversation.consultationNo()),
-                    "AUTO_REPLY_OPENING"
-            );
-            return detailForApp(conversation.id(), appUserId);
+        if ("DRAFT".equals(conversation.status()) || !"GENERAL".equals(context.type())) {
+            bindEntryContext(conversation, context, appUserId);
         }
-        if ("ORDER".equals(context.type())) {
-            addOrderCard(conversation, context.resourceId(), "APP_USER", appUserId, true);
-        } else if ("PRODUCT".equals(context.type())) {
-            addProductCard(conversation, context.resourceId(), "APP_USER", appUserId, true);
+        notifyAutomationMessage(
+                conversation,
+                replyService.openingMessage(conversation.id(), conversation.consultationNo()),
+                "AUTO_REPLY_OPENING"
+        );
+        // Entry context is visible to agents independently of an explicitly sent chat card.
+        if (!"GENERAL".equals(context.type()) && "DRAFT".equals(conversation.status())) {
+            conversation = activateDraft(requireConversation(conversation.id()), appUserId);
         }
         publish(conversation.id(), appUserId, "CONVERSATION_OPENED", null);
         return detailForApp(conversation.id(), appUserId);
@@ -1515,7 +1515,8 @@ public class CustomerServiceService {
                 summary.currentContext(),
                 messages(conversation, null, null, DEFAULT_MESSAGE_PAGE_SIZE),
                 linkedOrders(conversationId, summary.consultationNo()),
-                linkedProducts(conversationId, summary.consultationNo())
+                linkedProducts(conversationId, summary.consultationNo()),
+                linkedAfterSales(conversationId, summary.consultationNo())
         );
     }
 
@@ -1538,6 +1539,7 @@ public class CustomerServiceService {
                 detail.updatedAt(),
                 detail.consultationNo(),
                 detail.currentContext(),
+                List.of(),
                 List.of(),
                 List.of(),
                 List.of()
@@ -1567,7 +1569,7 @@ public class CustomerServiceService {
                 summary.createdAt(),
                 summary.updatedAt(),
                 summary.consultationNo(),
-                new ConsultationContextResponse("GENERAL", null, null, null)
+                new ConsultationContextResponse("GENERAL", null, null, null, null)
         );
     }
 
@@ -1631,6 +1633,61 @@ public class CustomerServiceService {
                 .list();
     }
 
+    private List<LinkedAfterSaleResponse> linkedAfterSales(Long conversationId, int consultationNo) {
+        return jdbcClient.sql(afterSaleSelect() + """
+                        join customer_service_consultation_resource resource on resource.resource_id = sale.id
+                        where resource.conversation_id = :conversationId
+                          and resource.consultation_no = :consultationNo and resource.resource_type = 'AFTER_SALE'
+                        order by resource.created_at desc, resource.id desc
+                        """)
+                .param("conversationId", conversationId).param("consultationNo", consultationNo)
+                .query(this::mapLinkedAfterSale).list();
+    }
+
+    private String afterSaleSelect() {
+        return """
+                select sale.id, sale.after_sale_no, sale.order_id, sale.status, sale.reason,
+                       sale.requested_amount_cent, sale.created_at,
+                       (select item.product_title from after_sale_item ai
+                        join order_item item on item.id = ai.order_item_id
+                        where ai.after_sale_id = sale.id order by ai.id limit 1) as product_title,
+                       (select coalesce(nullif(item.display_image, ''), nullif(item.sku_image, ''), item.main_image)
+                        from after_sale_item ai join order_item item on item.id = ai.order_item_id
+                        where ai.after_sale_id = sale.id order by ai.id limit 1) as product_image
+                from after_sale_request sale
+                """;
+    }
+
+    private LinkedAfterSaleResponse mapLinkedAfterSale(ResultSet rs, int rowNum) throws SQLException {
+        return new LinkedAfterSaleResponse(rs.getLong("id"), rs.getString("after_sale_no"),
+                rs.getLong("order_id"), rs.getString("status"), rs.getString("reason"),
+                rs.getLong("requested_amount_cent"), rs.getString("product_title"), rs.getString("product_image"),
+                rs.getTimestamp("created_at").toLocalDateTime());
+    }
+
+    private LinkedAfterSaleResponse requireOwnedAfterSale(Long appUserId, Long afterSaleId) {
+        return jdbcClient.sql(afterSaleSelect() + " where sale.id = :id and sale.user_id = :appUserId")
+                .param("id", afterSaleId).param("appUserId", appUserId).query(this::mapLinkedAfterSale)
+                .optional().orElseThrow(() -> new BusinessException(ErrorCode.CUSTOMER_SERVICE_ORDER_UNAVAILABLE));
+    }
+
+    @Transactional
+    public LinkedAfterSaleResponse linkAfterSaleFromApp(AuthenticatedPrincipal principal, Long afterSaleId) {
+        Long appUserId = requirePrincipal(principal, TokenKind.APP);
+        LinkedAfterSaleResponse afterSale = requireOwnedAfterSale(appUserId, afterSaleId);
+        ConversationRow conversation = prepareForAppAction(findOrCreateConversation(appUserId), appUserId);
+        bindEntryContext(conversation, new ContextRequest("AFTER_SALE", afterSaleId), appUserId);
+        if (!hasResourceCard(conversation, "AFTER_SALE_CARD", afterSaleId, "APP_USER", appUserId)) {
+            MessageResponse message = insertMessage(conversation, "APP_USER", appUserId, "AFTER_SALE_CARD",
+                    "售后 " + afterSale.afterSaleNo(), afterSaleId, null);
+            touchForAdminNotification(conversation.id(), message.createdAt());
+            notifyOfflineReplyForAppMessage(conversation, appUserId, message);
+            publish(conversation.id(), appUserId, "MESSAGE_CREATED", message.messageId());
+        }
+        publish(conversation.id(), appUserId, "AFTER_SALE_LINKED", null);
+        return afterSale;
+    }
+
     private List<LinkedProductResponse> linkedProducts(Long conversationId, int consultationNo) {
         return jdbcClient.sql(productSelect() + """
                         join customer_service_consultation_resource resource
@@ -1655,13 +1712,12 @@ public class CustomerServiceService {
     ) {
         lockConversation(conversation.id());
         LinkedOrderResponse order = requireOwnedOrder(conversation.appUserId(), orderId);
-        boolean added = addConsultationResource(
-                conversation, "ORDER", orderId, addedByType, addedById
-        );
+        addConsultationResource(conversation, "ORDER", orderId, addedByType, addedById);
+        bindOrderProducts(conversation, orderId, null, addedByType, addedById);
         if (updateCurrentContext) {
             updateContext(conversation.id(), "ORDER", orderId);
         }
-        if (added) {
+        if (!hasResourceCard(conversation, "ORDER_CARD", orderId, addedByType, addedById)) {
             MessageResponse message = insertMessage(
                     conversation, addedByType, addedById, "ORDER_CARD",
                     "订单 " + order.orderNo(), orderId, null
@@ -1681,14 +1737,13 @@ public class CustomerServiceService {
             Long addedById,
             boolean updateCurrentContext
     ) {
+        lockConversation(conversation.id());
         LinkedProductResponse product = requireProduct(productId);
-        boolean added = addConsultationResource(
-                conversation, "PRODUCT", productId, addedByType, addedById
-        );
+        addConsultationResource(conversation, "PRODUCT", productId, addedByType, addedById);
         if (updateCurrentContext) {
             updateContext(conversation.id(), "PRODUCT", productId);
         }
-        if (added) {
+        if (!hasResourceCard(conversation, "PRODUCT_CARD", productId, addedByType, addedById)) {
             MessageResponse message = insertMessage(
                     conversation, addedByType, addedById, "PRODUCT_CARD",
                     product.title(), productId, null
@@ -1799,35 +1854,65 @@ public class CustomerServiceService {
         return prepared;
     }
 
-    private void replaceDraftContext(
-            ConversationRow conversation,
-            ContextRequest context,
-            Long appUserId
-    ) {
-        if (!"DRAFT".equals(conversation.status())) {
-            throw new BusinessException(ErrorCode.CUSTOMER_SERVICE_STATE_CONFLICT);
-        }
+    private void bindEntryContext(ConversationRow conversation, ContextRequest context, Long appUserId) {
         lockConversation(conversation.id());
-        if ("ORDER".equals(context.type())) {
-            requireOwnedOrder(appUserId, context.resourceId());
+        Long orderId = null;
+        Long afterSaleId = null;
+        if ("AFTER_SALE".equals(context.type())) {
+            LinkedAfterSaleResponse afterSale = requireOwnedAfterSale(appUserId, context.resourceId());
+            afterSaleId = afterSale.afterSaleId();
+            orderId = afterSale.orderId();
+        } else if ("ORDER".equals(context.type())) {
+            orderId = context.resourceId();
         } else if ("PRODUCT".equals(context.type())) {
             requireProduct(context.resourceId());
         }
-
+        if (orderId != null) requireOwnedOrder(appUserId, orderId);
+        // The current entry owns these bindings; already sent cards remain in message history.
         jdbcClient.sql("""
                         delete from customer_service_consultation_resource
-                        where conversation_id = :conversationId
-                          and consultation_no = :consultationNo
+                        where conversation_id = :conversationId and consultation_no = :consultationNo
                         """)
                 .param("conversationId", conversation.id())
-                .param("consultationNo", conversation.consultationNo())
-                .update();
+                .param("consultationNo", conversation.consultationNo()).update();
         updateContext(conversation.id(), context.type(), context.resourceId());
         if (!"GENERAL".equals(context.type())) {
-            addConsultationResource(
-                    conversation, context.type(), context.resourceId(), "APP_USER", appUserId
-            );
+            addConsultationResource(conversation, context.type(), context.resourceId(), "APP_USER", appUserId);
         }
+        if (orderId != null) {
+            addConsultationResource(conversation, "ORDER", orderId, "APP_USER", appUserId);
+            bindOrderProducts(conversation, orderId, afterSaleId, "APP_USER", appUserId);
+        }
+    }
+
+    private void bindOrderProducts(ConversationRow conversation, Long orderId, Long afterSaleId,
+                                   String addedByType, Long addedById) {
+        List<Long> productIds = jdbcClient.sql("""
+                        select distinct item.spu_id from order_item item
+                        where item.order_id = :orderId
+                          and (:afterSaleId is null or exists (
+                            select 1 from after_sale_item sale_item
+                            where sale_item.after_sale_id = :afterSaleId and sale_item.order_item_id = item.id
+                          ))
+                        """)
+                .param("orderId", orderId).param("afterSaleId", afterSaleId, java.sql.Types.BIGINT)
+                .query(Long.class).list();
+        productIds.forEach(productId -> addConsultationResource(
+                conversation, "PRODUCT", productId, addedByType, addedById));
+    }
+
+    private boolean hasResourceCard(ConversationRow conversation, String messageType, Long resourceId,
+                                    String senderType, Long senderId) {
+        return jdbcClient.sql("""
+                        select count(*) from customer_service_message
+                        where conversation_id = :conversationId and consultation_no = :consultationNo
+                          and message_type = :messageType and resource_id = :resourceId
+                          and sender_type = :senderType and sender_id = :senderId
+                        """)
+                .param("conversationId", conversation.id()).param("consultationNo", conversation.consultationNo())
+                .param("messageType", messageType).param("resourceId", resourceId)
+                .param("senderType", senderType).param("senderId", senderId)
+                .query(Long.class).single() > 0;
     }
 
     private ConversationRow activateDraft(ConversationRow conversation, Long appUserId) {
@@ -1858,31 +1943,8 @@ public class CustomerServiceService {
             );
             insertSystemMessage(activated.id(), "新的咨询已开始");
         }
-        insertPendingContextCard(activated, appUserId);
-        return activated;
-    }
-
-    private void insertPendingContextCard(ConversationRow conversation, Long appUserId) {
-        ConsultationContextResponse context = contextResponse(
-                conversation.contextType(), conversation.contextId(), conversation.appUserId()
-        );
-        MessageResponse message = null;
-        if (context.order() != null) {
-            message = insertMessage(
-                    conversation, "APP_USER", appUserId, "ORDER_CARD",
-                    "订单 " + context.order().orderNo(), context.order().orderId(), null
-            );
-        } else if (context.product() != null) {
-            message = insertMessage(
-                    conversation, "APP_USER", appUserId, "PRODUCT_CARD",
-                    context.product().title(), context.product().productId(), null
-            );
-        }
-        if (message != null) {
-            touchForAdminNotification(conversation.id(), message.createdAt());
-            notifyOfflineReplyForAppMessage(conversation, appUserId, message);
-        }
         drainWaitingQueue(null);
+        return activated;
     }
 
     private void drainWaitingQueue(Long triggerAdminUserId) {
@@ -2979,6 +3041,17 @@ public class CustomerServiceService {
 
     private ConsultationContextResponse contextResponse(String type, Long resourceId, Long appUserId) {
         String normalizedType = StringUtils.hasText(type) ? type : "GENERAL";
+        if ("AFTER_SALE".equals(normalizedType) && resourceId != null) {
+            LinkedAfterSaleResponse afterSale = requireOwnedAfterSale(appUserId, resourceId);
+            ConsultationContextResponse orderContext = contextResponse("ORDER", afterSale.orderId(), appUserId);
+            LinkedProductResponse product = jdbcClient.sql(productSelect() + """
+                            where p.id = (select item.spu_id from after_sale_item ai
+                                join order_item item on item.id = ai.order_item_id
+                                where ai.after_sale_id = :afterSaleId order by ai.id limit 1)
+                            """)
+                    .param("afterSaleId", resourceId).query(this::mapLinkedProduct).optional().orElse(null);
+            return new ConsultationContextResponse(normalizedType, resourceId, orderContext.order(), product, afterSale);
+        }
         if ("ORDER".equals(normalizedType) && resourceId != null) {
             LinkedOrderResponse order = jdbcClient.sql(orderSelect() + """
                             from shop_order o
@@ -2989,7 +3062,12 @@ public class CustomerServiceService {
                     .query(this::mapLinkedOrder)
                     .optional()
                     .orElse(null);
-            return new ConsultationContextResponse(normalizedType, resourceId, order, null);
+            LinkedProductResponse product = jdbcClient.sql(productSelect() + """
+                            where p.id = (select item.spu_id from order_item item
+                                where item.order_id = :orderId order by item.id limit 1)
+                            """)
+                    .param("orderId", resourceId).query(this::mapLinkedProduct).optional().orElse(null);
+            return new ConsultationContextResponse(normalizedType, resourceId, order, product, null);
         }
         if ("PRODUCT".equals(normalizedType) && resourceId != null) {
             LinkedProductResponse product = jdbcClient.sql(productSelect() + " where p.id = :resourceId")
@@ -2997,9 +3075,9 @@ public class CustomerServiceService {
                     .query(this::mapLinkedProduct)
                     .optional()
                     .orElse(null);
-            return new ConsultationContextResponse(normalizedType, resourceId, null, product);
+            return new ConsultationContextResponse(normalizedType, resourceId, null, product, null);
         }
-        return new ConsultationContextResponse("GENERAL", null, null, null);
+        return new ConsultationContextResponse("GENERAL", null, null, null, null);
     }
 
     private String messageSelect() {
@@ -3083,6 +3161,7 @@ public class CustomerServiceService {
                                   when 'IMAGE' then '[图片]'
                                   when 'ORDER_CARD' then '[订单]'
                                   when 'PRODUCT_CARD' then '[商品]'
+                                  when 'AFTER_SALE_CARD' then '[售后]'
                                   else message.content
                                 end
                         from customer_service_message message
@@ -3155,6 +3234,7 @@ public class CustomerServiceService {
                                   when 'IMAGE' then '[图片]'
                                   when 'ORDER_CARD' then '[订单]'
                                   when 'PRODUCT_CARD' then '[商品]'
+                                  when 'AFTER_SALE_CARD' then '[售后]'
                                   else m.content
                                 end
                         from customer_service_message m
@@ -3263,6 +3343,11 @@ public class CustomerServiceService {
                 nullableLong(rs, "resource_id"),
                 order,
                 product,
+                "AFTER_SALE_CARD".equals(rs.getString("message_type"))
+                        ? jdbcClient.sql(afterSaleSelect() + " where sale.id = :id")
+                            .param("id", rs.getLong("resource_id"))
+                            .query(this::mapLinkedAfterSale).optional().orElse(null)
+                        : null,
                 image,
                 rs.getString("client_message_id"),
                 rs.getTimestamp("created_at").toLocalDateTime()

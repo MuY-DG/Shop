@@ -5,6 +5,7 @@ import org.muybaby.shopserver.common.api.ApiResponse;
 import org.muybaby.shopserver.customerservice.dto.CustomerServiceDtos.ConversationDetailResponse;
 import org.muybaby.shopserver.customerservice.dto.CustomerServiceDtos.ImageMessageResponse;
 import org.muybaby.shopserver.customerservice.dto.CustomerServiceDtos.LinkedOrderResponse;
+import org.muybaby.shopserver.customerservice.dto.CustomerServiceDtos.LinkedAfterSaleResponse;
 import org.muybaby.shopserver.customerservice.dto.CustomerServiceDtos.LinkedProductResponse;
 import org.muybaby.shopserver.customerservice.dto.CustomerServiceDtos.MessageResponse;
 import org.muybaby.shopserver.customerservice.dto.CustomerServiceDtos.OpenConversationRequest;
@@ -103,6 +104,14 @@ public class AppCustomerServiceController {
             @PathVariable Long orderId
     ) {
         return ApiResponse.success(customerServiceService.linkOrderFromApp(principal, orderId));
+    }
+
+    @PostMapping("/after-sales/{afterSaleId}")
+    public ApiResponse<LinkedAfterSaleResponse> linkAfterSale(
+            @AuthenticationPrincipal AuthenticatedPrincipal principal,
+            @PathVariable Long afterSaleId
+    ) {
+        return ApiResponse.success(customerServiceService.linkAfterSaleFromApp(principal, afterSaleId));
     }
 
     @GetMapping("/order-candidates")
