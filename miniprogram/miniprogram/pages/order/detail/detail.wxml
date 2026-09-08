@@ -215,7 +215,6 @@
               />
             </view>
             <text class="order-info__service-label">联系客服</text>
-            <button wx:if="{{detail.showAfterSaleAction && deliverySummary}}" class="order-info__after-sale" disabled="{{actionType !== ''}}" catchtap="onAfterSaleActionTap">{{detail.afterSaleActionText}}</button>
           </view>
         </view>
       </block>
@@ -263,7 +262,7 @@
     ><text class="payment-action__label">继续支付</text></button>
   </view>
 
-  <view wx:elif="{{detail && (deliverySummary || detail.canConfirmReceipt || detail.canDelete || detail.canRebuy || detail.showAfterSaleAction)}}" class="detail-actions">
+  <view wx:elif="{{detail && (detail.canConfirmReceipt || detail.canDelete || detail.canRebuy || detail.showAfterSaleAction)}}" class="detail-actions">
     <button
       wx:if="{{detail.canDelete}}"
       class="detail-action detail-action--secondary detail-action--minor"
@@ -279,12 +278,11 @@
       bindtap="onRebuyTap"
     >再次购买</button>
     <button
-      wx:if="{{detail.showAfterSaleAction && !deliverySummary}}"
+      wx:if="{{detail.showAfterSaleAction}}"
       class="detail-action detail-action--secondary detail-action--minor"
       disabled="{{actionType !== ''}}"
       bindtap="onAfterSaleActionTap"
     >{{detail.afterSaleActionText}}</button>
-    <button wx:if="{{deliverySummary}}" class="detail-action detail-action--secondary detail-action--minor" disabled="{{actionType !== ''}}" bindtap="onLogisticsTap">查看物流</button>
     <button
       wx:if="{{detail.canConfirmReceipt}}"
       class="detail-action detail-action--primary detail-action--major"

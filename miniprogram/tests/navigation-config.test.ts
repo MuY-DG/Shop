@@ -902,7 +902,7 @@ test("收藏复用分类卡片并支持批量取消，足迹支持管理、批�
     .forEach((handler) => assert.match(orderTemplate, new RegExp(`catchtap="${handler}"`)));
   assert.doesNotMatch(orderTemplate, /title="我的订单"/);
   assert.match(orderTemplate, /class="order-search"[\s\S]*搜索商品名称或订单号/);
-  assert.match(orderTemplate, /class="order-card__time">下单时间：\{\{item\.createdAtText\}\}<\/text>/);
+  assert.match(orderTemplate, /class="order-card__time">\{\{item\.createdAtText\}\}<\/text>/);
   assert.match(orderTemplate, /class="order-card__actions">[\s\S]*class="order-more"[\s\S]*catchtap="onMoreTap"[\s\S]*wx:if="\{\{item\.canCancel\}\}"/);
   assert.match(orderTemplate, /class="order-menu"[\s\S]*data-order-no="\{\{item\.orderNo\}\}"[\s\S]*catchtap="onCopyOrderNoTap"[\s\S]*>复制订单号<\/button>[\s\S]*wx:if="\{\{item\.canDelete\}\}"[\s\S]*>删除订单<\/button>/);
   assert.doesNotMatch(orderTemplate, /order-menu-mask|onMenuMaskTap/);
@@ -911,7 +911,7 @@ test("收藏复用分类卡片并支持批量取消，足迹支持管理、批�
   assert.doesNotMatch(orderTemplate, /order-more__dot/);
   assert.match(orderTemplate, /\{\{item\.afterSaleActionText\}\}/);
   assert.match(orderTemplate, /class="order-product__content"[\s\S]*class="order-product__details"[\s\S]*class="order-product__quantity"[\s\S]*class="order-product__price"/);
-  assert.match(orderTemplate, /class="order-product__price"[\s\S]*class="order-product__after-sale-status">[\s\S]*\{\{product\.itemRefundText\}\}/);
+  assert.match(orderTemplate, /class="order-product__price"[\s\S]*class="order-product__after-sale-status">[\s\S]*\{\{item\.refundSummaryText\}\}/);
   assert.doesNotMatch(orderTemplate, /order-status--\{\{item\.statusTone\}\}/);
   assert.match(orderStyle, /\.status-tab--active\s*\{[\s\S]*border:\s*1rpx solid #fe0000;/);
   assert.match(orderTemplate, /wx:if="\{\{keyword\}\}" class="order-search__text order-search__keyword">\{\{keyword\}\}<\/text>/);
@@ -1794,7 +1794,7 @@ test("购物车与结算页注册真实交易路径", () => {
   assert.match(previewTemplate, /共\{\{preview\.totalQuantity\}\}件，合计/);
   assert.match(
     previewStyle,
-    /\.amount-section__divider\s*\{[^}]*background-image:\s*linear-gradient\([\s\S]*?20rpx,[\s\S]*?transparent 32rpx[\s\S]*?background-size:\s*32rpx 1rpx;/
+    /\.amount-section__divider\s*\{[^}]*height:\s*1rpx;[^}]*background:\s*#eeeeee;/
   );
   assert.match(previewTemplate, /class="amount-row amount-row--discount"/);
   assert.match(previewTemplate, /class="amount-row amount-row--interactive amount-row--discount"/);

@@ -235,12 +235,12 @@ test("进行中售后阻止重复申请并允许终态后重新申请", () => {
   assert.equal(blockedOrder.latestAfterSaleView?.statusText, "正在审核");
   assert.equal(blockedOrder.showAfterSaleAction, true);
   assert.equal(blockedOrder.afterSaleActionMode, "DETAIL");
-  assert.equal(blockedOrder.afterSaleActionText, "售后详细");
+  assert.equal(blockedOrder.afterSaleActionText, "查看售后");
 
   const retryOrder = buildOrderDetailView(order("COMPLETED", afterSale("REJECTED")));
   assert.equal(retryOrder.canApplyAfterSale, true);
   assert.equal(retryOrder.afterSaleActionMode, "DETAIL");
-  assert.equal(retryOrder.afterSaleActionText, "售后详细");
+  assert.equal(retryOrder.afterSaleActionText, "查看售后");
 
   const failedRefundOrder = buildOrderDetailView(order("REFUNDING", afterSale("REFUND_FAILED")));
   assert.equal(failedRefundOrder.statusText, "退款待处理");
@@ -255,7 +255,7 @@ test("进行中售后阻止重复申请并允许终态后重新申请", () => {
 
   const refundedOrder = buildOrderDetailView(order("REFUNDED", afterSale("REFUNDED")));
   assert.equal(refundedOrder.showAfterSaleAction, true);
-  assert.equal(refundedOrder.afterSaleActionText, "退款成功");
+  assert.equal(refundedOrder.afterSaleActionText, "查看售后");
 });
 
 test("同一申请意图在响应丢失后复用稳定幂等键", () => {

@@ -7,6 +7,7 @@ import ts from 'typescript'
 import * as orders from '../miniprogram/features/order-center'
 import * as logistics from '../miniprogram/features/order-logistics'
 import * as lists from '../miniprogram/features/list-refresh'
+import * as afterSales from '../miniprogram/features/after-sale'
 import type { AppOrderDetailResponse, AppOrderShipmentResponse } from '../miniprogram/types/order'
 
 function shipment(id = 1, overrides: Partial<AppOrderShipmentResponse> = {}): AppOrderShipmentResponse {
@@ -29,7 +30,8 @@ function deferred<T>() {
   return { resolve, promise }
 }
 function page(name: 'list' | 'detail', response: AppOrderDetailResponse,
-  token: (id: number) => Promise<{ waybillToken: string }> = async (id) => ({ waybillToken: `token-${id}` })) {
+  token: (id: number) => Promise<{ waybillToken: string }> = async (id) => ({ waybillToken: `token-${id}` }),
+  loadDetail: () => Promise<AppOrderDetailResponse> = async () => response) {
   const navigations: string[] = [], pluginCalls: string[] = [], toasts: string[] = [], tokenIds: number[] = []
   let instance: any
   const code = ts.transpileModule(readFileSync(resolve(process.cwd(), `miniprogram/pages/order/${name}/${name}.ts`), 'utf8'), {
@@ -40,6 +42,7 @@ function page(name: 'list' | 'detail', response: AppOrderDetailResponse,
     require: (module: string) => {
       if (module.endsWith('features/order-center')) return orders
       if (module.endsWith('features/list-refresh')) return lists
+      if (module.endsWith('features/after-sale')) return afterSales
       if (module.endsWith('features/order-logistics')) return {
         ...logistics,
         openShipmentLogistics: (options: logistics.OpenShipmentLogisticsOptions) => logistics.openShipmentLogistics({
@@ -48,7 +51,7 @@ function page(name: 'list' | 'detail', response: AppOrderDetailResponse,
         })
       }
       if (module.endsWith('services/order')) return {
-        getOrderDetail: async () => response,
+        getOrderDetail: loadDetail,
         getShipmentWaybillToken: async (_orderId: number, id: number) => { tokenIds.push(id); return token(id) }
       }
       if (module.endsWith('utils/api-error')) return { isApiError: () => false }
@@ -60,6 +63,10 @@ function page(name: 'list' | 'detail', response: AppOrderDetailResponse,
   if (name === 'detail') {
     instance.data.detail = orders.buildOrderDetailView(response)
     instance.data.deliverySummary = logistics.buildOrderDeliverySummary(instance.data.detail)
+  } else {
+    instance.data.orders = [orders.buildOrderSummaryView({
+      ...response, pendingReviewCount: 0, productTitle: '商品', itemCount: 1
+    })]
   }
   return { instance, navigations, pluginCalls, toasts, tokenIds,
     open: () => instance.onLogisticsTap({ currentTarget: { dataset: { id: 100 } } }) }
@@ -118,6 +125,80 @@ test('整单退款后的旧物流入口不再打开插件', async () => {
   await r.open()
   assert.deepEqual(r.tokenIds, [])
   assert.deepEqual(r.navigations, ['/pages/order/detail/detail?order_id=100'])
+})
+
+test('列表打开物流只反馈所点入口，连续点击不会重复请求', async () => {
+  const pending = deferred<{ waybillToken: string }>()
+  const r = page('list', detail(), () => pending.promise)
+  const opening = r.instance.onLogisticsTap({ currentTarget: { dataset: { id: 100, entry: 'button' } } })
+  await new Promise<void>((resolve) => setImmediate(resolve))
+  assert.equal(r.instance.data.logisticsEntry, 'button')
+  await r.open()
+  assert.deepEqual(r.tokenIds, [1])
+  const template = readFileSync(resolve(process.cwd(), 'miniprogram/pages/order/list/list.wxml'), 'utf8')
+  const disabledExpressions = [...template.matchAll(/disabled="\{\{([^}]+)\}\}"/g)].map((match) => match[1]!)
+  assert.ok(disabledExpressions.length > 0)
+  for (const expression of disabledExpressions) {
+    for (const orderId of [100, 101]) {
+      assert.equal(runInNewContext(expression, { ...r.instance.data, item: { orderId } }), false)
+    }
+  }
+  pending.resolve({ waybillToken: 'token-1' })
+  await opening
+  assert.equal(r.instance.data.logisticsEntry, '')
+  assert.equal(r.instance.data.actionOrderId, 0)
+})
+
+function withAfterSale(): AppOrderDetailResponse {
+  return { ...detail(), latestAfterSale: {
+    id: 301, afterSaleNo: 'AS301', orderId: 100, orderNo: 'ORD100', userId: 'TEST',
+    afterSaleType: 'REFUND_ONLY', status: 'REQUESTED', reason: '测试', requestedAmountCent: 1000,
+    createdAt: '2026-09-08T01:00:00Z', evidenceFileIds: [], evidenceFiles: [], items: [], allowedActions: []
+  } }
+}
+
+test('列表查看售后进入已有记录，申请售后才进入申请页', async () => {
+  const r = page('list', withAfterSale())
+  assert.equal(r.instance.data.orders[0].afterSaleActionText, '查看售后')
+  await r.instance.onAfterSaleTap({ currentTarget: { dataset: { id: 100 } } })
+  assert.deepEqual(r.navigations, [afterSales.buildAfterSaleDetailUrl(301)])
+  const applying = page('list', { ...detail(), status: 'COMPLETED' })
+  await applying.instance.onAfterSaleTap({ currentTarget: { dataset: { id: 100 } } })
+  assert.deepEqual(applying.navigations, [afterSales.buildAfterSaleApplyUrl(100)])
+})
+
+test('查看售后等待期间离开页面，不发生迟到跳转且防止重复查询', async () => {
+  const pending = deferred<AppOrderDetailResponse>()
+  let requests = 0
+  const r = page('list', withAfterSale(), undefined, () => { requests++; return pending.promise })
+  const event = { currentTarget: { dataset: { id: 100 } } }
+  const opening = r.instance.onAfterSaleTap(event)
+  await r.instance.onAfterSaleTap(event)
+  assert.equal(requests, 1)
+  r.instance.onHide()
+  pending.resolve(withAfterSale())
+  await opening
+  assert.deepEqual(r.navigations, [])
+  assert.equal(r.instance.data.actionOrderId, 0)
+})
+
+test('售后记录已隐藏时查看入口回到订单详情，不误进新的申请页', async () => {
+  const r = page('list', withAfterSale(), undefined, async () => detail())
+  await r.instance.onAfterSaleTap({ currentTarget: { dataset: { id: 100 } } })
+  assert.deepEqual(r.navigations, [orders.buildOrderDetailUrl(100)])
+})
+
+test('页面未保留自定义请求序号时，售后和物流仍能完成并释放按钮', async () => {
+  const r = page('list', withAfterSale())
+  delete r.instance._afterSaleRequest
+  await r.instance.onAfterSaleTap({ currentTarget: { dataset: { id: 100 } } })
+  assert.deepEqual(r.navigations, [afterSales.buildAfterSaleDetailUrl(301)])
+  assert.equal(r.instance.data.actionOrderId, 0)
+  const tracking = page('list', detail())
+  tracking.instance._logisticsRequest = Number.NaN
+  await tracking.open()
+  assert.deepEqual(tracking.pluginCalls, ['token-1'])
+  assert.equal(tracking.instance.data.actionOrderId, 0)
 })
 
 test('七个包裹也能选择末尾包裹，取消选择不会申请 token', async () => {

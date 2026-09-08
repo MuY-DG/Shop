@@ -95,7 +95,7 @@
             aria-label="查看订单 {{item.orderNo}}，{{item.statusText}}，{{item.itemCountText}}"
           >
             <view class="order-card__header">
-              <text class="order-card__time">下单时间：{{item.createdAtText}}</text>
+              <text class="order-card__time">{{item.createdAtText}}</text>
               <text class="order-status">{{item.statusText}}</text>
             </view>
             <view wx:if="{{item.items.length === 1}}" class="order-card__items">
@@ -131,9 +131,9 @@
                   </view>
                   <text class="order-product__quantity">{{product.quantityText}}</text>
                   <text class="order-product__price">{{product.unitPriceText}}</text>
-                  <view wx:if="{{product.itemRefundText || product.itemAfterSaleText}}" class="order-product__after-sale-status">
-                    <text wx:if="{{product.itemRefundText}}" class="order-product__refund">{{product.itemRefundText}}</text>
-                    <text wx:if="{{product.itemAfterSaleText}}">{{product.itemAfterSaleText}}</text>
+                  <view wx:if="{{item.refundSummaryText || item.afterSaleStatusText}}" class="order-product__after-sale-status">
+                    <text wx:if="{{item.refundSummaryText}}" class="order-product__refund">{{item.refundSummaryText}}</text>
+                    <text wx:if="{{item.afterSaleStatusText}}">{{item.afterSaleStatusText}}</text>
                   </view>
                 </view>
               </view>
@@ -174,7 +174,8 @@
                     <text class="order-product__bundle-amount-label">合计</text>
                     <text class="order-product__price">{{item.amountText}}</text>
                   </view>
-                  <view wx:if="{{item.afterSaleStatusText}}" class="order-product__after-sale-status">
+                  <view wx:if="{{item.refundSummaryText || item.afterSaleStatusText}}" class="order-product__after-sale-status">
+                    <text wx:if="{{item.refundSummaryText}}" class="order-product__refund">{{item.refundSummaryText}}</text>
                     <text wx:if="{{item.afterSaleStatusText}}">{{item.afterSaleStatusText}}</text>
                   </view>
                 </view>
@@ -183,12 +184,11 @@
             <view wx:else class="order-card__empty-product">商品信息暂不可用</view>
           </view>
 
-          <view wx:if="{{item.refundSummaryText}}" class="order-refund-summary" data-id="{{item.orderId}}" bindtap="onOrderTap">{{item.refundSummaryText}}</view>
           <view wx:if="{{item.logisticsStatusText}}" class="order-logistics"
-            data-id="{{item.orderId}}" catchtap="onLogisticsTap" hover-class="order-logistics--pressed"
+            data-id="{{item.orderId}}" data-entry="summary" catchtap="onLogisticsTap" hover-class="order-logistics--pressed"
             aria-role="button" aria-label="{{item.logisticsStatusText}}，查看物流">
             <image class="order-logistics__icon" src="/assets/icons/profile-order-receive.svg" mode="aspectFit" aria-hidden="true" />
-            <text class="order-logistics__status">{{item.logisticsStatusText}}</text>
+            <text class="order-logistics__status">{{actionOrderId === item.orderId && actionType === 'logistics' && logisticsEntry === 'summary' ? '正在打开物流…' : item.logisticsStatusText}}</text>
             <image class="order-logistics__arrow" src="/assets/icons/chevron-right-detail.svg" mode="aspectFit" aria-hidden="true" />
           </view>
 
@@ -197,7 +197,7 @@
               <button
                 class="order-action order-action--more"
                 data-id="{{item.orderId}}"
-                disabled="{{actionOrderId}}"
+                disabled="{{actionOrderId === item.orderId && actionType !== 'logistics'}}"
                 catchtap="onMoreTap"
                 hover-class="order-action--pressed"
                 aria-label="更多订单操作 {{item.orderNo}}"
@@ -228,7 +228,7 @@
               wx:if="{{item.canCancel}}"
               class="order-action order-action--secondary"
               data-id="{{item.orderId}}"
-              disabled="{{actionOrderId}}"
+              disabled="{{actionOrderId === item.orderId && actionType !== 'logistics'}}"
               catchtap="onCancelTap"
               hover-class="order-action--pressed"
               aria-label="取消订单 {{item.orderNo}}"
@@ -237,8 +237,9 @@
               wx:if="{{item.canAfterSale}}"
               class="order-action order-action--secondary"
               data-id="{{item.orderId}}"
-              disabled="{{actionOrderId}}"
+              disabled="{{actionOrderId === item.orderId && actionType !== 'logistics'}}"
               catchtap="onAfterSaleTap"
+              loading="{{actionOrderId === item.orderId && actionType === 'afterSale'}}"
               hover-class="order-action--pressed"
               aria-label="{{item.afterSaleActionText}}，订单 {{item.orderNo}}"
             >{{item.afterSaleActionText}}</button>
@@ -246,8 +247,10 @@
               wx:if="{{item.canViewLogistics}}"
               class="order-action order-action--secondary"
               data-id="{{item.orderId}}"
-              disabled="{{actionOrderId}}"
+              disabled="{{actionOrderId === item.orderId && actionType !== 'logistics'}}"
               catchtap="onLogisticsTap"
+              data-entry="button"
+              loading="{{actionOrderId === item.orderId && actionType === 'logistics' && logisticsEntry === 'button'}}"
               hover-class="order-action--pressed"
               aria-label="查看物流，订单 {{item.orderNo}}"
             >查看物流</button>
@@ -255,7 +258,7 @@
               wx:if="{{item.canModify}}"
               class="order-action order-action--secondary"
               data-id="{{item.orderId}}"
-              disabled="{{actionOrderId}}"
+              disabled="{{actionOrderId === item.orderId && actionType !== 'logistics'}}"
               catchtap="onModifyTap"
               hover-class="order-action--pressed"
               aria-label="修改订单 {{item.orderNo}}"
@@ -264,7 +267,7 @@
               wx:if="{{item.canReview}}"
               class="order-action order-action--secondary"
               data-id="{{item.orderId}}"
-              disabled="{{actionOrderId}}"
+              disabled="{{actionOrderId === item.orderId && actionType !== 'logistics'}}"
               catchtap="onReviewTap"
               hover-class="order-action--pressed"
               aria-label="评价订单 {{item.orderNo}} 的商品"
@@ -274,7 +277,7 @@
               class="order-action order-action--primary"
               data-id="{{item.orderId}}"
               loading="{{actionOrderId === item.orderId && actionType === 'rebuy'}}"
-              disabled="{{actionOrderId}}"
+              disabled="{{actionOrderId === item.orderId && actionType !== 'logistics'}}"
               catchtap="onRebuyTap"
               hover-class="order-action--pressed"
               aria-label="再次购买订单 {{item.orderNo}} 的商品"
@@ -284,7 +287,7 @@
               class="order-action order-action--primary"
               data-id="{{item.orderId}}"
               loading="{{actionOrderId === item.orderId && actionType === 'pay'}}"
-              disabled="{{actionOrderId}}"
+              disabled="{{actionOrderId === item.orderId && actionType !== 'logistics'}}"
               catchtap="onPayTap"
               hover-class="order-action--pressed"
               aria-label="{{item.paymentActionText}}，订单 {{item.orderNo}}"

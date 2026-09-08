@@ -80,7 +80,7 @@
 }
 
 .detail-content {
-  padding: @space-4 12rpx @space-8;
+  padding: 24rpx 12rpx @space-8;
   box-sizing: border-box;
 }
 
@@ -141,7 +141,7 @@
   padding: @space-5;
   box-sizing: border-box;
   align-items: center;
-  grid-template-columns: 48rpx minmax(0, 1fr) 92rpx;
+  grid-template-columns: 48rpx minmax(0, 1fr) auto;
   gap: @space-3;
 }
 
@@ -234,14 +234,16 @@ button.receiver-card__modify {
 
 .detail-item__body {
   min-width: 0;
-  height: 136rpx;
-  display: grid;
-  align-items: center;
-  grid-template-rows: repeat(3, minmax(0, 1fr));
+  min-height: 136rpx;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: @space-2;
 }
 
 .detail-item__title-row {
   min-width: 0;
+  width: 100%;
   display: flex;
   align-items: baseline;
   gap: @space-3;
@@ -327,15 +329,7 @@ button.receiver-card__modify {
 .amount-card__divider {
   height: 1rpx;
   margin-top: @space-3;
-  background-image: linear-gradient(
-    to right,
-    rgba(93, 62, 43, 0.14) 0,
-    rgba(93, 62, 43, 0.14) 20rpx,
-    transparent 20rpx,
-    transparent 32rpx
-  );
-  background-repeat: repeat-x;
-  background-size: 32rpx 1rpx;
+  background: #eeeeee;
 }
 
 .amount-total {
@@ -787,23 +781,9 @@ button.detail-action[disabled] {
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 2;
 }
-button.order-info__after-sale {
-  width: auto;
-  margin: 0 0 0 28rpx;
-  padding: 0 0 0 28rpx;
-  border-left: 1rpx solid @color-divider;
-  background: transparent;
-  color: @color-text-muted;
-  font-size: 26rpx;
-  border-radius: 0;
-}
-button.order-info__after-sale::after {
-  border: 0;
-}
-
 .detail-item__after-sale {
   display: flex;
-  margin-top: @space-3;
+  margin-top: @space-1;
   flex-direction: column;
   align-items: flex-start;
   gap: @space-2;
@@ -823,6 +803,7 @@ button.order-info__after-sale::after {
   gap: @space-3;
 }
 button.detail-item__record {
+  width: auto;
   margin: 0;
   padding: @space-2 0;
   color: @color-text-secondary;

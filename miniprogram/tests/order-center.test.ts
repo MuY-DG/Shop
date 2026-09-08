@@ -120,7 +120,7 @@ test("订单状态映射稳定并只开放合法操作", () => {
   assert.equal(paid.canRebuy, false);
   assert.equal(paid.canModify, true);
   assert.equal(paid.canAfterSale, false);
-  assert.equal(paid.afterSaleActionText, "退款|售后");
+  assert.equal(paid.afterSaleActionText, "申请售后");
 
   const shipped = buildOrderSummaryView(summary("SHIPPED"));
   assert.equal(shipped.canPay, false);
@@ -129,7 +129,7 @@ test("订单状态映射稳定并只开放合法操作", () => {
   assert.equal(shipped.canAfterSale, false);
   assert.equal(shipped.canViewLogistics, true);
   assert.equal(buildOrderSummaryView(summary("PARTIALLY_SHIPPED")).canViewLogistics, true);
-  assert.equal(shipped.afterSaleActionText, "退换|售后");
+  assert.equal(shipped.afterSaleActionText, "申请售后");
   assert.equal(shipped.amountText, "¥45.40");
 
   const pendingReview = buildOrderSummaryView(summary("COMPLETED", 1));
@@ -220,7 +220,7 @@ test("订单列表展示最新售后结果并使用真实退款金额", () => {
   };
   const failedRefundView = buildOrderSummaryView(failedRefund);
   assert.equal(failedRefundView.statusText, "退款待处理");
-  assert.equal(failedRefundView.afterSaleStatusText, "售后处理中");
+  assert.equal(failedRefundView.afterSaleStatusText, "退款处理异常");
   assert.equal(failedRefundView.afterSaleStatusDescription, "后台客服正在加速处理退款异常");
 
   assert.equal(buildOrderSummaryView(summary("COMPLETED")).afterSaleStatusText, "");
@@ -287,7 +287,7 @@ test("订单详情使用零售金额与真实批发成交价生成可核对明�
   assert.equal(buildOrderDetailView(legacySingle).items[0]?.specText, "");
 });
 
-test("订单详情多种商品共用批量售后入口且单种多件保留申请售后", () => {
+test("订单详情统一申请售后文案并保留多商品申请能力", () => {
   const single = detail("PAID");
   assert.equal(single.items[0]?.quantity, 3);
   assert.equal(buildOrderDetailView(single).afterSaleActionText, "申请售后");
@@ -295,7 +295,7 @@ test("订单详情多种商品共用批量售后入口且单种多件保留申�
   const multiple = detail("PAID");
   multiple.items.push({ ...multiple.items[0]!, orderItemId: 902, skuId: 22 });
   const batchView = buildOrderDetailView(multiple);
-  assert.equal(batchView.afterSaleActionText, "批量售后");
+  assert.equal(batchView.afterSaleActionText, "申请售后");
   assert.equal(batchView.afterSaleActionMode, "APPLY");
   assert.equal(batchView.showAfterSaleAction, true);
 
@@ -303,7 +303,7 @@ test("订单详情多种商品共用批量售后入口且单种多件保留申�
   assert.equal(buildOrderDetailView(multiple).afterSaleActionText, "申请售后");
 });
 
-test("批量售后入口保留已有售后详细和退款结果并支持撤销后重新申请", () => {
+test("已有售后统一查看售后入口并支持撤销后重新申请", () => {
   const order = detail("PAID");
   order.items.push({ ...order.items[0]!, orderItemId: 902, skuId: 22 });
   order.latestAfterSale = {
@@ -324,15 +324,15 @@ test("批量售后入口保留已有售后详细和退款结果并支持撤销�
   };
   const active = buildOrderDetailView(order);
   assert.equal(active.afterSaleActionMode, "DETAIL");
-  assert.equal(active.afterSaleActionText, "售后详细");
+  assert.equal(active.afterSaleActionText, "查看售后");
   assert.equal(active.canApplyAfterSale, false);
 
   order.latestAfterSale.status = "REFUNDED";
-  assert.equal(buildOrderDetailView(order).afterSaleActionText, "退款成功");
+  assert.equal(buildOrderDetailView(order).afterSaleActionText, "查看售后");
   assert.equal(buildOrderDetailView(order).afterSaleActionMode, "DETAIL");
 
   order.latestAfterSale.status = "CANCELLED";
-  assert.equal(buildOrderDetailView(order).afterSaleActionText, "批量售后");
+  assert.equal(buildOrderDetailView(order).afterSaleActionText, "申请售后");
   assert.equal(buildOrderDetailView(order).afterSaleActionMode, "APPLY");
 });
 

@@ -233,6 +233,7 @@ interface OrderSummaryActions {
   canReview: boolean;
   canAfterSale: boolean;
   hasActions: boolean;
+  afterSaleActionMode: "APPLY" | "DETAIL";
   afterSaleActionText: string;
   paymentActionText: string;
 }
@@ -510,7 +511,8 @@ function summaryActions(
     canAfterSale,
     canViewLogistics,
     hasActions: canPay || canDelete || canRebuy || canReview || canAfterSale || canModify || canViewLogistics,
-    afterSaleActionText: status === "PAID" ? "退款|售后" : "退换|售后",
+    afterSaleActionMode: "APPLY",
+    afterSaleActionText: "申请售后",
     paymentActionText: "去支付"
   };
 }
@@ -537,6 +539,19 @@ export function buildOrderSummaryView(order: OrderSummaryResponse): OrderSummary
   const afterSaleStatus = order.latestAfterSale
     ? buildAfterSaleCardStatus(order.latestAfterSale)
     : undefined;
+  const hasAfterSaleRecord = order.latestAfterSale
+    ? order.latestAfterSale.status !== "CANCELLED"
+    : order.items?.some((item) => item.afterSale?.records.some((record) => record.appVisible));
+  if (hasAfterSaleRecord) {
+    orderActions.canAfterSale = true;
+    orderActions.hasActions = true;
+    orderActions.afterSaleActionMode = "DETAIL";
+    orderActions.afterSaleActionText = "查看售后";
+  }
+  const afterSaleStatusText = order.latestAfterSale?.status === "REFUNDED" ? ""
+    : order.latestAfterSale?.status === "WAITING_RETURN" ? "待寄回商品"
+    : order.latestAfterSale?.status === "REFUND_FAILED" ? "退款处理异常"
+    : afterSaleStatus?.text ?? "";
   const refundNeedsMerchantHandling = order.status === "REFUNDING"
     && order.latestAfterSale?.status === "REFUND_FAILED";
   return {
@@ -558,7 +573,7 @@ export function buildOrderSummaryView(order: OrderSummaryResponse): OrderSummary
     createdAtText: formatLocalDateTime(order.createdAt, "second"),
     itemCountText: `共 ${Math.max(0, order.itemCount)} 件商品`,
     refundSummaryText: buildOrderRefundSummary(order),
-    afterSaleStatusText: order.latestAfterSale?.status === "REFUNDED" ? "" : afterSaleStatus?.text ?? "",
+    afterSaleStatusText,
     afterSaleStatusDescription: afterSaleStatus?.description ?? ""
   };
 }
@@ -629,9 +644,6 @@ export function buildOrderDetailView(order: AppOrderDetailResponse): OrderDetail
   const afterSaleActionMode = !latestAfterSaleView || latestAfterSaleView.status === "CANCELLED"
     ? "APPLY"
     : "DETAIL";
-  const afterSaleProductCount = order.items.filter(
-    (item) => Number.isSafeInteger(item.quantity) && item.quantity > 0
-  ).length;
   const orderActions = actions(order.status);
   const fulfillmentBlocked = order.latestAfterSale
     ? isActiveAfterSale(order.latestAfterSale.status)
@@ -693,8 +705,8 @@ export function buildOrderDetailView(order: AppOrderDetailResponse): OrderDetail
     showAfterSaleAction: afterSaleActionMode === "DETAIL" || canApply,
     afterSaleActionMode,
     afterSaleActionText: afterSaleActionMode === "APPLY"
-      ? afterSaleProductCount > 1 ? "批量售后" : "申请售后"
-      : latestAfterSaleView?.status === "REFUNDED" ? "退款成功" : "售后详细",
+      ? "申请售后"
+      : "查看售后",
     latestAfterSaleView
   };
 }

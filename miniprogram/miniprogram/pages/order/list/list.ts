@@ -17,7 +17,7 @@ import {
   type OrderCenterGroup,
   type OrderSummaryView
 } from "../../../features/order-center";
-import { buildAfterSaleApplyUrl } from "../../../features/after-sale";
+import { buildAfterSaleApplyUrl, buildAfterSaleDetailUrl } from "../../../features/after-sale";
 import { openShipmentLogistics, LOGISTICS_UNAVAILABLE_MESSAGE } from "../../../features/order-logistics";
 import { buildCartCheckoutUrl } from "../../../features/checkout";
 import { normalizeOrderRouteKeyword } from "../../../features/order-search";
@@ -39,6 +39,7 @@ interface DatasetEvent {
       id?: number | string;
       itemId?: number | string;
       orderNo?: string;
+      entry?: string;
     };
   };
 }
@@ -75,7 +76,9 @@ function confirmAction(title: string, content: string, confirmText: string): Pro
 
 Page({
   _visible: true,
-  _logisticsRequest: 0,  data: {
+  _logisticsRequest: 0,
+  _afterSaleRequest: 0,
+  data: {
     scrollTop: 0,
     refreshing: false,
     lifecycleToken: 0,
@@ -93,10 +96,13 @@ Page({
     errorText: "",
     actionOrderId: 0,
     actionType: "",
+    logisticsEntry: "",
     openMenuOrderId: 0
   },
 
   onLoad(query: Record<string, string | undefined>) {
+    this._afterSaleRequest = 0;
+    this._logisticsRequest = 0;
     const activeGroup = parseOrderCenterGroup(query.group);
     this.setData({
       lifecycleToken: rebuyOperationGuard.mount(),
@@ -136,7 +142,10 @@ Page({
   onHide() {
     this._visible = false;
     this._logisticsRequest += 1;
-    if (this.data.actionType === "logistics") this.setData({ actionOrderId: 0, actionType: "" });
+    this._afterSaleRequest += 1;
+    if (this.data.actionType === "logistics" || this.data.actionType === "afterSale") {
+      this.setData({ actionOrderId: 0, actionType: "", logisticsEntry: "" });
+    }
     beginListRequest(this);
     this.setData({ loading: false, loadingMore: false, refreshing: false });
   },
@@ -144,6 +153,7 @@ Page({
   onUnload() {
     this._visible = false;
     this._logisticsRequest += 1;
+    this._afterSaleRequest += 1;
     rebuyOperationGuard.unmount(this.data.lifecycleToken);
     beginListRequest(this);
   },
@@ -550,19 +560,41 @@ Page({
     }
   },
 
-  onAfterSaleTap(event: DatasetEvent) {
+  async onAfterSaleTap(event: DatasetEvent) {
     const orderId = positiveOrderId(event.currentTarget.dataset.id);
-    if (orderId && !this.data.actionOrderId) {
+    const order = this.data.orders.find((item) => item.orderId === orderId);
+    if (!order?.canAfterSale || this.data.actionOrderId || !this._visible) return;
+    if (order.afterSaleActionMode === "APPLY") {
       wx.navigateTo({ url: buildAfterSaleApplyUrl(orderId) });
+      return;
+    }
+    const request = this._afterSaleRequest = (this._afterSaleRequest || 0) + 1;
+    const isCurrent = () => this._visible && request === this._afterSaleRequest;
+    this.setData({ actionOrderId: orderId, actionType: "afterSale", openMenuOrderId: 0 });
+    try {
+      const response = await getOrderDetail(orderId);
+      if (!isCurrent()) return;
+      const detail = buildOrderDetailView(response);
+      const recordId = detail.latestAfterSaleView?.id
+        ?? detail.items.find((item) => item.afterSaleRecords.length)?.afterSaleRecords[0]?.afterSaleId;
+      wx.navigateTo({ url: recordId
+        ? buildAfterSaleDetailUrl(recordId)
+        : buildOrderDetailUrl(orderId) });
+    } catch (error) {
+      if (isCurrent()) wx.showToast({ title: actionError(error, "售后信息加载失败，请重试"), icon: "none" });
+    } finally {
+      if (isCurrent()) this.setData({ actionOrderId: 0, actionType: "" });
     }
   },
 
   async onLogisticsTap(event: DatasetEvent) {
     const orderId = positiveOrderId(event.currentTarget.dataset.id);
     if (!orderId || this.data.actionOrderId || !this._visible) return;
-    const request = ++this._logisticsRequest;
+    const request = this._logisticsRequest = (this._logisticsRequest || 0) + 1;
     const isCurrent = () => this._visible && request === this._logisticsRequest;
-    this.setData({ actionOrderId: orderId, actionType: "logistics" });
+    this.setData({ actionOrderId: orderId, actionType: "logistics",
+      logisticsEntry: event.currentTarget.dataset.entry === "button" ? "button" : "summary",
+      openMenuOrderId: 0 });
     try {
       const response = await getOrderDetail(orderId);
       if (!isCurrent()) return;
@@ -582,7 +614,7 @@ Page({
     } catch (error) {
       if (isCurrent()) wx.showToast({ title: actionError(error, "物流信息加载失败，请重试"), icon: "none" });
     } finally {
-      if (isCurrent()) this.setData({ actionOrderId: 0, actionType: "" });
+      if (isCurrent()) this.setData({ actionOrderId: 0, actionType: "", logisticsEntry: "" });
     }
   },
 
