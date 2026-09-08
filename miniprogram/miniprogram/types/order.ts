@@ -36,6 +36,7 @@ export interface OrderSummaryResponse {
   freightCent: number;
   payableAmountCent: number;
   paidAmountCent: number;
+  refundedAmountCent?: number;
   productTitle: string;
   itemCount: number;
   items: OrderSummaryItemResponse[];
@@ -73,6 +74,23 @@ export interface OrderSummaryItemResponse {
   quantity: number;
   reviewed: boolean;
   reviewable: boolean;
+  afterSale?: OrderItemAfterSaleResponse | null;
+}
+
+export interface OrderItemAfterSaleResponse {
+  refundedQuantity: number;
+  refundedAmountCent: number;
+  fullyRefunded: boolean;
+  records: OrderItemAfterSaleRecord[];
+}
+
+export interface OrderItemAfterSaleRecord {
+  afterSaleId: number;
+  afterSaleNo: string;
+  status: string;
+  quantity: number;
+  amountCent: number;
+  appVisible: boolean;
 }
 
 export interface OrderItemResponse {
@@ -95,6 +113,7 @@ export interface OrderItemResponse {
   lineAmountCent: number;
   reviewed: boolean;
   reviewable: boolean;
+  afterSale?: OrderItemAfterSaleResponse | null;
 }
 
 export type LogisticsType = 1 | 2 | 3 | 4;
@@ -217,6 +236,7 @@ export interface AppOrderDetailResponse {
   freightCent: number;
   payableAmountCent: number;
   paidAmountCent: number;
+  refundedAmountCent?: number;
   receiverName: string;
   receiverPhone: string;
   receiverAddress: string;

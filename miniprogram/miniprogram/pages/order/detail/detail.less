@@ -800,3 +800,36 @@ button.order-info__after-sale {
 button.order-info__after-sale::after {
   border: 0;
 }
+
+.detail-item__after-sale {
+  display: flex;
+  margin-top: @space-3;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: @space-2;
+  font-size: @font-size-xs;
+  line-height: 1.5;
+}
+.detail-item__refund,
+.amount-row--refund {
+  color: @color-success-text;
+}
+.detail-item__pending {
+  color: @color-warning-text;
+}
+.detail-item__records {
+  display: flex;
+  flex-wrap: wrap;
+  gap: @space-3;
+}
+button.detail-item__record {
+  margin: 0;
+  padding: @space-2 0;
+  color: @color-text-secondary;
+  background: transparent;
+  font-size: @font-size-xs;
+  line-height: 1.5;
+}
+button.detail-item__record::after {
+  border: 0;
+}

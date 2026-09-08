@@ -1373,7 +1373,22 @@ declare namespace Api {
       createdAt: string
     }
 
+    interface ItemAfterSale {
+      refundedQuantity: number
+      refundedAmountCent: number
+      fullyRefunded: boolean
+      records: {
+        afterSaleId: number
+        afterSaleNo: string
+        status: string
+        quantity: number
+        amountCent: number
+        appVisible: boolean
+      }[]
+    }
+
     interface OrderItem {
+      afterSale?: ItemAfterSale | null
       orderItemId: number
       skuId: number
       spuId: number

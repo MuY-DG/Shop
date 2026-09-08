@@ -72,8 +72,10 @@
 
           <view class="apply-card evidence-card">
             <view class="section-heading">补充说明<text class="optional">选填</text></view>
-            <textarea class="description-input" value="{{description}}" maxlength="500" placeholder="描述具体问题，帮助我们更快处理" placeholder-class="description-input__placeholder" show-confirm-bar="{{false}}" disabled="{{submitting}}" bindinput="onDescriptionInput" />
-            <view class="description-count">{{description.length}}/500</view>
+            <view class="description-field">
+              <textarea class="description-input" value="{{description}}" maxlength="500" placeholder="描述具体问题，帮助我们更快处理" placeholder-class="description-input__placeholder" show-confirm-bar="{{false}}" disabled="{{submitting}}" bindinput="onDescriptionInput" aria-label="补充说明，选填，最多500字" />
+              <view class="description-count">{{description.length}}/500</view>
+            </view>
             <view class="evidence-heading"><view class="section-heading">凭证图片 / 视频<text class="optional">选填</text></view><text class="evidence-count">{{evidenceFiles.length}}/4</text></view>
             <view class="evidence-grid">
               <view wx:for="{{evidenceFiles}}" wx:key="fileId" class="evidence-item">

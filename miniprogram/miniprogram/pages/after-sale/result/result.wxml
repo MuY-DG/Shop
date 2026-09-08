@@ -1,9 +1,15 @@
 <view class="refund-result-page">
-  <navigation-bar title="{{phase === 'processing' ? '退款进度' : '退款结果'}}" back="{{true}}" color="#1c1c1e" background="#f6f6f6" show-divider="{{false}}" />
+  <navigation-bar title="{{phase === 'review' ? '申请已提交' : phase === 'processing' ? '退款进度' : '退款结果'}}" back="{{true}}" color="#1c1c1e" background="#f6f6f6" show-divider="{{false}}" />
   <view wx:if="{{errorText}}" class="result-state" bindtap="onRetry" aria-role="button"><ui-state type="error" title="当前服务繁忙" description="{{errorText}}" /></view>
   <view wx:elif="{{phase === 'processing'}}" class="result-content" aria-label="{{processingTitle}}">
     <view class="result-loader" aria-hidden="true"></view>
     <view class="result-title">{{processingTitle}}</view>
+  </view>
+  <view wx:elif="{{phase === 'review' && detail}}" class="result-content">
+    <view class="result-check"><image class="result-check__icon" src="/assets/icons/check-rounded-material-symbols-iconify.svg" mode="aspectFit" aria-hidden="true" /></view>
+    <view class="result-title">等待商家审核</view>
+    <view class="result-description">申请已提交，商家将审核您的售后申请</view>
+    <view class="result-note">无需在此等待，可稍后在售后详情查看处理结果</view>
   </view>
   <view wx:elif="{{phase === 'success' && detail}}" class="result-content">
     <view class="result-check"><image class="result-check__icon" src="/assets/icons/check-rounded-material-symbols-iconify.svg" mode="aspectFit" aria-hidden="true" /></view>
@@ -19,7 +25,7 @@
     <view class="result-description">{{detail.statusDescription}}</view>
   </view>
   <view wx:if="{{detail && (phase !== 'processing' || errorText)}}" class="result-actions">
-    <button class="result-button result-button--secondary" bindtap="onDetailTap">退款详情</button>
+    <button class="result-button result-button--secondary" bindtap="onDetailTap">售后详情</button>
     <button class="result-button" bindtap="onOrderTap">查看原订单</button>
   </view>
 </view>

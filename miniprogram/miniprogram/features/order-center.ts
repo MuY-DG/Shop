@@ -1,3 +1,4 @@
+import { buildOrderItemAfterSaleView, buildOrderRefundSummary } from "./order-refund";
 import { displaySpecText, formatMoney } from "./product-catalog";
 import { formatLocalDateTime } from "../utils/date-time";
 import type {
@@ -236,7 +237,7 @@ interface OrderSummaryActions {
   paymentActionText: string;
 }
 
-export interface OrderSummaryItemView extends OrderSummaryItemResponse {
+export interface OrderSummaryItemView extends OrderSummaryItemResponse, ReturnType<typeof buildOrderItemAfterSaleView> {
   titleText: string;
   specificationText: string;
   imageUrl: string;
@@ -254,10 +255,11 @@ export interface OrderSummaryView extends Omit<OrderSummaryResponse, "items">, O
   itemCountText: string;
   afterSaleStatusText: string;
   afterSaleStatusDescription: string;
+  refundSummaryText: string;
   logisticsStatusText: string;
 }
 
-export interface OrderItemView extends OrderItemResponse {
+export interface OrderItemView extends OrderItemResponse, ReturnType<typeof buildOrderItemAfterSaleView> {
   imageUrl: string;
   hasImage: boolean;
   unitPriceText: string;
@@ -303,6 +305,7 @@ export interface OrderDetailView extends AppOrderDetailResponse, OrderActions {
   totalDiscountText: string;
   hasTotalDiscount: boolean;
   paidAmountText: string;
+  refundSummaryText: string;
   createdAtText: string;
   paidAtText: string;
   shippedAtText: string;
@@ -534,9 +537,6 @@ export function buildOrderSummaryView(order: OrderSummaryResponse): OrderSummary
   const afterSaleStatus = order.latestAfterSale
     ? buildAfterSaleCardStatus(order.latestAfterSale)
     : undefined;
-  // 全额退款由服务端按累计退款额将订单置为 REFUNDED，不能用最新一笔金额判断整单。
-  const partiallyRefunded = order.latestAfterSale?.status === "REFUNDED"
-    && ["PAID", "PARTIALLY_SHIPPED", "SHIPPED", "COMPLETED"].includes(order.status);
   const refundNeedsMerchantHandling = order.status === "REFUNDING"
     && order.latestAfterSale?.status === "REFUND_FAILED";
   return {
@@ -557,7 +557,8 @@ export function buildOrderSummaryView(order: OrderSummaryResponse): OrderSummary
       : order.payableAmountCent),
     createdAtText: formatLocalDateTime(order.createdAt, "second"),
     itemCountText: `共 ${Math.max(0, order.itemCount)} 件商品`,
-    afterSaleStatusText: partiallyRefunded ? "部分退款" : afterSaleStatus?.text ?? "",
+    refundSummaryText: buildOrderRefundSummary(order),
+    afterSaleStatusText: order.latestAfterSale?.status === "REFUNDED" ? "" : afterSaleStatus?.text ?? "",
     afterSaleStatusDescription: afterSaleStatus?.description ?? ""
   };
 }
@@ -575,6 +576,7 @@ function buildOrderSummaryItemView(
     : 0;
   return {
     ...item,
+    ...buildOrderItemAfterSaleView(item),
     titleText: titleText || "订单商品",
     specificationText,
     imageUrl,
@@ -590,6 +592,7 @@ function buildOrderItemView(item: OrderItemResponse): OrderItemView {
   const retailLineAmountCent = Math.max(0, item.retailUnitPriceCent * item.quantity);
   return {
     ...item,
+    ...buildOrderItemAfterSaleView(item),
     specText: displaySpecText(item.specText),
     imageUrl,
     hasImage: Boolean(imageUrl),
@@ -677,6 +680,7 @@ export function buildOrderDetailView(order: AppOrderDetailResponse): OrderDetail
     totalDiscountText: money(totalDiscountCent),
     hasTotalDiscount: totalDiscountCent > 0,
     paidAmountText: money(order.paidAmountCent),
+    refundSummaryText: buildOrderRefundSummary(order),
     createdAtText: formatLocalDateTime(order.createdAt),
     paidAtText: formatLocalDateTime(order.paidAt),
     shippedAtText: formatLocalDateTime(order.shippedAt),

@@ -4,6 +4,7 @@ import org.muybaby.shopserver.aftersale.AfterSaleStatus;
 import org.muybaby.shopserver.aftersale.dto.AfterSaleItemResponse;
 import org.muybaby.shopserver.aftersale.dto.AfterSaleResponse;
 import org.muybaby.shopserver.aftersale.dto.AfterSaleReturnResponse;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Service;
 
@@ -14,14 +15,18 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 @Service
 public class AfterSaleV2ReadService {
 
     private final JdbcClient jdbcClient;
+    private final boolean automaticRefundEnabled;
 
-    public AfterSaleV2ReadService(JdbcClient jdbcClient) {
+    public AfterSaleV2ReadService(JdbcClient jdbcClient,
+                                 @Value("${shop.pay.auto-refund.enabled:true}") boolean automaticRefundEnabled) {
         this.jdbcClient = jdbcClient;
+        this.automaticRefundEnabled = automaticRefundEnabled;
     }
 
     public AfterSaleResponse decorate(AfterSaleResponse base) {
@@ -37,6 +42,7 @@ public class AfterSaleV2ReadService {
                 .toList();
         Map<Long, List<AfterSaleItemResponse>> items = currentItems(afterSaleIds);
         Map<Long, AfterSaleReturnResponse> returns = returnInfos(afterSaleIds);
+        Set<Long> automaticReviewIds = automaticReviewIds(bases);
 
         return bases.stream()
                 .map(base -> new AfterSaleResponse(
@@ -47,8 +53,28 @@ public class AfterSaleV2ReadService {
                             base.reviewedAt(), base.createdAt(), base.evidenceFileIds(),
                             base.evidenceFiles(), base.refundOrder(),
                             items.getOrDefault(base.id(), List.of()),
-                            returns.get(base.id()), allowedActions(base.status())))
+                            returns.get(base.id()), allowedActions(base.status()),
+                            automaticReviewIds.contains(base.id())))
                 .toList();
+    }
+
+    private Set<Long> automaticReviewIds(List<AfterSaleResponse> bases) {
+        List<Long> requestedIds = bases.stream()
+                .filter(base -> "REQUESTED".equals(base.status()))
+                .map(AfterSaleResponse::id).toList();
+        if (!automaticRefundEnabled || requestedIds.isEmpty()) return Set.of();
+        // Use the durable queue decision, including fallback to merchant review, for every read path.
+        return Set.copyOf(jdbcClient.sql("""
+                        select r.id from after_sale_request r
+                        join shop_order o on o.id = r.order_id
+                        where r.id in (:ids) and r.status = 'REQUESTED'
+                          and r.after_sale_type = 'REFUND_ONLY'
+                          and o.status in ('PAID', 'PARTIALLY_SHIPPED')
+                          and exists (select 1 from after_sale_status_log l where l.after_sale_id = r.id
+                                      and l.event_type = 'AUTO_REFUND_QUEUED')
+                          and not exists (select 1 from after_sale_status_log l where l.after_sale_id = r.id
+                                          and l.event_type = 'AUTO_REFUND_REVIEW_REQUIRED')
+                        """).param("ids", requestedIds).query(Long.class).list());
     }
 
     private Map<Long, List<AfterSaleItemResponse>> currentItems(List<Long> afterSaleIds) {

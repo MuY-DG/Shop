@@ -911,7 +911,7 @@ test("收藏复用分类卡片并支持批量取消，足迹支持管理、批�
   assert.doesNotMatch(orderTemplate, /order-more__dot/);
   assert.match(orderTemplate, /\{\{item\.afterSaleActionText\}\}/);
   assert.match(orderTemplate, /class="order-product__content"[\s\S]*class="order-product__details"[\s\S]*class="order-product__quantity"[\s\S]*class="order-product__price"/);
-  assert.match(orderTemplate, /class="order-product__price"[\s\S]*class="order-product__after-sale-status">\{\{item\.afterSaleStatusText\}\}/);
+  assert.match(orderTemplate, /class="order-product__price"[\s\S]*class="order-product__after-sale-status">[\s\S]*\{\{product\.itemRefundText\}\}/);
   assert.doesNotMatch(orderTemplate, /order-status--\{\{item\.statusTone\}\}/);
   assert.match(orderStyle, /\.status-tab--active\s*\{[\s\S]*border:\s*1rpx solid #fe0000;/);
   assert.match(orderTemplate, /wx:if="\{\{keyword\}\}" class="order-search__text order-search__keyword">\{\{keyword\}\}<\/text>/);
@@ -929,7 +929,7 @@ test("收藏复用分类卡片并支持批量取消，足迹支持管理、批�
   assert.match(orderStyle, /\.order-product__content\s*\{[\s\S]*min-height:\s*176rpx;[\s\S]*grid-column:\s*2 \/ 4;[\s\S]*grid-template-rows:\s*auto auto;[\s\S]*align-content:\s*center;[\s\S]*row-gap:\s*@space-3;/);
   assert.match(orderStyle, /\.order-product__quantity\s*\{[\s\S]*grid-column:\s*1;[\s\S]*grid-row:\s*2;/);
   assert.match(orderStyle, /\.order-product__price\s*\{[\s\S]*grid-column:\s*2;[\s\S]*grid-row:\s*1;[\s\S]*justify-self:\s*end;/);
-  assert.match(orderStyle, /\.order-product__after-sale-status\s*\{[\s\S]*grid-column:\s*2;[\s\S]*grid-row:\s*2;[\s\S]*justify-self:\s*end;[\s\S]*color:\s*@color-action-primary;[\s\S]*font-size:\s*@font-size-xs;/);
+  assert.match(orderStyle, /\.order-product__after-sale-status\s*\{[\s\S]*grid-column:\s*1 \/ -1;[\s\S]*white-space:\s*normal;/);
   assert.doesNotMatch(orderTemplate, /order-product__body|order-product__commerce/);
   assert.doesNotMatch(orderStyle, /grid-template-rows:\s*1fr auto;/);
   assert.match(orderTemplate, /wx:elif="\{\{item\.items\.length > 1\}\}"[\s\S]*order-product--bundle[\s\S]*\+?\{\{item\.items\.length - 1\}\}[\s\S]*\{\{item\.amountText\}\}/);

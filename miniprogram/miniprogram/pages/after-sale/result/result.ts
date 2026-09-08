@@ -40,6 +40,7 @@ Page({
     if (this._pollTimer) clearTimeout(this._pollTimer)
     this._pollTimer = null
     if (!this._visible || !this.data.detail || !shouldPollAfterSale(this.data.detail.status)) return
+    if (this.data.detail.status === 'REQUESTED' && !this.data.detail.automaticReviewPending) return
     this._pollTimer = setTimeout(() => {
       this._pollTimer = null
       void this.loadResult()
@@ -58,13 +59,13 @@ Page({
     try {
       const detail = buildAfterSaleView(await getAfterSaleDetail(this.data.afterSaleId))
       if (request !== this._request || !this._visible) return
-      // Success is based on server state; pending requests stay on this minimal page.
-      const processing = ['REQUESTED', 'APPROVED', 'REFUNDING'].includes(detail.status)
+      const awaitingReview = detail.status === 'REQUESTED' && !detail.automaticReviewPending
+      const processing = !awaitingReview && ['REQUESTED', 'APPROVED', 'REFUNDING'].includes(detail.status)
       this.setData({
         detail,
         loading: false,
         errorText: '',
-        phase: detail.status === 'REFUNDED' ? 'success' : processing ? 'processing' : 'attention',
+        phase: detail.status === 'REFUNDED' ? 'success' : awaitingReview ? 'review' : processing ? 'processing' : 'attention',
         processingTitle: detail.status === 'REQUESTED' ? '正在审核' : '退款处理中'
       })
       // Return shipments require the address/form available on the detail page.

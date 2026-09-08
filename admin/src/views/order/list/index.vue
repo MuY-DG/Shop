@@ -550,6 +550,11 @@
                 <ElTableColumn label="规格" min-width="132">
                   <template #default="{ row }">{{ row.specText || '-' }}</template>
                 </ElTableColumn>
+                <ElTableColumn label="售后状态" min-width="210">
+                  <template #default="{ row }">
+                    <OrderItemAfterSale :item="row" @open="openActiveAfterSale" />
+                  </template>
+                </ElTableColumn>
                 <ElTableColumn label="小计" width="116" align="right">
                   <template #default="{ row }">
                     <strong>{{ formatMoney(row.lineAmountCent) }}</strong>
@@ -1174,6 +1179,7 @@
     formatTrackingSyncStatus,
     trackingPathEmptyText
   } from './tracking-state'
+  import OrderItemAfterSale from './modules/order-item-after-sale.vue'
   import ElectronicWaybillPanel from './modules/electronic-waybill-panel.vue'
   import { buildOrderRefundSummary } from './refund-summary'
   import {

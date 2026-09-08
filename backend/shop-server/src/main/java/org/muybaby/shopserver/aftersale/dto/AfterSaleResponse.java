@@ -28,7 +28,8 @@ public record AfterSaleResponse(
         RefundOrderResponse refundOrder,
         List<AfterSaleItemResponse> items,
         AfterSaleReturnResponse returnInfo,
-        List<String> allowedActions
+        List<String> allowedActions,
+        boolean automaticReviewPending
 ) {
     public AfterSaleResponse(
             Long id,
@@ -57,6 +58,6 @@ public record AfterSaleResponse(
                 requestedAmountCent, approvedAmountCent, auditNote,
                 reviewedBy, reviewedAt, createdAt,
                 evidenceFileIds, evidenceFiles, refundOrder,
-                List.of(), null, List.of());
+                List.of(), null, List.of(), false);
     }
 }

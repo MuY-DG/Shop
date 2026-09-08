@@ -7,6 +7,7 @@ import org.muybaby.shopserver.aftersale.service.UnshippedRefundScheduler;
 import org.muybaby.shopserver.aftersale.service.RefundFinalizationService;
 import org.muybaby.shopserver.payment.PaymentTestSupport;
 import org.muybaby.shopserver.payment.provider.MockWechatPayProvider;
+import org.muybaby.shopserver.payment.provider.WechatPayOrderQueryResult;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -38,11 +39,13 @@ class UnshippedAutomaticRefundTest extends PaymentTestSupport {
         var user = appLogin("auto-full");
         var order = seedPaidOrder(user, 2000, "PAID", "wx-auto-full");
         long id = apply(user, order, 2, "full");
+        assertReviewPending(user, id, true);
         assertThat(apply(user, order, 2, "full")).isEqualTo(id);
         assertThat(count("select count(*) from after_sale_status_log where event_type='AUTO_REFUND_QUEUED'")).isEqualTo(1);
         scheduler.runOnce();
         scheduler.runOnce();
         assertThat(state(id)).isEqualTo("REFUNDING");
+        assertReviewPending(user, id, false);
         verify(provider, times(1)).requestRefund(any(), any());
         assertThat(count("select count(*) from after_sale_status_log where event_type='REFUND_STARTED' and operator_type='SYSTEM' and operator_id is null")).isEqualTo(1);
         assertThat(count("select count(*) from refund_provider_attempt where source='SYSTEM'")).isGreaterThan(0);
@@ -62,6 +65,7 @@ class UnshippedAutomaticRefundTest extends PaymentTestSupport {
         var order = seedPaidOrder(user, 2000, "PAID", "wx-auto-partial");
         ship(order, 1);
         long id = apply(user, order, 1, "remaining");
+        assertReviewPending(user, id, true);
         scheduler.runOnce();
         assertThat(state(id)).isEqualTo("REFUNDING");
         assertThat(jdbcClient.sql("select source_type from after_sale_fulfillment_allocation").query(String.class).single()).isEqualTo("UNSHIPPED");
@@ -75,6 +79,7 @@ class UnshippedAutomaticRefundTest extends PaymentTestSupport {
         var order = seedPaidOrder(user, 2000, "PAID", "wx-auto-mixed");
         ship(order, 1);
         long id = apply(user, order, 2, "mixed");
+        assertReviewPending(user, id, false);
         scheduler.runOnce();
         assertThat(state(id)).isEqualTo("REQUESTED");
         assertThat(count("select count(*) from after_sale_status_log where event_type='AUTO_REFUND_QUEUED'")).isZero();
@@ -95,6 +100,7 @@ class UnshippedAutomaticRefundTest extends PaymentTestSupport {
         assertThat(state(id)).isEqualTo("REQUESTED");
         assertThat(count("select count(*) from refund_order")).isZero();
         assertThat(count("select count(*) from after_sale_status_log where event_type='AUTO_REFUND_REVIEW_REQUIRED'")).isEqualTo(1);
+        assertReviewPending(user, id, false);
         verify(provider, never()).requestRefund(any(), any());
     }
 
@@ -145,6 +151,7 @@ class UnshippedAutomaticRefundTest extends PaymentTestSupport {
         scheduler.runOnce();
         scheduler.runOnce();
         assertThat(state(id)).isEqualTo("REQUESTED");
+        assertReviewPending(user, id, false);
         assertThat(count("select count(*) from after_sale_status_log where event_type='AUTO_REFUND_REVIEW_REQUIRED'")).isEqualTo(1);
         verify(provider, never()).requestRefund(any(), any());
         verify(provider, times(1)).queryOrder(any(), any());
@@ -157,6 +164,7 @@ class UnshippedAutomaticRefundTest extends PaymentTestSupport {
         var order = seedPaidOrder(user, 2000, "PAID", "wx-auto-historical");
         long id = apply(user, order, 2, "old");
         jdbcClient.sql("delete from after_sale_status_log where event_type='AUTO_REFUND_QUEUED'").update();
+        assertReviewPending(user, id, false);
         scheduler.runOnce();
         assertThat(state(id)).isEqualTo("REQUESTED");
         verify(provider, never()).requestRefund(any(), any());
@@ -179,6 +187,56 @@ class UnshippedAutomaticRefundTest extends PaymentTestSupport {
         jdbcClient.sql("update shop_order set status='REFUNDED' where id=:id").param("id", order.orderId()).update();
         mockMvc.perform(get("/app/orders").header("Authorization", "Bearer " + user.token()))
                 .andExpect(status().isOk()).andExpect(jsonPath("$.data.records[0].logisticsSummary").doesNotExist());
+    }
+
+    @Test
+    void partialAutomaticRefundThenReceiptAllowsManualRefundWithWechatRefundTradeState() throws Exception {
+        seedEnabledPaymentConfig();
+        var user = appLogin("auto-then-received-refund");
+        var order = seedPaidOrder(user, 2000, "PAID", "wx-auto-then-received-refund");
+        long firstId = apply(user, order, 1, "first");
+        scheduler.runOnce();
+        finishRefund(order, firstId, "wx-first-refund", 1000);
+        assertThat(state(firstId)).isEqualTo("REFUNDED");
+
+        ship(order, 1);
+        mockMvc.perform(post("/app/orders/{id}/confirm-receipt", order.orderId())
+                        .header("Authorization", "Bearer " + user.token()))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.data.status").value("COMPLETED"));
+
+        // Match RealWechatPayProvider: REFUND retains payment identity but paid() is false.
+        var paid = provider.queryOrder(paymentConfigResolver.resolve(), order.outTradeNo());
+        doReturn(new WechatPayOrderQueryResult(false, paid.outTradeNo(), paid.transactionId(),
+                paid.amountCent(), paid.paidAt(), "REFUND")).when(provider).queryOrder(any(), any());
+        long secondId = apply(user, order, 1, "second");
+        assertReviewPending(user, secondId, false);
+        scheduler.runOnce();
+        assertThat(state(secondId)).isEqualTo("REQUESTED");
+        verify(provider, times(1)).requestRefund(any(), any());
+        mockMvc.perform(post("/admin/after-sales/{id}/approve", secondId)
+                        .header("Authorization", "Bearer " + adminLogin()).contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"approvedAmountCent\":1000}"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.data.status").value("REFUNDING"));
+        assertThat(jdbcClient.sql("select provider_status from refund_provider_attempt where after_sale_id=:id and decision='VERIFIED_PAID'")
+                .param("id", secondId).query(String.class).single()).isEqualTo("REFUND");
+        finishRefund(order, secondId, "wx-second-refund", 1000);
+        assertThat(state(secondId)).isEqualTo("REFUNDED");
+        assertThat(jdbcClient.sql("select refunded_amount_cent from shop_order where id=:id")
+                .param("id", order.orderId()).query(Long.class).single()).isEqualTo(2000);
+        assertThat(count("select count(*) from refund_order")).isEqualTo(2);
+        verify(provider, times(2)).requestRefund(any(), any());
+    }
+
+    private void finishRefund(SeedPaidOrder order, long id, String providerRefundId, long amount) {
+        var refundNo = jdbcClient.sql("select out_refund_no from refund_order where after_sale_id=:id")
+                .param("id", id).query(String.class).single();
+        finalization.apply(new RefundFinalizationService.ProviderRefundState(refundNo, providerRefundId,
+                order.outTradeNo(), "SUCCESS", amount, LocalDateTime.now(), "test"), paymentConfigResolver.resolve());
+    }
+
+    private void assertReviewPending(AppLoginSession user, long id, boolean expected) throws Exception {
+        mockMvc.perform(get("/app/after-sales/{id}", id).header("Authorization", "Bearer " + user.token()))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.data.automaticReviewPending").value(expected));
     }
 
     private long apply(AppLoginSession user, SeedPaidOrder order, int quantity, String key) throws Exception {

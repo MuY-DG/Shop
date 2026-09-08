@@ -41,6 +41,7 @@ public record AppOrderDetailResponse(
         List<AppOrderShipmentResponse> shipments,
         AfterSaleResponse latestAfterSale,
         List<Long> rebuyableOrderItemIds,
-        List<OrderItemResponse> items
+        List<OrderItemResponse> items,
+        Long refundedAmountCent
 ) {
 }

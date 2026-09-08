@@ -22,6 +22,7 @@ public record OrderItemResponse(
         Long lineOriginalAmountCent,
         Long lineAmountCent,
         boolean reviewed,
-        boolean reviewable
+        boolean reviewable,
+        OrderItemAfterSaleResponse afterSale
 ) {
 }

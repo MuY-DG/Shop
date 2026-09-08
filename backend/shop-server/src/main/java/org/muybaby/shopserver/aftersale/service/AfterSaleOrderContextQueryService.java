@@ -4,20 +4,26 @@ import org.muybaby.shopserver.aftersale.dto.AfterSaleOrderContextResponse;
 import org.muybaby.shopserver.common.error.BusinessException;
 import org.muybaby.shopserver.common.error.ErrorCode;
 import org.muybaby.shopserver.order.dto.OrderItemResponse;
+import org.muybaby.shopserver.order.dto.OrderItemAfterSaleResponse;
+import org.muybaby.shopserver.order.service.OrderItemAfterSaleQueryService;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Service;
 
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.util.List;
+import java.util.Map;
 
 @Service
 public class AfterSaleOrderContextQueryService {
 
     private final JdbcClient jdbcClient;
+    private final OrderItemAfterSaleQueryService itemAfterSales;
 
-    public AfterSaleOrderContextQueryService(JdbcClient jdbcClient) {
+    public AfterSaleOrderContextQueryService(JdbcClient jdbcClient,
+            OrderItemAfterSaleQueryService itemAfterSales) {
         this.jdbcClient = jdbcClient;
+        this.itemAfterSales = itemAfterSales;
     }
 
     public AfterSaleOrderContextResponse requireContext(Long orderId) {
@@ -45,6 +51,7 @@ public class AfterSaleOrderContextQueryService {
                 .optional()
                 .orElseThrow(() -> new BusinessException(ErrorCode.VALIDATION_FAILED));
 
+        var itemAfterSaleMap = itemAfterSales.forOrders(List.of(orderId));
         List<OrderItemResponse> items = jdbcClient.sql("""
                         select id as order_item_id,
                                sku_id,
@@ -97,7 +104,7 @@ public class AfterSaleOrderContextQueryService {
                         order by oi.id asc
                         """)
                 .param("orderId", orderId)
-                .query(this::mapOrderItem)
+                .query((rs, rowNum) -> mapOrderItem(rs, rowNum, itemAfterSaleMap))
                 .list();
 
         return new AfterSaleOrderContextResponse(
@@ -113,7 +120,7 @@ public class AfterSaleOrderContextQueryService {
         );
     }
 
-    private OrderItemResponse mapOrderItem(ResultSet rs, int rowNum) throws SQLException {
+    private OrderItemResponse mapOrderItem(ResultSet rs, int rowNum, Map<Long, OrderItemAfterSaleResponse> summaries) throws SQLException {
         return new OrderItemResponse(
                 rs.getLong("order_item_id"),
                 rs.getLong("sku_id"),
@@ -136,7 +143,8 @@ public class AfterSaleOrderContextQueryService {
                 rs.getLong("line_original_amount_cent"),
                 rs.getLong("line_amount_cent"),
                 rs.getBoolean("reviewed"),
-                rs.getBoolean("reviewable")
+                rs.getBoolean("reviewable"),
+                summaries.get(rs.getLong("order_item_id"))
         );
     }
 

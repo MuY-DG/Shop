@@ -25,6 +25,8 @@ import org.muybaby.shopserver.order.dto.AdminOrderSummaryResponse;
 import org.muybaby.shopserver.order.dto.AdminOrderStatusCountsResponse;
 import org.muybaby.shopserver.order.dto.OrderDetailResponse;
 import org.muybaby.shopserver.order.dto.OrderItemResponse;
+import org.muybaby.shopserver.order.dto.OrderItemAfterSaleResponse;
+import org.muybaby.shopserver.order.service.OrderItemAfterSaleQueryService;
 import org.muybaby.shopserver.order.dto.OrderStatusLogResponse;
 import org.muybaby.shopserver.security.AuthenticatedPrincipal;
 import org.springframework.jdbc.core.simple.JdbcClient;
@@ -47,6 +49,7 @@ public class AdminOrderService {
     private static final String OPERATOR_TYPE_ADMIN = "ADMIN";
 
     private final JdbcClient jdbcClient;
+    private final OrderItemAfterSaleQueryService itemAfterSales;
     private final OrderItemFulfillmentRepository fulfillment;
     private final OrderCloseService orderCloseService;
     private final WechatShippingUploadRecovery shippingUploadRecovery;
@@ -55,6 +58,7 @@ public class AdminOrderService {
 
     public AdminOrderService(
             JdbcClient jdbcClient,
+            OrderItemAfterSaleQueryService itemAfterSales,
             OrderCloseService orderCloseService,
             WechatShippingUploadRecovery shippingUploadRecovery,
             AfterSaleFulfillmentPolicy afterSaleFulfillmentPolicy,
@@ -62,6 +66,7 @@ public class AdminOrderService {
             OrderItemFulfillmentRepository fulfillment
     ) {
         this.jdbcClient = jdbcClient;
+        this.itemAfterSales = itemAfterSales;
         this.fulfillment = fulfillment;
         this.orderCloseService = orderCloseService;
         this.shippingUploadRecovery = shippingUploadRecovery;
@@ -281,6 +286,7 @@ public class AdminOrderService {
                 .optional()
                 .orElseThrow(() -> new BusinessException(ErrorCode.VALIDATION_FAILED));
 
+        var itemAfterSaleMap = itemAfterSales.forOrders(List.of(orderId));
         List<OrderItemResponse> items = jdbcClient.sql("""
                         select id as order_item_id,
                                sku_id,
@@ -333,7 +339,7 @@ public class AdminOrderService {
                         order by oi.id asc
                         """)
                 .param("orderId", orderId)
-                .query(this::mapOrderItem)
+                .query((rs, rowNum) -> mapOrderItem(rs, rowNum, itemAfterSaleMap))
                 .list();
 
         PaymentOrderSnapshot paymentOrder = findLatestPaymentOrder(orderId);
@@ -605,7 +611,7 @@ public class AdminOrderService {
         return group.statuses().stream().mapToLong(status -> counts.getOrDefault(status, 0L)).sum();
     }
 
-    private OrderItemResponse mapOrderItem(ResultSet rs, int rowNum) throws SQLException {
+    private OrderItemResponse mapOrderItem(ResultSet rs, int rowNum, Map<Long, OrderItemAfterSaleResponse> summaries) throws SQLException {
         return new OrderItemResponse(
                 rs.getLong("order_item_id"),
                 rs.getLong("sku_id"),
@@ -628,7 +634,8 @@ public class AdminOrderService {
                 rs.getLong("line_original_amount_cent"),
                 rs.getLong("line_amount_cent"),
                 rs.getBoolean("reviewed"),
-                rs.getBoolean("reviewable")
+                rs.getBoolean("reviewable"),
+                summaries.get(rs.getLong("order_item_id"))
         );
     }
 

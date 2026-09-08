@@ -196,7 +196,8 @@ test("订单列表展示最新售后结果并使用真实退款金额", () => {
     refundAmountCent: 4200
   };
   const refundedView = buildOrderSummaryView(refunded);
-  assert.equal(refundedView.afterSaleStatusText, "退款成功");
+  assert.equal(refundedView.afterSaleStatusText, "");
+  assert.equal(refundedView.refundSummaryText, "");
   assert.equal(refundedView.afterSaleStatusDescription, "原路返回支付金额¥42.00");
 
   const closedReturn = summary("COMPLETED");
@@ -225,11 +226,12 @@ test("订单列表展示最新售后结果并使用真实退款金额", () => {
   assert.equal(buildOrderSummaryView(summary("COMPLETED")).afterSaleStatusText, "");
 });
 
-test("多商品订单只退部分时卡片显示部分退款，分次退满后显示退款成功", () => {
+test("多商品订单按累计退款显示部分或全部退款，新的售后不覆盖历史退款", () => {
   const order = summary("PAID");
   order.items.push({ ...order.items[0]!, orderItemId: 902, skuId: 22, spuId: 32,
     productTitle: "番茄火锅底料", quantity: 1 });
   order.itemCount = 4;
+  order.refundedAmountCent = 1680;
   order.latestAfterSale = {
     afterSaleType: "REFUND_ONLY",
     status: "REFUNDED",
@@ -239,18 +241,21 @@ test("多商品订单只退部分时卡片显示部分退款，分次退满后�
   };
   for (const status of ["PAID", "PARTIALLY_SHIPPED", "SHIPPED", "COMPLETED"] as const) {
     const view = buildOrderSummaryView({ ...order, status });
-    assert.equal(view.afterSaleStatusText, "部分退款", status);
+    assert.equal(view.afterSaleStatusText, "", status);
+    assert.equal(view.refundSummaryText, "部分退款 · 已退 ¥16.80");
     assert.equal(view.afterSaleStatusDescription, "原路返回支付金额¥16.80");
   }
   // 最新一笔金额仍小于整单实付，但累计已退满，订单的权威状态是 REFUNDED。
-  const fullyRefunded = buildOrderSummaryView({ ...order, status: "REFUNDED" });
-  assert.equal(fullyRefunded.afterSaleStatusText, "退款成功");
+  const fullyRefunded = buildOrderSummaryView({ ...order, status: "REFUNDED", refundedAmountCent: 4540 });
+  assert.equal(fullyRefunded.afterSaleStatusText, "");
+  assert.equal(fullyRefunded.refundSummaryText, "全部退款 · 已退 ¥45.40");
   assert.equal(fullyRefunded.statusText, "交易关闭");
 
   const processing = buildOrderSummaryView({ ...order, latestAfterSale: {
     ...order.latestAfterSale, status: "REFUNDING"
   } });
   assert.equal(processing.afterSaleStatusText, "退款处理中");
+  assert.equal(processing.refundSummaryText, "部分退款 · 已退 ¥16.80");
 });
 
 test("订单详情使用零售金额与真实批发成交价生成可核对明细", () => {

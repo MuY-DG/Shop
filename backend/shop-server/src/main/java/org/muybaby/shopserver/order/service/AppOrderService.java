@@ -36,6 +36,8 @@ import org.muybaby.shopserver.order.dto.AppOrderPreviewRequest;
 import org.muybaby.shopserver.order.dto.AppOrderReceiverUpdateRequest;
 import org.muybaby.shopserver.order.dto.AppOrderSubmitRequest;
 import org.muybaby.shopserver.order.dto.OrderItemResponse;
+import org.muybaby.shopserver.order.dto.OrderItemAfterSaleResponse;
+import org.muybaby.shopserver.order.service.OrderItemAfterSaleQueryService;
 import org.muybaby.shopserver.order.dto.OrderPreviewItemResponse;
 import org.muybaby.shopserver.order.dto.OrderPreviewResponse;
 import org.muybaby.shopserver.order.dto.OrderReceiptResponse;
@@ -97,6 +99,7 @@ public class AppOrderService {
     private static final SecureRandom ORDER_NO_RANDOM = new SecureRandom();
 
     private final JdbcClient jdbcClient;
+    private final OrderItemAfterSaleQueryService itemAfterSales;
     private final NamedParameterJdbcTemplate namedParameterJdbcTemplate;
     private final StorageUsageService storageUsageService;
     private final CheckoutSelectionService checkoutSelectionService;
@@ -115,6 +118,7 @@ public class AppOrderService {
 
     public AppOrderService(
             JdbcClient jdbcClient,
+            OrderItemAfterSaleQueryService itemAfterSales,
             NamedParameterJdbcTemplate namedParameterJdbcTemplate,
             StorageUsageService storageUsageService,
             CheckoutSelectionService checkoutSelectionService,
@@ -131,6 +135,7 @@ public class AppOrderService {
             Clock clock
     ) {
         this.jdbcClient = jdbcClient;
+        this.itemAfterSales = itemAfterSales;
         this.namedParameterJdbcTemplate = namedParameterJdbcTemplate;
         this.storageUsageService = storageUsageService;
         this.checkoutSelectionService = checkoutSelectionService;
@@ -345,6 +350,7 @@ public class AppOrderService {
                                o.freight_cent,
                                o.payable_amount_cent,
                                o.paid_amount_cent,
+                               o.refunded_amount_cent,
                                o.created_at,
                                o.completed_at
                         from shop_order o
@@ -399,6 +405,7 @@ public class AppOrderService {
         }
 
         List<Long> orderIds = headers.stream().map(OrderSummaryHeader::orderId).toList();
+        var itemAfterSaleMap = itemAfterSales.forOrders(orderIds);
         List<OrderSummaryItemRow> itemRows = jdbcClient.sql("""
                         select oi.order_id,
                                oi.id as order_item_id,
@@ -440,7 +447,7 @@ public class AppOrderService {
                         order by oi.order_id, oi.id
                         """)
                 .param("orderIds", orderIds)
-                .query(this::mapOrderSummaryItemRow)
+                .query((rs, rowNum) -> mapOrderSummaryItemRow(rs, rowNum, itemAfterSaleMap))
                 .list();
         Map<Long, List<OrderSummaryItemResponse>> itemsByOrderId = new HashMap<>();
         for (OrderSummaryItemRow itemRow : itemRows) {
@@ -478,6 +485,7 @@ public class AppOrderService {
                                freight_cent,
                                payable_amount_cent,
                                paid_amount_cent,
+                               refunded_amount_cent,
                                receiver_name,
                                receiver_phone,
                                receiver_address,
@@ -504,6 +512,7 @@ public class AppOrderService {
                 .orElseThrow(() -> new BusinessException(ErrorCode.VALIDATION_FAILED));
         shippingUploadRecovery.reconcileOrder(orderId);
 
+        var itemAfterSaleMap = itemAfterSales.forOrders(List.of(orderId));
         List<OrderItemResponse> items = jdbcClient.sql("""
                         select id as order_item_id,
                                sku_id,
@@ -556,7 +565,7 @@ public class AppOrderService {
                         order by id asc
                         """)
                 .param("orderId", orderId)
-                .query(this::mapOrderItem)
+                .query((rs, rowNum) -> mapOrderItem(rs, rowNum, itemAfterSaleMap))
                 .list();
 
         PaymentOrderSnapshot paymentOrder = findLatestPaymentOrder(orderId);
@@ -622,7 +631,8 @@ public class AppOrderService {
                 shipments,
                 latestAfterSale,
                 rebuyableOrderItemIds,
-                items
+                items,
+                header.refundedAmountCent()
         );
     }
 
@@ -1446,12 +1456,13 @@ public class AppOrderService {
                 rs.getLong("freight_cent"),
                 rs.getLong("payable_amount_cent"),
                 rs.getLong("paid_amount_cent"),
+                rs.getLong("refunded_amount_cent"),
                 rs.getObject("created_at", LocalDateTime.class),
                 rs.getObject("completed_at", LocalDateTime.class)
         );
     }
 
-    private OrderSummaryItemRow mapOrderSummaryItemRow(ResultSet rs, int rowNum) throws SQLException {
+    private OrderSummaryItemRow mapOrderSummaryItemRow(ResultSet rs, int rowNum, Map<Long, OrderItemAfterSaleResponse> summaries) throws SQLException {
         return new OrderSummaryItemRow(
                 rs.getLong("order_id"),
                 new OrderSummaryItemResponse(
@@ -1468,7 +1479,8 @@ public class AppOrderService {
                         rs.getLong("unit_price_cent"),
                         rs.getInt("quantity"),
                         rs.getBoolean("reviewed"),
-                        rs.getBoolean("reviewable")
+                        rs.getBoolean("reviewable"),
+                        summaries.get(rs.getLong("order_item_id"))
                 )
         );
     }
@@ -1499,7 +1511,8 @@ public class AppOrderService {
                 pendingReviewCount,
                 latestAfterSale,
                 logisticsSummary,
-                header.createdAt()
+                header.createdAt(),
+                header.refundedAmountCent()
         );
     }
 
@@ -1595,6 +1608,7 @@ public class AppOrderService {
                 rs.getLong("freight_cent"),
                 rs.getLong("payable_amount_cent"),
                 rs.getLong("paid_amount_cent"),
+                rs.getLong("refunded_amount_cent"),
                 rs.getString("receiver_name"),
                 rs.getString("receiver_phone"),
                 rs.getString("receiver_address"),
@@ -1612,7 +1626,7 @@ public class AppOrderService {
         );
     }
 
-    private OrderItemResponse mapOrderItem(ResultSet rs, int rowNum) throws SQLException {
+    private OrderItemResponse mapOrderItem(ResultSet rs, int rowNum, Map<Long, OrderItemAfterSaleResponse> summaries) throws SQLException {
         return new OrderItemResponse(
                 rs.getLong("order_item_id"),
                 rs.getLong("sku_id"),
@@ -1635,7 +1649,8 @@ public class AppOrderService {
                 rs.getLong("line_original_amount_cent"),
                 rs.getLong("line_amount_cent"),
                 rs.getBoolean("reviewed"),
-                rs.getBoolean("reviewable")
+                rs.getBoolean("reviewable"),
+                summaries.get(rs.getLong("order_item_id"))
         );
     }
 
@@ -2004,6 +2019,7 @@ public class AppOrderService {
             Long freightCent,
             Long payableAmountCent,
             Long paidAmountCent,
+            Long refundedAmountCent,
             LocalDateTime createdAt,
             LocalDateTime completedAt
     ) {
@@ -2025,6 +2041,7 @@ public class AppOrderService {
             Long freightCent,
             Long payableAmountCent,
             Long paidAmountCent,
+            Long refundedAmountCent,
             String receiverName,
             String receiverPhone,
             String receiverAddress,

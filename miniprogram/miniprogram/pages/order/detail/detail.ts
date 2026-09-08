@@ -44,6 +44,7 @@ interface DatasetEvent {
     dataset: {
       index?: number | string;
       spuId?: number | string;
+      afterSaleId?: number | string;
     };
   };
 }
@@ -587,6 +588,12 @@ Page({
       this.setData({ actionType: "" });
       await this.refreshDetail();
     }
+  },
+
+  onItemAfterSaleTap(event: DatasetEvent) {
+    const id = positiveOrderId(event.currentTarget.dataset.afterSaleId);
+    if (!id || !this.data.detail?.items.some((item) => item.afterSaleRecords.some((sale) => sale.afterSaleId === id))) return;
+    wx.navigateTo({ url: buildAfterSaleDetailUrl(id) });
   },
 
   onAfterSaleActionTap() {

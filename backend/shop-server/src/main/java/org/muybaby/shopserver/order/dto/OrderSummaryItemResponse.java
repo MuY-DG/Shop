@@ -14,6 +14,7 @@ public record OrderSummaryItemResponse(
         Long unitPriceCent,
         Integer quantity,
         boolean reviewed,
-        boolean reviewable
+        boolean reviewable,
+        OrderItemAfterSaleResponse afterSale
 ) {
 }

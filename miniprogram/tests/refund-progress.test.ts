@@ -12,7 +12,7 @@ import type { AfterSaleResponse, AfterSaleStatus } from '../miniprogram/types/af
 function record(status: AfterSaleStatus): AfterSaleResponse {
   return {
     id: 71, afterSaleNo: 'AS71', orderId: 101, orderNo: 'ORD101', userId: '1',
-    afterSaleType: 'REFUND_ONLY', status, reason: '不想要了', requestedAmountCent: 2000,
+    afterSaleType: 'REFUND_ONLY', status, automaticReviewPending: status === 'REQUESTED', reason: '不想要了', requestedAmountCent: 2000,
     createdAt: '2026-09-08T00:00:00Z', evidenceFileIds: [], evidenceFiles: [], items: [], allowedActions: []
   }
 }
@@ -153,6 +153,47 @@ test('简约审核页面暂停轮询并忽略隐藏后的返回，重新显示�
   assert.equal(runtime.timers.size, 1)
   runtime.instance.onUnload()
   assert.equal(runtime.timers.size, 0)
+})
+
+test('人工审核申请查询后停止转圈和轮询，保留详情和原订单入口', async () => {
+  for (const automaticReviewPending of [false, undefined]) {
+    for (const afterSaleType of ['REFUND_ONLY', 'RETURN_REFUND'] as const) {
+      const runtime = page('result', async () => ({ ...record('REQUESTED'), afterSaleType, automaticReviewPending }))
+      runtime.instance.onLoad({ after_sale_id: '71' })
+      assert.equal(runtime.instance.data.phase, 'processing')
+      await new Promise<void>((resolve) => setImmediate(resolve))
+      assert.equal(runtime.instance.data.phase, 'review')
+      assert.equal(runtime.instance.data.loading, false)
+      assert.equal(runtime.timers.size, 0)
+      runtime.instance.onDetailTap()
+      runtime.instance.onOrderTap()
+      assert.deepEqual(runtime.redirects, [
+        '/pages/after-sale/detail/detail?after_sale_id=71',
+        orderCenter.buildOrderDetailUrl(101)
+      ])
+      runtime.instance.onUnload()
+    }
+  }
+})
+
+test('自动审核转人工后停止等待，重新进入页面时读取最新审核结果', async () => {
+  let current = record('REQUESTED')
+  const runtime = page('result', async () => current)
+  runtime.instance.onLoad({ after_sale_id: '71' })
+  await new Promise<void>((resolve) => setImmediate(resolve))
+  assert.equal(runtime.timers.size, 1)
+  current = { ...current, automaticReviewPending: false }
+  await runtime.instance.loadResult()
+  assert.equal(runtime.instance.data.phase, 'review')
+  assert.equal(runtime.timers.size, 0)
+  runtime.instance.onHide()
+  current = record('REFUNDING')
+  runtime.instance.onShow()
+  await new Promise<void>((resolve) => setImmediate(resolve))
+  assert.equal(runtime.instance.data.phase, 'processing')
+  assert.equal(runtime.instance.data.processingTitle, '退款处理中')
+  assert.equal(runtime.timers.size, 1)
+  runtime.instance.onUnload()
 })
 
 test('退款异常和关闭展示真实提示，退货流程仍可进入详情填写物流', async () => {

@@ -7,6 +7,7 @@ import org.muybaby.shopserver.aftersale.service.RefundRecoveryService;
 import org.muybaby.shopserver.payment.PaymentTestSupport;
 import org.muybaby.shopserver.payment.config.ResolvedPaymentConfig;
 import org.muybaby.shopserver.payment.provider.MockWechatPayProvider;
+import org.muybaby.shopserver.payment.provider.WechatPayOrderQueryResult;
 import org.muybaby.shopserver.payment.provider.WechatRefundRequest;
 import org.muybaby.shopserver.storage.provider.StorageProvider;
 import org.mockito.ArgumentCaptor;
@@ -31,6 +32,7 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.clearInvocations;
 import static org.mockito.Mockito.doCallRealMethod;
 import static org.mockito.Mockito.doAnswer;
+import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
@@ -682,6 +684,34 @@ class AdminAfterSaleControllerTest extends PaymentTestSupport {
                 .param("afterSaleId", afterSaleId)
                 .query(String.class)
                 .single()).isEqualTo("FAILURE|NOTPAY|PREFLIGHT_REJECTED");
+    }
+
+    @Test
+    void refundTradeStateStillRequiresMatchingPaymentIdentityAndRefundWindow() throws Exception {
+        seedEnabledPaymentConfig();
+        var user = appLogin("refund-state-identity");
+        var order = seedPaidOrder(user, 6980L, "COMPLETED", "wx-refund-state-identity");
+        long afterSaleId = applyAfterSale(user, order, 6980L);
+        var paid = refundProvider.queryOrder(paymentConfigResolver.resolve(), order.outTradeNo());
+        var now = LocalDateTime.now(java.time.ZoneOffset.UTC);
+        var invalidResults = List.of(
+                new WechatPayOrderQueryResult(false, "wrong-order", paid.transactionId(), 6980, now, "REFUND"),
+                new WechatPayOrderQueryResult(false, paid.outTradeNo(), "wrong-transaction", 6980, now, "REFUND"),
+                new WechatPayOrderQueryResult(false, paid.outTradeNo(), paid.transactionId(), 6979, now, "REFUND"),
+                new WechatPayOrderQueryResult(false, paid.outTradeNo(), paid.transactionId(), 6980, now.minusDays(366), "REFUND"),
+                new WechatPayOrderQueryResult(false, paid.outTradeNo(), paid.transactionId(), 6980, null, "REFUND"),
+                new WechatPayOrderQueryResult(true, paid.outTradeNo(), paid.transactionId(), 6980, now, "CLOSED"));
+        String adminToken = adminLogin();
+        clearInvocations(refundProvider);
+        for (var invalid : invalidResults) {
+            doReturn(invalid).when(refundProvider).queryOrder(any(), any());
+            mockMvc.perform(post("/admin/after-sales/{id}/approve", afterSaleId)
+                            .header("Authorization", "Bearer " + adminToken).contentType(MediaType.APPLICATION_JSON)
+                            .content("{\"approvedAmountCent\":6980}"))
+                    .andExpect(status().isBadRequest()).andExpect(jsonPath("$.code").value(700007));
+        }
+        assertThat(refundOrders(afterSaleId)).isEmpty();
+        verify(refundProvider, never()).requestRefund(any(), any());
     }
 
     @Test

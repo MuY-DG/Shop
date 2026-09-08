@@ -331,18 +331,26 @@
 }
 
 .order-product__after-sale-status {
-  max-width: 100%;
-  overflow: hidden;
-  grid-column: 2;
-  grid-row: 2;
-  align-self: center;
-  justify-self: end;
-  color: @color-action-primary;
+  display: flex;
+  min-width: 0;
+  grid-column: 1 / -1;
+  flex-direction: column;
+  gap: @space-1;
+  color: @color-warning-text;
   font-size: @font-size-xs;
-  font-weight: 500;
-  line-height: 1.4;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  line-height: 1.5;
+  white-space: normal;
+}
+.order-product__refund {
+  color: @color-success-text;
+}
+.order-refund-summary {
+  margin: 0 @space-5 @space-3;
+  padding: @space-3 0;
+  border-top: 1rpx solid @color-divider;
+  color: @color-success-text;
+  font-size: @font-size-xs;
+  line-height: 1.5;
 }
 
 .order-product__price {

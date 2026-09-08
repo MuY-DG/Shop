@@ -18,7 +18,8 @@ public record OrderSummaryResponse(
         Integer pendingReviewCount,
         AppOrderAfterSaleSummaryResponse latestAfterSale,
         AppOrderLogisticsSummaryResponse logisticsSummary,
-        LocalDateTime createdAt
+        LocalDateTime createdAt,
+        Long refundedAmountCent
 ) {
     public OrderSummaryResponse {
         items = items == null ? List.of() : List.copyOf(items);

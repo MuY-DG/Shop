@@ -154,6 +154,8 @@ export interface AfterSaleResponse {
   userNickname?: string
   afterSaleType: AfterSaleType
   status: AfterSaleStatus
+  /** 服务端确认已进入未发货自动审核队列，且尚未转交商家处理 */
+  automaticReviewPending?: boolean
   reason: string
   description?: string
   requestedAmountCent: number

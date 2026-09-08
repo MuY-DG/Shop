@@ -956,8 +956,12 @@ public class AdminAfterSaleService {
         }
         boolean paidWithinRefundWindow = providerOrder.paidAt() != null
                 && !providerOrder.paidAt().isBefore(LocalDateTime.now(clock).minusDays(365));
-        boolean verified = providerOrder.paid()
+        // WeChat moves the payment to REFUND after the first refund, including partial refunds.
+        // The provider's paid flag is SUCCESS-only; keep that meaning for payment reconciliation.
+        boolean refundableTradeState = providerOrder.paid()
                 && "SUCCESS".equalsIgnoreCase(providerOrder.tradeState())
+                || "REFUND".equalsIgnoreCase(providerOrder.tradeState());
+        boolean verified = refundableTradeState
                 && identity.outTradeNo().equals(providerOrder.outTradeNo())
                 && identity.paymentAmountCent() == providerOrder.amountCent()
                 && (!StringUtils.hasText(identity.transactionId())
