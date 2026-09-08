@@ -232,6 +232,7 @@ interface OrderSummaryActions {
   canRebuy: boolean;
   canReview: boolean;
   canAfterSale: boolean;
+  canViewAfterSale: boolean;
   hasActions: boolean;
   afterSaleActionMode: "APPLY" | "DETAIL";
   afterSaleActionText: string;
@@ -509,6 +510,7 @@ function summaryActions(
     canRebuy,
     canReview,
     canAfterSale,
+    canViewAfterSale: false,
     canViewLogistics,
     hasActions: canPay || canDelete || canRebuy || canReview || canAfterSale || canModify || canViewLogistics,
     afterSaleActionMode: "APPLY",
@@ -529,6 +531,19 @@ export function formatPaymentCountdown(value: unknown): string {
   return `${twoDigits(hours)}:${twoDigits(minutes)}:${twoDigits(seconds)}`;
 }
 
+// The application page rechecks authoritative eligibility; this only exposes
+// the entry for completed partial refunds without hiding the existing record.
+export function canContinueOrderAfterSale(order: OrderSummaryResponse | AppOrderDetailResponse): boolean {
+  const refunded = order.refundedAmountCent;
+  if (!canApplyAfterSale(order.status, order.latestAfterSale)
+    || typeof refunded !== "number" || !Number.isSafeInteger(refunded) || refunded <= 0
+    || !Number.isSafeInteger(order.paidAmountCent) || refunded >= order.paidAmountCent) return false;
+  const items = Array.isArray(order.items) ? order.items : [];
+  if (items.some((item) => item.afterSale?.records.some((record) => isActiveAfterSale(record.status)))) return false;
+  return items.some((item) => Number.isSafeInteger(item.quantity)
+    && item.quantity > (item.afterSale?.refundedQuantity ?? 0));
+}
+
 export function buildOrderSummaryView(order: OrderSummaryResponse): OrderSummaryView {
   const pendingReviewCount = Number.isSafeInteger(order.pendingReviewCount)
     ? Math.max(0, order.pendingReviewCount)
@@ -547,6 +562,13 @@ export function buildOrderSummaryView(order: OrderSummaryResponse): OrderSummary
     orderActions.hasActions = true;
     orderActions.afterSaleActionMode = "DETAIL";
     orderActions.afterSaleActionText = "查看售后";
+  }
+  orderActions.canViewAfterSale = Boolean(hasAfterSaleRecord);
+  if (canContinueOrderAfterSale(order)) {
+    orderActions.canAfterSale = true;
+    orderActions.hasActions = true;
+    orderActions.afterSaleActionMode = "APPLY";
+    orderActions.afterSaleActionText = "申请售后";
   }
   const afterSaleStatusText = order.latestAfterSale?.status === "REFUNDED" ? ""
     : order.latestAfterSale?.status === "WAITING_RETURN" ? "待寄回商品"
@@ -642,6 +664,7 @@ export function buildOrderDetailView(order: AppOrderDetailResponse): OrderDetail
     && latestAfterSaleView?.status === "REFUND_FAILED";
   const canApply = canApplyAfterSale(order.status, order.latestAfterSale);
   const afterSaleActionMode = !latestAfterSaleView || latestAfterSaleView.status === "CANCELLED"
+    || canContinueOrderAfterSale(order)
     ? "APPLY"
     : "DETAIL";
   const orderActions = actions(order.status);

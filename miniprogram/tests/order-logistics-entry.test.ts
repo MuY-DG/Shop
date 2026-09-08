@@ -157,6 +157,34 @@ function withAfterSale(): AppOrderDetailResponse {
   } }
 }
 
+function partialRefundOrder(): AppOrderDetailResponse {
+  const order = withAfterSale()
+  const item = { orderItemId: 901, skuId: 21, spuId: 31, productTitle: '商品', skuCode: 'SKU21',
+    quantity: 1, originalPriceCent: 100, unitPriceCent: 100, retailUnitPriceCent: 100,
+    lineOriginalAmountCent: 100, lineAmountCent: 100, reviewed: false, reviewable: false }
+  return { ...order, paidAmountCent: 200, refundedAmountCent: 100,
+    latestAfterSale: { ...order.latestAfterSale!, status: 'REFUNDED' },
+    items: [{ ...item, afterSale: { refundedQuantity: 1, refundedAmountCent: 100, fullyRefunded: true,
+      records: [{ afterSaleId: 301, afterSaleNo: 'AS301', status: 'REFUNDED', quantity: 1, amountCent: 100, appVisible: true }] } },
+      { ...item, orderItemId: 902, skuId: 22 }] }
+}
+
+test('部分退款订单从列表和详情都能继续申请，更多仍能打开历史记录', async () => {
+  const r = page('list', partialRefundOrder())
+  const event = { currentTarget: { dataset: { id: 100 } } }
+  assert.equal(r.instance.data.orders[0].afterSaleActionText, '申请售后')
+  await r.instance.onAfterSaleTap(event)
+  assert.deepEqual(r.navigations, [afterSales.buildAfterSaleApplyUrl(100)])
+  await r.instance.onAfterSaleTap({ currentTarget: { dataset: { id: 100, mode: 'DETAIL' } } })
+  assert.deepEqual(r.navigations, [afterSales.buildAfterSaleApplyUrl(100), afterSales.buildAfterSaleDetailUrl(301)])
+  const d = page('detail', partialRefundOrder())
+  assert.equal(d.instance.data.detail.afterSaleActionText, '申请售后')
+  d.instance.onAfterSaleActionTap()
+  assert.deepEqual(d.navigations, [afterSales.buildAfterSaleApplyUrl(100)])
+  d.instance.onItemAfterSaleTap({ currentTarget: { dataset: { afterSaleId: 301 } } })
+  assert.equal(d.navigations[1], afterSales.buildAfterSaleDetailUrl(301))
+})
+
 test('列表查看售后进入已有记录，申请售后才进入申请页', async () => {
   const r = page('list', withAfterSale())
   assert.equal(r.instance.data.orders[0].afterSaleActionText, '查看售后')

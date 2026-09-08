@@ -8,6 +8,7 @@ import {
   buildOrderModifyUrl,
   buildOrderReviewUrl,
   buildOrderSummaryView,
+  canContinueOrderAfterSale,
   filterRebuyableOrderItems,
   formatPaymentCountdown,
   ORDER_STATUS_TABS,
@@ -256,6 +257,35 @@ test("多商品订单按累计退款显示部分或全部退款，新的售后�
   } });
   assert.equal(processing.afterSaleStatusText, "退款处理中");
   assert.equal(processing.refundSummaryText, "部分退款 · 已退 ¥16.80");
+});
+
+test("部分退款后优先申请剩余商品，并保留历史售后入口", () => {
+  const order = summary("SHIPPED");
+  order.paidAmountCent = 200;
+  order.refundedAmountCent = 100;
+  order.latestAfterSale = { afterSaleType: "REFUND_ONLY", status: "REFUNDED", requestedAmountCent: 100 };
+  order.items[0] = { ...order.items[0]!, quantity: 1, afterSale: {
+    refundedQuantity: 1, refundedAmountCent: 100, fullyRefunded: true, records: []
+  } };
+  order.items.push({ ...order.items[0], orderItemId: 902, afterSale: undefined });
+  for (const status of ["PAID", "PARTIALLY_SHIPPED", "SHIPPED", "COMPLETED"] as const) {
+    const view = buildOrderSummaryView({ ...order, status });
+    assert.equal(view.canAfterSale, true, status);
+    assert.equal(view.afterSaleActionMode, "APPLY", status);
+    assert.equal(view.afterSaleActionText, "申请售后", status);
+    assert.equal(view.canViewAfterSale, true, status);
+  }
+  assert.equal(canContinueOrderAfterSale({ ...order, refundedAmountCent: 200 }), false);
+  assert.equal(canContinueOrderAfterSale({ ...order, status: "REFUNDED" }), false);
+  assert.equal(canContinueOrderAfterSale({ ...order, items: order.items.slice(0, 1) }), false);
+  assert.equal(canContinueOrderAfterSale({ ...order, latestAfterSale: {
+    ...order.latestAfterSale, status: "REFUNDING"
+  } }), false);
+  // Another item's ongoing application also blocks a new application, even if the latest record is refunded.
+  order.items[1]!.afterSale = { refundedQuantity: 0, refundedAmountCent: 0, fullyRefunded: false, records: [{
+    afterSaleId: 302, afterSaleNo: "AS302", status: "WAITING_RETURN", quantity: 1, amountCent: 100, appVisible: true
+  }] };
+  assert.equal(canContinueOrderAfterSale(order), false);
 });
 
 test("订单详情使用零售金额与真实批发成交价生成可核对明细", () => {

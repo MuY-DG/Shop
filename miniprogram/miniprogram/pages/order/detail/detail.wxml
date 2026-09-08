@@ -103,7 +103,7 @@
           <view
             wx:for="{{detail.items}}"
             wx:key="orderItemId"
-            class="detail-item {{index ? 'detail-item--divided' : ''}}"
+            class="detail-item"
             data-spu-id="{{item.spuId}}"
             bindtap="onItemTap"
           >
@@ -135,10 +135,17 @@
               <view wx:if="{{item.specText}}" class="detail-item__spec">{{item.specText}}</view>
               <view class="detail-item__quantity">x{{item.quantity}}</view>
               <view wx:if="{{item.itemRefundText || item.itemAfterSaleText}}" class="detail-item__after-sale">
-                <text wx:if="{{item.itemRefundText}}" class="detail-item__refund">{{item.itemRefundText}}</text>
-                <text wx:if="{{item.itemAfterSaleText}}" class="detail-item__pending">{{item.itemAfterSaleText}}</text>
-                <view wx:if="{{item.afterSaleRecords.length}}" class="detail-item__records">
-                  <button wx:for="{{item.afterSaleRecords}}" wx:for-item="sale" wx:key="afterSaleId" class="detail-item__record" data-after-sale-id="{{sale.afterSaleId}}" catchtap="onItemAfterSaleTap">{{sale.status === 'REFUNDED' ? '查看最近退款' : '查看售后进度'}} ›</button>
+                <view wx:if="{{item.itemRefundText}}" class="detail-item__after-sale-row">
+                  <text class="detail-item__refund">{{item.itemRefundText}}</text>
+                  <block wx:for="{{item.afterSaleRecords}}" wx:for-item="sale" wx:key="afterSaleId">
+                    <button wx:if="{{sale.status === 'REFUNDED'}}" class="detail-item__record" data-after-sale-id="{{sale.afterSaleId}}" catchtap="onItemAfterSaleTap">查看最近退款 ›</button>
+                  </block>
+                </view>
+                <view wx:if="{{item.itemAfterSaleText}}" class="detail-item__after-sale-row">
+                  <text class="detail-item__pending">{{item.itemAfterSaleText}}</text>
+                  <block wx:for="{{item.afterSaleRecords}}" wx:for-item="sale" wx:key="afterSaleId">
+                    <button wx:if="{{sale.status !== 'REFUNDED'}}" class="detail-item__record" data-after-sale-id="{{sale.afterSaleId}}" catchtap="onItemAfterSaleTap">查看售后进度 ›</button>
+                  </block>
                 </view>
               </view>
             </view>
@@ -156,7 +163,6 @@
             <text>优惠券<text wx:if="{{detail.couponName}}">（{{detail.couponName}}）</text></text>
             <text>-{{detail.couponDiscountText}}</text>
           </view>
-          <view wx:if="{{detail.refundSummaryText}}" class="amount-row amount-row--refund"><text>退款情况</text><text>{{detail.refundSummaryText}}</text></view>
           <view class="amount-card__divider"></view>
           <view class="amount-total">
             <text>共{{detail.totalQuantity}}件，合计</text>

@@ -125,6 +125,23 @@ test('单商品不可取消选择，报价失败有可重试状态', async () =>
   r.instance.onItemToggle(event(0)); assert.equal(r.instance.data.items[0].selected, true); assert.equal(r.instance.data.quote, null)
 })
 
+test('已无可售后数量的商品不展示，剩余商品按单商品申请并正确报价', async () => {
+  const data = eligibility()
+  Object.assign(data.items[0]!, { refundedQuantity: 3, availableQuantity: 0 })
+  data.refundedAmountCent = 1000; data.remainingRefundableAmountCent = 300
+  const r = runtime({ eligibility: data }); await r.instance.loadEligibility()
+  assert.deepEqual(plain(r.instance.data.items.map((item: { orderItemId: number }) => item.orderItemId)), [12])
+  assert.equal(r.instance.data.isBatch, false)
+  assert.equal(r.instance.data.selectedQuantity, 1)
+  r.instance.onItemAmountInput(event(0, '2.00')); await r.instance.refreshQuote()
+  assert.deepEqual(plain(r.instance.data.quote.items), [{ orderItemId: 12, quantity: 1, requestedAmountCent: 200 }])
+  r.instance.selectType('RETURN_REFUND'); await flush()
+  r.instance.selectType('REFUND_ONLY'); await flush()
+  assert.equal(r.instance.data.items.length, 1)
+  assert.equal(r.instance.data.items[0].orderItemId, 12)
+  assert.equal(r.instance.data.items[0].selected, true)
+})
+
 test('用户已排除的未发货商品，往返切换售后类型仍保持排除', async () => {
   const data = eligibility(); data.items[0]!.returnableQuantity = 1
   const r = runtime({ eligibility: data }); await r.instance.loadEligibility()

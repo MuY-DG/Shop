@@ -238,7 +238,7 @@ function progressSteps(type: AfterSaleType, status: AfterSaleStatus): AfterSaleP
   })
 }
 
-export function isActiveAfterSale(status: AfterSaleStatus): boolean {
+export function isActiveAfterSale(status: string): boolean {
   return [
     'REQUESTED',
     'APPROVED',
@@ -269,7 +269,7 @@ function buildAfterSaleItemView(item: AfterSaleItemResponse): AfterSaleItemView 
 
 export function canApplyAfterSale(
   orderStatus: OrderStatus,
-  latestAfterSale?: AfterSaleResponse
+  latestAfterSale?: Pick<AfterSaleResponse, 'status'>
 ): boolean {
   const eligibleOrder = orderStatus === 'PAID' || orderStatus === 'PARTIALLY_SHIPPED'
     || orderStatus === 'SHIPPED' || orderStatus === 'COMPLETED'

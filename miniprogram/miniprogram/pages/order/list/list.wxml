@@ -222,6 +222,15 @@
                   hover-class="order-menu__item--pressed"
                   aria-role="menuitem"
                 >删除订单</button>
+                <button
+                  wx:if="{{item.canViewAfterSale && item.afterSaleActionMode === 'APPLY'}}"
+                  class="order-menu__item"
+                  data-id="{{item.orderId}}"
+                  data-mode="DETAIL"
+                  catchtap="onAfterSaleTap"
+                  hover-class="order-menu__item--pressed"
+                  aria-role="menuitem"
+                >查看售后</button>
               </view>
             </view>
             <button

@@ -41,7 +41,7 @@ export function refundAmountInputWidth(text: string): number {
 }
 
 export function selectableItems(eligibility: AfterSaleEligibilityResponse, type: AfterSaleType): SelectableItem[] {
-  return eligibility.items.map((item) => {
+  return eligibility.items.filter((item) => item.availableQuantity > 0).map((item) => {
     const selectableQuantity = afterSaleItemSelectableQuantity(item, type)
     return updateItemQuantity({ ...item, specText: displaySpecText(item.specText), selectableQuantity,
       selected: selectableQuantity > 0, selectionWanted: true, quantity: 0, maxAmountCent: 0, maxAmountText: '',

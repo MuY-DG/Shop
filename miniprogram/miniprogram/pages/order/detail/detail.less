@@ -80,7 +80,7 @@
 }
 
 .detail-content {
-  padding: 24rpx 12rpx @space-8;
+  padding: 0 12rpx @space-8;
   box-sizing: border-box;
 }
 
@@ -202,12 +202,6 @@ button.receiver-card__modify {
   box-sizing: border-box;
   grid-template-columns: 136rpx minmax(0, 1fr);
   gap: @space-4;
-}
-
-.detail-item--divided {
-  margin-top: @space-2;
-  padding-top: @space-4;
-  border-top: 1rpx solid @color-divider;
 }
 
 .detail-item__image-shell {
@@ -790,22 +784,24 @@ button.detail-action[disabled] {
   font-size: @font-size-xs;
   line-height: 1.5;
 }
-.detail-item__refund,
-.amount-row--refund {
+.detail-item__refund {
   color: @color-success-text;
 }
 .detail-item__pending {
   color: @color-warning-text;
 }
-.detail-item__records {
+.detail-item__after-sale-row {
   display: flex;
+  min-width: 0;
+  align-items: baseline;
   flex-wrap: wrap;
-  gap: @space-3;
+  gap: @space-1 @space-3;
 }
 button.detail-item__record {
   width: auto;
+  flex: none;
   margin: 0;
-  padding: @space-2 0;
+  padding: 0;
   color: @color-text-secondary;
   background: transparent;
   font-size: @font-size-xs;

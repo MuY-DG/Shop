@@ -40,6 +40,7 @@ interface DatasetEvent {
       itemId?: number | string;
       orderNo?: string;
       entry?: string;
+      mode?: string;
     };
   };
 }
@@ -564,7 +565,10 @@ Page({
     const orderId = positiveOrderId(event.currentTarget.dataset.id);
     const order = this.data.orders.find((item) => item.orderId === orderId);
     if (!order?.canAfterSale || this.data.actionOrderId || !this._visible) return;
-    if (order.afterSaleActionMode === "APPLY") {
+    const viewRecord = event.currentTarget.dataset.mode === "DETAIL";
+    if (viewRecord && !order.canViewAfterSale) return;
+    if (order.afterSaleActionMode === "APPLY" && !viewRecord) {
+      this.setData({ openMenuOrderId: 0 });
       wx.navigateTo({ url: buildAfterSaleApplyUrl(orderId) });
       return;
     }
