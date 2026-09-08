@@ -425,7 +425,7 @@ test("分类页固定工具区并统一搜索、排序和分类视觉", () => {
   assert.doesNotMatch(catalogTemplate, />查看商品<\/view>/);
   assert.match(catalogLogic, /async onContentRefresh\(\)[\s\S]*await this\.refresh\(\)/);
   assert.match(categoryLogic, /this\.data\.shown[\s\S]*this\.catalog\(\)\?\.silentRefresh\(\)/);
-  assert.match(catalogLogic, /async silentRefresh\(\)[\s\S]*this\.loadFirstPage\(true, true\)/);
+  assert.match(catalogLogic, /async silentRefresh\(\)[\s\S]*this\.loadFirstPage\(true, true, true\)/);
   assert.match(catalogLogic, /onContentLower\(\)[\s\S]*this\.loadMore\(\)/);
   assert.doesNotMatch(catalogLogic + catalogTemplate + catalogStyle, /embedded/);
   assert.match(catalogLogic, /sortMode: "COMPREHENSIVE"/);
@@ -1940,7 +1940,7 @@ test("微信支付与订单中心注册真实页面和关键操作", () => {
   assert.match(detailTemplate, /class="detail-scroll"[\s\S]*scroll-y="\{\{true\}\}"/);
   assert.match(detailLogic, /buildOrderModifyUrl/);
   assert.match(detailLogic, /copyOrderNo/);
-  assert.match(detailLogic, /buildOrderLogisticsUrl/);
+  assert.match(detailLogic, /openShipmentLogistics/);
   assert.match(detailLogic, /orderInfoExpanded: false/);
   assert.match(orderService, /shipmentWaybillToken\(orderId, shipmentId\)[\s\S]*method:\s*"POST"/);
   assert.match(logisticsFeature, /requirePlugin\.async\("logisticsPlugin"\)/);

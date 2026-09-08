@@ -1,3 +1,4 @@
+import { beginListRequest, isCurrentListRequest, reloadListPages, rememberListScroll, listScrollPatch } from "../../features/list-refresh";
 import {
   buildAfterSaleApplyUrl,
   buildAfterSaleDetailUrl,
@@ -24,6 +25,7 @@ interface DatasetEvent {
 interface RefreshOptions {
   silent?: boolean;
   suppressError?: boolean;
+  preservePosition?: boolean;
 }
 
 const PAGE_SIZE = 10;
@@ -31,7 +33,6 @@ const STATUS_TABS: ReadonlyArray<{ value: AfterSaleStatusGroup; label: string }>
   { value: "PROCESSING", label: "处理中" },
   { value: "COMPLETED", label: "已完结" }
 ]);
-let latestListRequest = 0;
 
 function statusGroup(value: unknown): AfterSaleStatusGroup {
   return String(value).toUpperCase() === "COMPLETED" ? "COMPLETED" : "PROCESSING";
@@ -60,6 +61,8 @@ function confirmDelete(): Promise<boolean> {
 
 Component({
   data: {
+    scrollTop: 0,
+    refreshing: false,
     tabs: STATUS_TABS,
     activeGroup: "PROCESSING" as AfterSaleStatusGroup,
     records: [] as AfterSaleView[],
@@ -80,25 +83,37 @@ Component({
       void this.loadRecords(true);
     },
     detached() {
-      latestListRequest += 1;
+      beginListRequest(this);
     }
   },
 
   pageLifetimes: {
+    hide() {
+      beginListRequest(this);
+      this.setData({ loading: false, loadingMore: false, refreshing: false });
+    },
     show() {
+      if (!this.data.loaded && !this.data.loading) {
+        void this.loadRecords(true);
+        return;
+      }
       if (
         this.data.loaded
         && !this.data.loading
         && !this.data.loadingMore
+        && !this.data.refreshing
         && !this.data.contentRefreshing
         && !this.data.actionAfterSaleId
       ) {
-        void this.loadRecords(true, { silent: true, suppressError: true });
+        void this.loadRecords(true, { silent: true, suppressError: true, preservePosition: true });
       }
     }
   },
 
   methods: {
+    onListScroll(event: WechatMiniprogram.ScrollViewScroll) {
+      rememberListScroll(this, event.detail.scrollTop);
+    },
     onTabTap(event: DatasetEvent) {
       const group = statusGroup(event.currentTarget.dataset.group);
       if (
@@ -119,7 +134,7 @@ Component({
     },
 
     async onContentRefresh() {
-      if (this.data.contentRefreshing || this.data.loading || this.data.loadingMore) return;
+      if (this.data.contentRefreshing || this.data.loading || this.data.loadingMore || this.data.refreshing) return;
       this.setData({ contentRefreshing: true });
       try {
         await this.loadRecords(true, { silent: true });
@@ -129,7 +144,7 @@ Component({
     },
 
     onReachBottom() {
-      if (this.data.hasMore && !this.data.loading && !this.data.loadingMore) {
+      if (this.data.hasMore && !this.data.loading && !this.data.loadingMore && !this.data.refreshing) {
         void this.loadRecords(false);
       }
     },
@@ -139,9 +154,11 @@ Component({
     },
 
     async loadRecords(reset: boolean, options: RefreshOptions = {}) {
-      const requestId = ++latestListRequest;
+      if (!reset && this.data.refreshing) return;
+      const requestId = beginListRequest(this);
       const current = reset ? 1 : this.data.current + 1;
       const silent = reset && options.silent === true && this.data.loaded;
+      if (reset) this.setData({ refreshing: true });
       if (silent) {
         if (!options.suppressError) this.setData({ errorText: "" });
       } else {
@@ -150,13 +167,19 @@ Component({
           : { loadingMore: true, errorText: "" });
       }
       try {
-        const page = await getAfterSales(current, PAGE_SIZE, undefined, this.data.activeGroup);
-        if (requestId !== latestListRequest) return;
+        const group = this.data.activeGroup;
+        const page = reset
+          ? await reloadListPages(options.preservePosition ? this.data.current : 1,
+              (page) => getAfterSales(page, PAGE_SIZE, undefined, group),
+              () => isCurrentListRequest(this, requestId))
+          : await getAfterSales(current, PAGE_SIZE, undefined, group);
+        if (!page || !isCurrentListRequest(this, requestId)) return;
         const incoming = (Array.isArray(page.records) ? page.records : []).map(buildAfterSaleView);
         const records = reset ? incoming : [...this.data.records, ...incoming];
         const total = Math.max(0, Number(page.total) || 0);
         this.setData({
           records,
+          ...(reset ? listScrollPatch(this, options.preservePosition === true) : {}),
           current: Number(page.current) || current,
           total,
           hasMore: records.length < total,
@@ -166,13 +189,15 @@ Component({
           errorText: ""
         });
       } catch (error) {
-        if (requestId !== latestListRequest || silent && options.suppressError) return;
+        if (!isCurrentListRequest(this, requestId) || silent && options.suppressError) return;
         this.setData({
           loading: false,
           loadingMore: false,
           loaded: this.data.records.length > 0,
           errorText: actionError(error, "售后记录加载失败，请稍后重试")
         });
+      } finally {
+        if (isCurrentListRequest(this, requestId)) this.setData({ refreshing: false });
       }
     },
 

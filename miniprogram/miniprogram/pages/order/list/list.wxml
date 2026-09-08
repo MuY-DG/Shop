@@ -49,6 +49,8 @@
     wx:else
     class="orders-scroll"
     scroll-y="{{true}}"
+    scroll-top="{{scrollTop}}"
+    bindscroll="onListScroll"
     enhanced="{{true}}"
     bounces="{{false}}"
     enable-passive="{{true}}"
@@ -179,9 +181,8 @@
           <view wx:if="{{item.logisticsStatusText}}" class="order-logistics"
             data-id="{{item.orderId}}" catchtap="onLogisticsTap" hover-class="order-logistics--pressed"
             aria-role="button" aria-label="{{item.logisticsStatusText}}，查看物流">
-            <image class="order-logistics__icon" src="/assets/icons/delivery-truck.svg" mode="aspectFit" aria-hidden="true" />
+            <image class="order-logistics__icon" src="/assets/icons/profile-order-receive.svg" mode="aspectFit" aria-hidden="true" />
             <text class="order-logistics__status">{{item.logisticsStatusText}}</text>
-            <text class="order-logistics__description">{{item.logisticsDescription}}</text>
             <image class="order-logistics__arrow" src="/assets/icons/chevron-right-detail.svg" mode="aspectFit" aria-hidden="true" />
           </view>
 

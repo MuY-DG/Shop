@@ -54,6 +54,7 @@ export interface LogisticsPluginRuntime {
 export interface OpenOrderLogisticsOptions {
   requestWaybillToken: () => Promise<OrderWaybillTokenResponse>;
   loadPlugin?: () => unknown | Promise<unknown>;
+  isCurrent?: () => boolean;
 }
 
 export interface OrderTrackingEventView {
@@ -186,6 +187,7 @@ export async function openOrderLogistics(
 ): Promise<boolean> {
   try {
     const response = await options.requestWaybillToken();
+    if (options.isCurrent && !options.isCurrent()) return false;
     const waybillToken = typeof response?.waybillToken === "string"
       ? response.waybillToken.trim()
       : "";
@@ -193,7 +195,7 @@ export async function openOrderLogistics(
       return false;
     }
     const plugin = logisticsPlugin(await (options.loadPlugin || defaultPluginLoader)());
-    if (!plugin) {
+    if (!plugin || options.isCurrent && !options.isCurrent()) {
       return false;
     }
     plugin.openWaybillTracking({ waybillToken });
@@ -201,4 +203,54 @@ export async function openOrderLogistics(
   } catch {
     return false;
   }
+}
+
+
+export interface OpenShipmentLogisticsOptions {
+  shipments: OrderShipmentView[];
+  choosePackage?: (labels: string[]) => Promise<number | null>;
+  requestWaybillToken: (shipmentId: number) => Promise<OrderWaybillTokenResponse>;
+  isCurrent: () => boolean;
+  loadPlugin?: () => unknown | Promise<unknown>;
+}
+
+/** Physical parcels go straight to WeChat; non-trackable deliveries have no plugin target. */
+export async function openShipmentLogistics(
+  options: OpenShipmentLogisticsOptions
+): Promise<"OPENED" | "UNAVAILABLE" | "CANCELLED"> {
+  const shipments = options.shipments.filter((shipment) => shipment.canOpenTracking);
+  if (!shipments.length) return "UNAVAILABLE";
+  let selected = shipments[0];
+  if (shipments.length > 1) {
+    let offset = 0;
+    while (options.isCurrent()) {
+      // Native action sheets allow six entries; keep every parcel reachable.
+      const visible = shipments.length > 6 ? shipments.slice(offset, offset + 5) : shipments;
+      const labels = [
+        ...visible.map((shipment) => `包裹 ${shipment.packageNo} · ${shipment.carrierName} ${shipment.trackingNo}`),
+        ...(shipments.length > 6 ? ["查看其他包裹"] : [])
+      ];
+      const choice = await (options.choosePackage
+        ? options.choosePackage(labels)
+        : new Promise<number | null>((resolve) => wx.showActionSheet({
+          itemList: labels,
+          success: (result) => resolve(result.tapIndex),
+          fail: () => resolve(null)
+        })));
+      if (choice === null || !options.isCurrent()) return "CANCELLED";
+      if (choice < visible.length) {
+        selected = visible[choice];
+        break;
+      }
+      offset = offset + 5 < shipments.length ? offset + 5 : 0;
+    }
+  }
+  if (!selected || !options.isCurrent()) return "CANCELLED";
+  const shipmentId = selected.shipmentId;
+  const opened = await openOrderLogistics({
+    requestWaybillToken: () => options.requestWaybillToken(shipmentId),
+    loadPlugin: options.loadPlugin,
+    isCurrent: options.isCurrent
+  });
+  return opened ? "OPENED" : options.isCurrent() ? "UNAVAILABLE" : "CANCELLED";
 }

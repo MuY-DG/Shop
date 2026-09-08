@@ -85,6 +85,8 @@
   <scroll-view
     class="catalog-content"
     scroll-y="{{tabPage || scrollPage}}"
+    scroll-top="{{scrollTop}}"
+    bindscroll="onListScroll"
     enhanced="{{tabPage || scrollPage}}"
     show-scrollbar="{{false}}"
     lower-threshold="160"

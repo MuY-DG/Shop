@@ -255,7 +255,6 @@ export interface OrderSummaryView extends Omit<OrderSummaryResponse, "items">, O
   afterSaleStatusText: string;
   afterSaleStatusDescription: string;
   logisticsStatusText: string;
-  logisticsDescription: string;
 }
 
 export interface OrderItemView extends OrderItemResponse {
@@ -543,10 +542,7 @@ export function buildOrderSummaryView(order: OrderSummaryResponse): OrderSummary
   return {
     ...order,
     ...orderActions,
-    logisticsStatusText: orderActions.canViewLogistics ? logistics?.statusText || "已发货" : "",
-    logisticsDescription: logistics?.packageCount && logistics.packageCount > 1
-      ? `共 ${logistics.packageCount} 个包裹 · ${logistics.latestMessage || "查看包裹进度"}`
-      : logistics?.latestMessage || "等待物流更新",
+    logisticsStatusText: orderActions.canViewLogistics ? "已发货" : "",
     pendingReviewCount,
     items: (Array.isArray(order.items) ? order.items : []).map(buildOrderSummaryItemView),
     statusText: orderActions.canReview

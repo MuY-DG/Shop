@@ -508,11 +508,10 @@ test("再次购买对下架、库存和部分成功给出明确提示", () => {
   assert.equal(rebuyPartialMessage(2, 3), "已加入2款，1款暂不可购");
 });
 
-test('订单卡片展示物流快照、包裹数量并在整单退款后隐藏物流', () => {
+test('订单卡片只保留已发货，并在整单退款后隐藏物流', () => {
   const snapshot = { shipmentId: 8, statusText: '运输中', latestMessage: '到达成都转运中心', packageCount: 2 };
   const shipped = buildOrderSummaryView({ ...summary('SHIPPED'), logisticsSummary: snapshot });
-  assert.equal(shipped.logisticsStatusText, '运输中');
-  assert.equal(shipped.logisticsDescription, '共 2 个包裹 · 到达成都转运中心');
+  assert.equal(shipped.logisticsStatusText, '已发货');
   assert.equal(shipped.canViewLogistics, true);
   const refunded = buildOrderSummaryView({ ...summary('REFUNDED'), logisticsSummary: snapshot });
   assert.equal(refunded.logisticsStatusText, '');

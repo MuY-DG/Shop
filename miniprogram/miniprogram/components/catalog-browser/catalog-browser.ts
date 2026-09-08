@@ -1,3 +1,4 @@
+import { reloadListPages, rememberListScroll, listScrollPatch } from "../../features/list-refresh";
 import {
   buildCatalogProductCards,
   buildCatalogParameterFilterGroups,
@@ -117,6 +118,7 @@ Component({
   },
 
   data: {
+    scrollTop: 0,
     categories: [] as ProductCategory[],
     categoryTabs: [] as CategoryTabView[],
     activeCategoryId: 0,
@@ -167,6 +169,9 @@ Component({
   },
 
   methods: {
+    onListScroll(event: WechatMiniprogram.ScrollViewScroll) {
+      rememberListScroll(this, event.detail.scrollTop);
+    },
     onContentLower() {
       if (this.data.tabPage || this.data.scrollPage) {
         void this.loadMore();
@@ -218,7 +223,7 @@ Component({
             this.data.selectedParameterValues,
             true
           ),
-          this.loadFirstPage(true, true)
+          this.loadFirstPage(true, true, true)
         ]);
       } finally {
         this.setData({ silentRefreshing: false });
@@ -283,7 +288,7 @@ Component({
       }
     },
 
-    async loadFirstPage(preserveContent = false, suppressError = false) {
+    async loadFirstPage(preserveContent = false, suppressError = false, preservePosition = false) {
       const requestId = nextRequestId(this);
       const keepCurrentContent = preserveContent && this.data.loaded;
       const background = keepCurrentContent && suppressError;
@@ -295,19 +300,18 @@ Component({
         });
       }
       try {
-        const result = await getProductList(buildProductListQuery(
-          this.data.activeCategoryId,
-          this.data.activeKeyword,
-          1,
-          this.data.sortMode,
-          this.data.selectedParameterValues
-        ));
-        if (!isCurrentRequest(this, requestId)) {
+        const query = buildProductListQuery(this.data.activeCategoryId, this.data.activeKeyword,
+          1, this.data.sortMode, this.data.selectedParameterValues);
+        const result = await reloadListPages(preservePosition ? this.data.current : 1,
+          (current) => getProductList({ ...query, current }),
+          () => isCurrentRequest(this, requestId));
+        if (!result || !isCurrentRequest(this, requestId)) {
           return;
         }
         const sourceProducts = Array.isArray(result.records) ? result.records : [];
         this.setData({
           sourceProducts,
+          ...listScrollPatch(this, preservePosition),
           products: buildCatalogProductCards(sourceProducts),
           current: parsePositiveId(result.current) || 1,
           total: Math.max(0, Number(result.total) || 0),
@@ -343,6 +347,7 @@ Component({
       if (
         this.data.loading ||
         this.data.loadingMore ||
+        this.data.silentRefreshing ||
         this.data.sourceProducts.length >= this.data.total
       ) {
         return;

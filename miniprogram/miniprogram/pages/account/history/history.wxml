@@ -27,6 +27,8 @@
   <scroll-view
     class="account-scroll"
     scroll-y="{{true}}"
+    scroll-top="{{scrollTop}}"
+    bindscroll="onListScroll"
     enhanced="{{true}}"
     bounces="{{false}}"
     enable-passive="{{true}}"

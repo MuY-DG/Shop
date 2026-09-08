@@ -1,3 +1,4 @@
+import { beginListRequest, isCurrentListRequest, reloadListPages, rememberListScroll, listScrollPatch } from "../../../features/list-refresh";
 import {
   buildFavoriteProductViews,
   type FavoriteProductView
@@ -40,10 +41,10 @@ interface FavoriteCollection {
 interface RefreshOptions {
   silent?: boolean;
   suppressError?: boolean;
+  preservePosition?: boolean;
 }
 
 const PAGE_SIZE = 10;
-let latestRequest = 0;
 
 function actionError(error: unknown, fallback: string): string {
   return isApiError(error)
@@ -86,6 +87,8 @@ function favoriteCollection(
 
 Page({
   data: {
+    scrollTop: 0,
+    refreshing: false,
     items: [] as FavoriteProductView[],
     current: 1,
     total: 0,
@@ -106,19 +109,33 @@ Page({
   },
 
   onShow() {
+    if (!this.data.loaded && !this.data.loading) {
+      void this.refresh();
+      return;
+    }
     if (
       this.data.loaded
       && !this.data.loading
       && !this.data.loadingMore
+      && !this.data.refreshing
       && !this.data.contentRefreshing
       && !this.data.deleting
     ) {
-      void this.refresh({ silent: true, suppressError: true });
+      void this.refresh({ silent: true, suppressError: true, preservePosition: true });
     }
   },
 
+  onListScroll(event: WechatMiniprogram.ScrollViewScroll) {
+    rememberListScroll(this, event.detail.scrollTop);
+  },
+
+  onHide() {
+    beginListRequest(this);
+    this.setData({ loading: false, loadingMore: false, refreshing: false });
+  },
+
   onUnload() {
-    latestRequest += 1;
+    beginListRequest(this);
   },
 
   async onContentRefresh() {
@@ -126,6 +143,7 @@ Page({
       this.data.contentRefreshing
       || this.data.loading
       || this.data.loadingMore
+      || this.data.refreshing
       || this.data.deleting
     ) {
       return;
@@ -147,8 +165,9 @@ Page({
   },
 
   async refresh(options: RefreshOptions = {}) {
-    const requestId = ++latestRequest;
+    const requestId = beginListRequest(this);
     const silent = options.silent === true && this.data.loaded;
+    this.setData({ refreshing: true });
     if (silent) {
       if (!options.suppressError) {
         this.setData({ errorText: "" });
@@ -157,8 +176,10 @@ Page({
       this.setData({ loading: true, loadingMore: false, errorText: "" });
     }
     try {
-      const response = await getFavorites(1, PAGE_SIZE);
-      if (requestId !== latestRequest) {
+      const response = await reloadListPages(options.preservePosition ? this.data.current : 1,
+        (current) => getFavorites(current, PAGE_SIZE),
+        () => isCurrentListRequest(this, requestId));
+      if (!response || !isCurrentListRequest(this, requestId)) {
         return;
       }
       const sourceItems = buildFavoriteProductViews(response.records);
@@ -168,6 +189,7 @@ Page({
           sourceItems,
           managing ? this.data.selectedIds : []
         ),
+        ...listScrollPatch(this, options.preservePosition === true),
         current: response.current,
         total: response.total,
         hasMore: response.current * response.size < response.total,
@@ -177,7 +199,7 @@ Page({
         errorText: ""
       });
     } catch (error) {
-      if (requestId === latestRequest) {
+      if (isCurrentListRequest(this, requestId)) {
         if (silent && options.suppressError) {
           return;
         }
@@ -187,6 +209,8 @@ Page({
           errorText: actionError(error, "收藏加载失败，请稍后重试")
         });
       }
+    } finally {
+      if (isCurrentListRequest(this, requestId)) this.setData({ refreshing: false });
     }
   },
 
@@ -195,15 +219,16 @@ Page({
       !this.data.hasMore
       || this.data.loading
       || this.data.loadingMore
+      || this.data.refreshing
       || this.data.deleting
     ) {
       return;
     }
-    const requestId = ++latestRequest;
+    const requestId = beginListRequest(this);
     this.setData({ loadingMore: true });
     try {
       const response = await getFavorites(this.data.current + 1, PAGE_SIZE);
-      if (requestId !== latestRequest) {
+      if (!isCurrentListRequest(this, requestId)) {
         return;
       }
       const items = [
@@ -218,7 +243,7 @@ Page({
         loadingMore: false
       });
     } catch (error) {
-      if (requestId === latestRequest) {
+      if (isCurrentListRequest(this, requestId)) {
         this.setData({ loadingMore: false });
         wx.showToast({
           title: actionError(error, "更多收藏加载失败"),
@@ -340,7 +365,7 @@ Page({
     )) {
       return;
     }
-    latestRequest += 1;
+    beginListRequest(this);
     this.setData({ deleting: true, loadingMore: false });
     try {
       await removeFavorites(selectedSpuIds);

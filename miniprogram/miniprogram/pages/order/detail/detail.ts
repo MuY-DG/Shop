@@ -18,7 +18,8 @@ import {
 } from "../../../features/order-center";
 import {
   buildOrderDeliverySummary,
-  buildOrderLogisticsUrl,
+  openShipmentLogistics,
+  LOGISTICS_UNAVAILABLE_MESSAGE,
   type OrderDeliverySummary
 } from "../../../features/order-logistics";
 import { buildCustomerServiceUrl } from "../../../features/customer-service";
@@ -33,6 +34,7 @@ import {
   confirmOrderReceipt,
   deleteOrder,
   getOrderDetail,
+  getShipmentWaybillToken,
   syncShipmentTracking
 } from "../../../services/order";
 import { isApiError } from "../../../utils/api-error";
@@ -89,6 +91,8 @@ function confirmAction(title: string, content: string, confirmText: string): Pro
 }
 
 Page({
+  _visible: true,
+  _logisticsRequest: 0,
   data: {
     orderId: 0,
     detail: null as OrderDetailView | null,
@@ -122,6 +126,7 @@ Page({
   },
 
   onShow() {
+    this._visible = true;
     if (this.data.loaded && this.data.detail?.status === "PAYING" && !this.data.actionType) {
       void this.recoverPayment();
     } else if (this.data.loaded && !this.data.actionType) {
@@ -133,10 +138,15 @@ Page({
   },
 
   onHide() {
+    this._visible = false;
+    this._logisticsRequest += 1;
+    if (this.data.actionType === "logistics") this.setData({ actionType: "" });
     this.stopCountdownTimer();
   },
 
   onUnload() {
+    this._visible = false;
+    this._logisticsRequest += 1;
     latestDetailRequest += 1;
     latestTrackingRequest += 1;
     this.stopCountdownTimer();
@@ -397,9 +407,24 @@ Page({
     copyOrderNo(this.data.detail?.orderNo);
   },
 
-  onLogisticsTap() {
-    if (!this.data.detail || !this.data.deliverySummary || this.data.actionType) return;
-    wx.navigateTo({ url: buildOrderLogisticsUrl(this.data.detail.orderId, this.data.deliverySummary.shipmentId) });
+  async onLogisticsTap() {
+    const detail = this.data.detail;
+    if (!detail || !this.data.deliverySummary || this.data.actionType || !this._visible) return;
+    const request = ++this._logisticsRequest;
+    const isCurrent = () => this._visible && request === this._logisticsRequest;
+    this.setData({ actionType: "logistics" });
+    try {
+      const result = await openShipmentLogistics({
+        shipments: detail.shipmentViews,
+        requestWaybillToken: (shipmentId) => getShipmentWaybillToken(detail.orderId, shipmentId),
+        isCurrent
+      });
+      if (isCurrent() && result === "UNAVAILABLE") {
+        wx.showToast({ title: LOGISTICS_UNAVAILABLE_MESSAGE, icon: "none" });
+      }
+    } finally {
+      if (isCurrent()) this.setData({ actionType: "" });
+    }
   },
 
   onOrderInfoToggle() {

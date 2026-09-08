@@ -1,5 +1,7 @@
+import { beginListRequest, isCurrentListRequest, reloadListPages, rememberListScroll, listScrollPatch } from "../../../features/list-refresh";
 import {
   buildOrderDetailUrl,
+  buildOrderDetailView,
   buildOrderModifyUrl,
   buildOrderReviewUrl,
   buildOrderSummaryView,
@@ -16,7 +18,7 @@ import {
   type OrderSummaryView
 } from "../../../features/order-center";
 import { buildAfterSaleApplyUrl } from "../../../features/after-sale";
-import { buildOrderLogisticsUrl } from "../../../features/order-logistics";
+import { openShipmentLogistics, LOGISTICS_UNAVAILABLE_MESSAGE } from "../../../features/order-logistics";
 import { buildCartCheckoutUrl } from "../../../features/checkout";
 import { normalizeOrderRouteKeyword } from "../../../features/order-search";
 import { executeOrderPayment } from "../../../features/order-payment";
@@ -25,6 +27,7 @@ import {
   cancelOrder,
   deleteOrder,
   getOrderDetail,
+  getShipmentWaybillToken,
   getOrders
 } from "../../../services/order";
 import { isApiError } from "../../../utils/api-error";
@@ -43,10 +46,10 @@ interface DatasetEvent {
 interface RefreshOptions {
   silent?: boolean;
   suppressError?: boolean;
+  preservePosition?: boolean;
 }
 
 const PAGE_SIZE = 10;
-let latestListRequest = 0;
 const rebuyOperationGuard = createPageOperationGuard();
 
 function actionError(error: unknown, fallback: string): string {
@@ -71,7 +74,10 @@ function confirmAction(title: string, content: string, confirmText: string): Pro
 }
 
 Page({
-  data: {
+  _visible: true,
+  _logisticsRequest: 0,  data: {
+    scrollTop: 0,
+    refreshing: false,
     lifecycleToken: 0,
     tabs: ORDER_STATUS_TABS,
     activeGroup: "ALL" as OrderCenterGroup,
@@ -105,21 +111,41 @@ Page({
   },
 
   onShow() {
+    this._visible = true;
+    if (this.data.activeGroup !== "AFTER_SALE" && !this.data.loaded && !this.data.loading) {
+      void this.refreshOrders();
+      return;
+    }
     if (
       this.data.loaded
       && this.data.activeGroup !== "AFTER_SALE"
       && !this.data.loading
       && !this.data.loadingMore
+      && !this.data.refreshing
       && !this.data.contentRefreshing
       && !this.data.actionOrderId
     ) {
-      void this.refreshOrders({ silent: true, suppressError: true });
+      void this.refreshOrders({ silent: true, suppressError: true, preservePosition: true });
     }
   },
 
+  onListScroll(event: WechatMiniprogram.ScrollViewScroll) {
+    rememberListScroll(this, event.detail.scrollTop);
+  },
+
+  onHide() {
+    this._visible = false;
+    this._logisticsRequest += 1;
+    if (this.data.actionType === "logistics") this.setData({ actionOrderId: 0, actionType: "" });
+    beginListRequest(this);
+    this.setData({ loading: false, loadingMore: false, refreshing: false });
+  },
+
   onUnload() {
+    this._visible = false;
+    this._logisticsRequest += 1;
     rebuyOperationGuard.unmount(this.data.lifecycleToken);
-    latestListRequest += 1;
+    beginListRequest(this);
   },
 
   async onContentRefresh() {
@@ -127,6 +153,7 @@ Page({
       this.data.contentRefreshing
       || this.data.loading
       || this.data.loadingMore
+      || this.data.refreshing
       || this.data.actionOrderId
     ) {
       return;
@@ -157,7 +184,11 @@ Page({
     ) {
       return;
     }
-    this.setData({ activeGroup: group, orders: [], loaded: group === "AFTER_SALE" });
+    beginListRequest(this);
+    this.setData({
+      activeGroup: group, orders: [], loaded: group === "AFTER_SALE", refreshing: false,
+      ...listScrollPatch(this, false)
+    });
     if (group !== "AFTER_SALE") {
       void this.refreshOrders();
     }
@@ -166,8 +197,9 @@ Page({
   async refreshOrders(options: RefreshOptions = {}) {
     const activeGroup = this.data.activeGroup;
     if (activeGroup === "AFTER_SALE") return;
-    const requestId = ++latestListRequest;
+    const requestId = beginListRequest(this);
     const silent = options.silent === true && this.data.loaded;
+    this.setData({ refreshing: true });
     if (silent) {
       if (!options.suppressError) {
         this.setData({ errorText: "" });
@@ -176,17 +208,16 @@ Page({
       this.setData({ loading: true, loadingMore: false, errorText: "" });
     }
     try {
-      const response = await getOrders({
-        current: 1,
-        size: PAGE_SIZE,
-        statusGroup: activeGroup,
-        keyword: this.data.keyword
-      });
-      if (requestId !== latestListRequest) {
+      const keyword = this.data.keyword;
+      const response = await reloadListPages(options.preservePosition ? this.data.current : 1,
+        (current) => getOrders({ current, size: PAGE_SIZE, statusGroup: activeGroup, keyword }),
+        () => isCurrentListRequest(this, requestId));
+      if (!response || !isCurrentListRequest(this, requestId)) {
         return;
       }
       this.setData({
         orders: response.records.map(buildOrderSummaryView),
+        ...listScrollPatch(this, options.preservePosition === true),
         current: response.current,
         total: response.total,
         hasMore: response.current * response.size < response.total,
@@ -196,7 +227,7 @@ Page({
         errorText: ""
       });
     } catch (error) {
-      if (requestId === latestListRequest) {
+      if (isCurrentListRequest(this, requestId)) {
         if (silent && options.suppressError) {
           return;
         }
@@ -207,6 +238,8 @@ Page({
           errorText: actionError(error, "订单加载失败，请稍后重试")
         });
       }
+    } finally {
+      if (isCurrentListRequest(this, requestId)) this.setData({ refreshing: false });
     }
   },
 
@@ -217,10 +250,11 @@ Page({
       || !this.data.hasMore
       || this.data.loading
       || this.data.loadingMore
+      || this.data.refreshing
     ) {
       return;
     }
-    const requestId = ++latestListRequest;
+    const requestId = beginListRequest(this);
     const nextPage = this.data.current + 1;
     this.setData({ loadingMore: true });
     try {
@@ -230,7 +264,7 @@ Page({
         statusGroup: activeGroup,
         keyword: this.data.keyword
       });
-      if (requestId !== latestListRequest) {
+      if (!isCurrentListRequest(this, requestId)) {
         return;
       }
       this.setData({
@@ -241,7 +275,7 @@ Page({
         loadingMore: false
       });
     } catch (error) {
-      if (requestId === latestListRequest) {
+      if (isCurrentListRequest(this, requestId)) {
         this.setData({ loadingMore: false });
         wx.showToast({
           title: actionError(error, "更多订单加载失败"),
@@ -523,10 +557,32 @@ Page({
     }
   },
 
-  onLogisticsTap(event: DatasetEvent) {
+  async onLogisticsTap(event: DatasetEvent) {
     const orderId = positiveOrderId(event.currentTarget.dataset.id);
-    if (orderId && !this.data.actionOrderId) {
-      wx.navigateTo({ url: buildOrderLogisticsUrl(orderId) });
+    if (!orderId || this.data.actionOrderId || !this._visible) return;
+    const request = ++this._logisticsRequest;
+    const isCurrent = () => this._visible && request === this._logisticsRequest;
+    this.setData({ actionOrderId: orderId, actionType: "logistics" });
+    try {
+      const response = await getOrderDetail(orderId);
+      if (!isCurrent()) return;
+      const detail = buildOrderDetailView(response);
+      if (!detail.shipmentViews.some((shipment) => shipment.canOpenTracking)) {
+        wx.navigateTo({ url: buildOrderDetailUrl(orderId) });
+        return;
+      }
+      const result = await openShipmentLogistics({
+        shipments: detail.shipmentViews,
+        requestWaybillToken: (shipmentId) => getShipmentWaybillToken(orderId, shipmentId),
+        isCurrent
+      });
+      if (isCurrent() && result === "UNAVAILABLE") {
+        wx.showToast({ title: LOGISTICS_UNAVAILABLE_MESSAGE, icon: "none" });
+      }
+    } catch (error) {
+      if (isCurrent()) wx.showToast({ title: actionError(error, "物流信息加载失败，请重试"), icon: "none" });
+    } finally {
+      if (isCurrent()) this.setData({ actionOrderId: 0, actionType: "" });
     }
   },
 
