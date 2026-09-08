@@ -30,7 +30,7 @@ export function buildOrderDeliverySummary(
   if (!shipment || detail.status === "REFUNDED") return null;
   const view = tracking?.shipmentId === shipment.shipmentId && tracking.orderId === detail.orderId
     ? buildOrderTrackingView(tracking) : null;
-  const latest = view?.pathItems[0];
+  const latest = shipment.isElectronicWaybill ? view?.pathItems[0] : undefined;
   const hasStatus = Boolean(tracking?.logisticsStatus && tracking.logisticsStatus !== "NOT_FOUND");
   return {
     shipmentId: shipment.shipmentId,

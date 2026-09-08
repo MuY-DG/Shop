@@ -23,7 +23,7 @@ function shipment(id: number): AppOrderShipmentResponse {
     expressCompanyCode: "SF",
     expressCompanyName: "顺丰速运",
     trackingNo: `SF${id}`,
-    shipmentSource: "MANUAL",
+    shipmentSource: "WECHAT_WAYBILL",
     localShipmentStatus: "SHIPPED",
     wechatProviderMode: "REAL",
     wechatUploadStatus: "UPLOADED",
@@ -149,7 +149,8 @@ function page(
   sync: (
     _orderId: number,
     shipmentId: number
-  ) => Promise<ShipmentTrackingResponse>
+  ) => Promise<ShipmentTrackingResponse>,
+  detail = order()
 ) {
   const code = ts.transpileModule(
     readFileSync(
@@ -172,7 +173,7 @@ function page(
       if (path.endsWith("utils/api-error")) return { isApiError: () => false };
       if (path.endsWith("services/order"))
         return {
-          getOrderDetail: async () => order(),
+          getOrderDetail: async () => detail,
           syncShipmentTracking: sync
         };
       throw new Error(`Unexpected module: ${path}`);
@@ -186,6 +187,31 @@ function page(
   instance.data.orderId = 123;
   return instance;
 }
+
+test("手动包裹只展示物流状态，切换电子面单包裹后恢复轨迹展示", async () => {
+  const detail = order();
+  detail.shipments![1]!.shipmentSource = "MANUAL";
+  const instance = page(async (_orderId, id) => tracking(id), detail);
+  await instance.refreshDetail();
+  await new Promise<void>((resolve) => setImmediate(resolve));
+
+  assert.equal(instance.data.activeShipment.isElectronicWaybill, false);
+  assert.equal(instance.data.activeShipment.canOpenTracking, true);
+  assert.equal(instance.data.trackingView.statusText, "运输中");
+  assert.equal(instance.data.deliverySummary.originLabel, "发货地");
+  assert.equal(instance.data.deliverySummary.originText, "广东省 深圳市 2号仓库");
+
+  instance.onShipmentTap({ currentTarget: { dataset: { shipmentId: 1 } } });
+  await new Promise<void>((resolve) => setImmediate(resolve));
+  assert.equal(instance.data.activeShipment.isElectronicWaybill, true);
+  assert.equal(instance.data.trackingView.hasPathItems, true);
+  assert.equal(instance.data.deliverySummary.originText, "包裹1到达成都转运中心");
+
+  instance.onShipmentTap({ currentTarget: { dataset: { shipmentId: 2 } } });
+  assert.equal(instance.data.activeShipment.isElectronicWaybill, false);
+  await new Promise<void>((resolve) => setImmediate(resolve));
+  assert.equal(instance.data.deliverySummary.originLabel, "发货地");
+});
 
 test("快速切换包裹时迟到的成功和失败都不能覆盖当前包裹", async () => {
   const first = deferred<ShipmentTrackingResponse>();

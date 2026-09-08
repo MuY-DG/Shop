@@ -278,6 +278,7 @@ export interface OrderShipmentView {
   itemsText: string;
   canCopyTrackingNo: boolean;
   canOpenTracking: boolean;
+  isElectronicWaybill: boolean;
 }
 
 export interface OrderDetailView extends AppOrderDetailResponse, OrderActions {
@@ -340,6 +341,7 @@ function normalizedShipmentView(
       .map((item) => `${item.productTitle} ×${item.quantity}`)
       .join("；"),
     canCopyTrackingNo: Boolean(trackingNo),
+    isElectronicWaybill: shipment.shipmentSource === "WECHAT_WAYBILL",
     canOpenTracking: Boolean(
       carrierCode
       && trackingNo

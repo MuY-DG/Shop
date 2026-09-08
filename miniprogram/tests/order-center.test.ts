@@ -290,6 +290,7 @@ test("订单详情为实体快递生成独立于 token 的静态物流视图", (
     shippedAtText: "2026-08-08 10:20:30",
     itemsText: "",
     canCopyTrackingNo: true,
+    isElectronicWaybill: false,
     canOpenTracking: true
   });
 });

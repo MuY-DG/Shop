@@ -26,16 +26,17 @@
             <view wx:if="{{activeShipment.shippedAtText}}" class="logistics-card__row"><text class="logistics-card__label">发货时间</text><text class="logistics-card__value">{{activeShipment.shippedAtText}}</text></view>
           </view>
           <view class="logistics-card">
-            <view class="tracking-panel__heading"><text class="section-heading">物流轨迹</text><button class="copy-action" loading="{{trackingLoading}}" disabled="{{trackingLoading}}" bindtap="onRefreshTracking">刷新</button></view>
+            <view class="tracking-panel__heading"><text class="section-heading">{{activeShipment.isElectronicWaybill ? '物流轨迹' : '物流状态'}}</text><button class="copy-action" loading="{{trackingLoading}}" disabled="{{trackingLoading}}" bindtap="onRefreshTracking">刷新</button></view>
             <view wx:if="{{trackingErrorText}}" class="logistics-notice">{{trackingErrorText}}</view>
             <view wx:if="{{trackingLoading && !trackingView}}" class="tracking-panel__empty">正在更新物流信息...</view>
-            <block wx:elif="{{trackingView && trackingView.hasPathItems}}">
+            <block wx:elif="{{activeShipment.isElectronicWaybill && trackingView && trackingView.hasPathItems}}">
               <view wx:for="{{trackingView.pathItems}}" wx:key="eventKey" class="tracking-event {{index === 0 ? 'tracking-event--latest' : ''}}">
                 <view class="tracking-event__rail"><view class="tracking-event__dot"></view><view wx:if="{{index < trackingView.pathItems.length - 1}}" class="tracking-event__line"></view></view>
                 <view class="tracking-event__body"><text class="tracking-event__message">{{item.actionMessage}}</text><text class="tracking-event__time">{{item.actionTimeText}}</text></view>
               </view>
             </block>
-            <view wx:elif="{{!trackingErrorText}}" class="tracking-panel__empty">{{trackingView ? trackingView.pathStateText : '暂无物流轨迹'}}</view>
+            <view wx:elif="{{activeShipment.isElectronicWaybill && !trackingErrorText}}" class="tracking-panel__empty">{{trackingView ? trackingView.pathStateText : '暂无物流轨迹'}}</view>
+            <view wx:elif="{{!trackingErrorText && trackingView}}" class="tracking-panel__empty">{{trackingView.statusText}}</view>
             <view wx:if="{{trackingView.lastSyncedAtText}}" class="tracking-panel__synced-at">更新于 {{trackingView.lastSyncedAtText}}</view>
             <button wx:if="{{activeShipment.canOpenTracking}}" class="official-tracking" loading="{{logisticsOpening}}" disabled="{{logisticsOpening}}" bindtap="onOpenLogisticsTap">查看全部物流</button>
           </view>

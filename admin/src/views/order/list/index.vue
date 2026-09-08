@@ -625,13 +625,16 @@
                     </div>
                   </dl>
                 </ElCollapseItem>
-                <ElCollapseItem
-                  title="微信物流数据（query_trace / getPath）"
-                  name="wechat-tracking"
-                >
+                <ElCollapseItem title="微信物流数据" name="wechat-tracking">
                   <div v-loading="trackingLoading" class="tracking-diagnostics">
                     <div class="tracking-diagnostics__toolbar">
-                      <span>摘要状态与详细轨迹独立同步，刷新不会改变订单状态。</span>
+                      <span
+                        >{{
+                          showTrackingPath
+                            ? '摘要状态与电子面单轨迹独立同步。'
+                            : '刷新微信物流状态。'
+                        }}刷新不会改变订单状态。</span
+                      >
                       <ElButton
                         v-auth="'order:shipping:tracking:sync'"
                         type="primary"
@@ -664,15 +667,15 @@
                           <dt>物流状态</dt>
                           <dd>{{ currentTracking.logisticsStatusText || '-' }}</dd>
                         </div>
-                        <div class="shipping-diagnostic">
+                        <div v-if="showTrackingPath" class="shipping-diagnostic">
                           <dt>getPath 能力</dt>
                           <dd>{{ currentTracking.pathSupported ? '已支持' : '暂不支持' }}</dd>
                         </div>
-                        <div class="shipping-diagnostic">
+                        <div v-if="showTrackingPath" class="shipping-diagnostic">
                           <dt>getPath 同步</dt>
                           <dd>{{ formatTrackingSyncStatus(currentTracking.pathSyncStatus) }}</dd>
                         </div>
-                        <div class="shipping-diagnostic">
+                        <div v-if="showTrackingPath" class="shipping-diagnostic">
                           <dt>轨迹节点</dt>
                           <dd>{{ currentTracking.pathItems.length }} 条</dd>
                         </div>
@@ -695,7 +698,10 @@
                             }}
                           </dd>
                         </div>
-                        <div class="shipping-diagnostic shipping-diagnostic--full">
+                        <div
+                          v-if="showTrackingPath"
+                          class="shipping-diagnostic shipping-diagnostic--full"
+                        >
                           <dt>getPath 错误</dt>
                           <dd>
                             {{
@@ -707,7 +713,7 @@
                           </dd>
                         </div>
                       </dl>
-                      <div class="tracking-diagnostics__timeline">
+                      <div v-if="showTrackingPath" class="tracking-diagnostics__timeline">
                         <div class="tracking-diagnostics__timeline-title">getPath 轨迹明细</div>
                         <ElTimeline v-if="currentTracking.pathItems.length">
                           <ElTimelineItem
@@ -1187,6 +1193,9 @@
       null
     )
   })
+  const showTrackingPath = computed(
+    () => diagnosticShipment.value?.shipmentSource === 'WECHAT_WAYBILL'
+  )
   const currentTracking = ref<Api.Order.ShipmentTracking | null>(null)
   const trackingLoading = ref(false)
   const trackingSyncing = ref(false)
