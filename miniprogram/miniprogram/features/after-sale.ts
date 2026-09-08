@@ -63,6 +63,7 @@ export interface AfterSaleView extends Omit<AfterSaleResponse, 'items'> {
   createdAtText: string
   reviewedAtText: string
   refundedAtText: string
+  merchantNote: string
   evidenceCountText: string
   evidenceNames: string[]
   progressSteps: AfterSaleProgressStep[]
@@ -300,6 +301,9 @@ export function buildAfterSaleView(record: AfterSaleResponse): AfterSaleView {
     ...record,
     description: cleanText(record.description),
     auditNote: cleanText(record.auditNote),
+    // Automatic audit bookkeeping is retained, but is not a merchant explanation.
+    merchantNote: record.reviewedBy == null && cleanText(record.auditNote) === '未发货商品，系统自动审核通过'
+      ? '' : cleanText(record.auditNote),
     items: (Array.isArray(record.items) ? record.items : []).map(buildAfterSaleItemView),
     allowedActions: Array.isArray(record.allowedActions) ? record.allowedActions : [],
     evidenceFiles,

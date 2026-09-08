@@ -5,6 +5,7 @@ import {
   afterSaleTypeText,
   buildAfterSaleApplyPayload,
   buildAfterSaleDetailUrl,
+  buildAfterSaleResultUrl,
   createAfterSaleRequestKey,
   positiveAfterSaleId
 } from '../../../features/after-sale'
@@ -385,9 +386,8 @@ Page({
     }
     try {
       const result = await applyAfterSale(this.data.orderId, payload)
-      wx.showToast({ title: '申请已提交', icon: 'success' })
       wx.redirectTo({
-        url: `${buildAfterSaleDetailUrl(result.id)}&follow_refund=1`,
+        url: buildAfterSaleResultUrl(result.id),
         fail: () => this.setData({ submitting: false })
       })
     } catch (error) {

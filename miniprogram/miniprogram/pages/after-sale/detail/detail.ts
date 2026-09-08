@@ -8,6 +8,7 @@ import {
 import { buildCustomerServiceUrl } from '../../../features/customer-service'
 import { buildOrderDetailUrl } from '../../../features/order-center'
 import { formatMoney } from '../../../features/product-catalog'
+import { getOrderDetail } from '../../../services/order'
 import {
   cancelAfterSale,
   getAfterSaleDetail,
@@ -19,15 +20,14 @@ interface PickerEvent { detail: { value: string | number } }
 interface InputEvent { detail: { value: string } }
 interface DisplayItem {
   id: number
+  orderItemId: number
   productTitle: string
-  specText?: string
-  image?: string
-  requestedQuantity: number
-  approvedQuantityText: string
-  requestedAmountText: string
-  approvedAmountText: string
-  restockQuantityText: string
+  specText: string
+  image: string
+  quantityText: string
+  amountText: string
 }
+interface ProductTapEvent { currentTarget: { dataset: { orderItemId?: number | string } } }
 
 const SHIPMENT_COMPANIES = Object.freeze([
   { code: 'SF', name: '顺丰速运' },
@@ -57,14 +57,16 @@ function confirmAction(title: string, content: string, confirmText: string): Pro
 function displayItems(detail: AfterSaleView): DisplayItem[] {
   return detail.items.map((item) => ({
     id: item.id,
-    productTitle: item.productTitle,
-    specText: item.specText,
-    image: item.image,
-    requestedQuantity: item.requestedQuantity,
-    approvedQuantityText: item.approvedQuantity == null ? '待审核' : `${item.approvedQuantity} 件`,
-    requestedAmountText: `¥${formatMoney(item.requestedAmountCent)}`,
-    approvedAmountText: item.approvedAmountCent == null ? '' : `¥${formatMoney(item.approvedAmountCent)}`,
-    restockQuantityText: item.restockQuantity == null ? '' : `${item.restockQuantity} 件`
+    orderItemId: item.orderItemId,
+    productTitle: item.titleText,
+    specText: item.specificationText,
+    image: item.imageUrl,
+    quantityText: item.approvedQuantity == null
+      ? `申请 ${item.requestedQuantity} 件`
+      : item.approvedQuantity === item.requestedQuantity
+        ? `×${item.approvedQuantity}`
+        : `申请 ${item.requestedQuantity} 件 · 同意 ${item.approvedQuantity} 件`,
+    amountText: `¥${formatMoney(item.approvedAmountCent ?? item.requestedAmountCent)}`
   }))
 }
 
@@ -74,6 +76,9 @@ Page({
   _pollCount: 0,
   _pollTimer: null as ReturnType<typeof setTimeout> | null,
   _followRefund: false,
+  _productRequest: 0,
+  _openingProduct: false,
+  _productIds: {} as Record<number, number>,
   data: {
     afterSaleId: 0,
     detail: null as AfterSaleView | null,
@@ -110,6 +115,8 @@ Page({
 
   stopPolling() {
     this._visible = false
+    this._productRequest += 1
+    this._openingProduct = false
     this._request += 1
     if (this._pollTimer) clearTimeout(this._pollTimer)
     this._pollTimer = null
@@ -179,6 +186,37 @@ Page({
   onOrderTap() {
     const orderId = this.data.detail?.orderId
     if (orderId) wx.navigateTo({ url: buildOrderDetailUrl(orderId) })
+  },
+
+  async onProductTap(event: ProductTapEvent) {
+    const orderId = this.data.detail?.orderId
+    const orderItemId = positiveAfterSaleId(event.currentTarget.dataset.orderItemId)
+    if (!orderId || !orderItemId || this._openingProduct
+      || !this.data.displayItems.some((item) => item.orderItemId === orderItemId)) return
+    this._openingProduct = true
+    const request = ++this._productRequest
+    try {
+      // Resolve from the original order, which already exposes the product SPU ID.
+      if (!this._productIds[orderItemId]) {
+        const order = await getOrderDetail(orderId)
+        if (request !== this._productRequest || !this._visible) return
+        order.items.forEach((item) => {
+          this._productIds[item.orderItemId] = positiveAfterSaleId(item.spuId)
+        })
+      }
+      const spuId = this._productIds[orderItemId]
+      if (!spuId) {
+        wx.showToast({ title: '商品暂不可查看', icon: 'none' })
+        return
+      }
+      wx.navigateTo({ url: `/pages/product/detail/detail?id=${spuId}` })
+    } catch (error) {
+      if (request === this._productRequest && this._visible) {
+        wx.showToast({ title: actionError(error, '商品信息加载失败，请重试'), icon: 'none' })
+      }
+    } finally {
+      if (request === this._productRequest) this._openingProduct = false
+    }
   },
 
   onCustomerServiceTap() {

@@ -77,9 +77,11 @@
 }
 
 .status-card--success .status-card__icon {
-  color: @color-success-text;
-  background: @color-success-soft;
+  background: @color-success;
 }
+
+.status-card__check { width: 52rpx; height: 52rpx; }
+.progress-step__check { width: 30rpx; height: 30rpx; }
 
 .status-card--danger .status-card__icon {
   color: @color-danger;
@@ -229,7 +231,7 @@
   word-break: break-all;
 }
 
-.info-row .price-text {
+.info-row > text.price-text:last-child {
   color: @color-price;
   font-family: @font-family-commerce-price;
   font-size: @font-size-base;
@@ -304,9 +306,20 @@
   gap: @space-4;
 }
 
-.sale-item:first-of-type {
-  border-top: 0;
+.sale-item:first-child { border-top: 0; padding-top: 0; }
+.sale-item:last-child { padding-bottom: 0; }
+.sale-item--pressed { opacity: 0.72; }
+.sale-item { align-items: center; }
+.sale-item__summary { display: flex; align-items: flex-start; gap: @space-3; }
+.sale-item__amount {
+  flex: none;
+  color: @color-price;
+  font-family: @font-family-commerce-price;
+  font-size: @font-size-base;
+  font-weight: 650;
+  line-height: @line-height-base;
 }
+
 
 .sale-item image,
 .sale-item__fallback {
@@ -330,6 +343,13 @@
 }
 
 .sale-item__title {
+  min-width: 0;
+  flex: 1;
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  line-height: @line-height-base;
   color: @color-text-primary;
   font-size: @font-size-sm;
   font-weight: 650;
