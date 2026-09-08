@@ -3,6 +3,31 @@ declare namespace Api {
     type ConversationStatus = 'DRAFT' | 'WAITING' | 'ACTIVE' | 'CLOSED'
     type SenderType = 'APP_USER' | 'ADMIN' | 'SYSTEM' | 'BOT' | 'AUTO_REPLY'
     type ContextType = 'GENERAL' | 'PRODUCT' | 'ORDER' | 'AFTER_SALE'
+    type ResourceKind = 'order' | 'product' | 'afterSale'
+    interface ResourceTarget {
+      kind: ResourceKind
+      id: number
+    }
+    interface ProductDetail {
+      id: number
+      title: string
+      subtitle: string
+      categoryName: string
+      mainImage: string
+      status: string
+      sellingPoints: string
+      detailHtml: string
+      images: string[]
+      skus: {
+        id: number
+        skuCode: string
+        specText: string
+        image: string
+        priceCent: number
+        stockAvailable: number
+        status: string
+      }[]
+    }
     type AgentWorkStatus = 'OFFLINE' | 'AVAILABLE' | 'BUSY'
     type TransferRequestStatus = 'PENDING' | 'ACCEPTED' | 'REJECTED' | 'TIMEOUT' | 'CANCELLED'
 

@@ -233,109 +233,90 @@
                 :class="messageRowClass(message)"
                 :data-message-id="message.messageId"
               >
-                <div
-                  v-if="message.senderType === 'SYSTEM' && message.messageType !== 'AUTO_REPLY'"
-                  class="system-message"
-                >
-                  {{ message.content }}
-                </div>
-                <template v-else-if="message.messageType === 'IMAGE'">
-                  <div
-                    :ref="(target) => registerImageTarget(message.messageId, target)"
-                    class="message-image-target"
-                    role="button"
-                    tabindex="0"
-                    aria-label="查看原图"
-                    @click="handleImagePreview(message)"
-                    @keydown.enter.prevent="handleImagePreview(message)"
-                    @keydown.space.prevent="handleImagePreview(message)"
-                  >
-                    <ElImage
-                      v-if="imageUrls[message.messageId]"
-                      class="message-image"
-                      :class="{ 'is-uploading': isLocalImageUploading(message) }"
-                      :style="messageImageStyle(message)"
-                      :src="imageUrls[message.messageId]"
-                      fit="cover"
-                      @load="handleImageLoad(message)"
-                      @error="handleImageError(message)"
-                    >
-                      <template #error
-                        ><div class="message-image__error">图片加载失败</div></template
-                      >
-                    </ElImage>
-                    <div
-                      v-else
-                      class="message-image message-image__status"
-                      :style="messageImageStyle(message)"
-                    >
-                      {{ imageLoadStates[message.messageId] === 'error' ? '图片加载失败' : '' }}
-                    </div>
-                  </div>
-                </template>
-                <button
-                  v-else-if="message.messageType === 'ORDER_CARD' && message.order"
-                  type="button"
-                  class="message-card"
-                  @click="openOrder(message.order.orderNo)"
-                >
+                <span v-if="message.messageType !== 'SYSTEM'" class="message-avatar">
                   <img
-                    v-if="message.order.primaryProductImage"
-                    :src="message.order.primaryProductImage"
-                  />
-                  <span>
-                    <strong>{{ message.order.orderNo }}</strong>
-                    <small>{{ message.order.primaryProductTitle || '订单商品' }}</small>
-                    <small
-                      >{{ orderStatusLabel(message.order.status) }} ·
-                      {{ formatMoney(message.order.payableAmountCent) }}</small
-                    >
-                  </span>
-                </button>
-                <button
-                  v-else-if="message.messageType === 'AFTER_SALE_CARD' && message.afterSale"
-                  type="button"
-                  class="message-card"
-                  @click="openAfterSale(message.afterSale.afterSaleId)"
-                >
-                  <img
-                    v-if="message.afterSale.primaryProductImage"
-                    :src="message.afterSale.primaryProductImage"
+                    v-if="message.senderAvatar || message.senderType !== 'APP_USER'"
+                    :src="message.senderAvatar || defaultCustomerServiceAvatar"
                     alt=""
                   />
-                  <span>
-                    <strong>售后 {{ message.afterSale.afterSaleNo }}</strong>
-                    <small>{{ message.afterSale.primaryProductTitle || '售后申请' }}</small>
-                    <small
-                      >{{ afterSaleStatusLabel(message.afterSale.status) }} ·
-                      {{ formatMoney(message.afterSale.requestedAmountCent) }}</small
-                    >
-                  </span>
-                </button>
-                <button
-                  v-else-if="message.messageType === 'PRODUCT_CARD' && message.product"
-                  type="button"
-                  class="message-card"
-                  @click="openProduct(message.product.productId)"
+                  <img
+                    v-else-if="currentDetail.userAvatar"
+                    :src="currentDetail.userAvatar"
+                    alt=""
+                  />
+                  <UserRound v-else :size="20" />
+                </span>
+                <div
+                  class="message-flow"
+                  :class="{
+                    'message-flow--card': message.order || message.product || message.afterSale
+                  }"
                 >
-                  <img v-if="message.product.image" :src="message.product.image" />
-                  <span>
-                    <strong>{{ message.product.title }}</strong>
-                    <small>{{ productPrice(message.product) }}</small>
-                  </span>
-                </button>
-                <div v-else class="message-delivery">
-                  <button
-                    v-if="isLocalTextSendFailed(message)"
-                    type="button"
-                    class="message-send-error"
-                    title="发送失败，点击重试"
-                    aria-label="发送失败，点击重试"
-                    @click="retryTextMessage(message)"
+                  <span v-if="message.messageType !== 'SYSTEM'" class="message-name">{{
+                    message.senderName ||
+                    (message.senderType === 'APP_USER' ? currentDetail.userNickname : '商城客服')
+                  }}</span>
+                  <div
+                    v-if="message.senderType === 'SYSTEM' && message.messageType !== 'AUTO_REPLY'"
+                    class="system-message"
                   >
-                    <CircleAlert :size="17" />
-                  </button>
-                  <div class="message-bubble">{{ message.content }}</div>
+                    {{ message.content }}
+                  </div>
+                  <template v-else-if="message.messageType === 'IMAGE'">
+                    <div
+                      :ref="(target) => registerImageTarget(message.messageId, target)"
+                      class="message-image-target"
+                      role="button"
+                      tabindex="0"
+                      aria-label="查看原图"
+                      @click="handleImagePreview(message)"
+                      @keydown.enter.prevent="handleImagePreview(message)"
+                      @keydown.space.prevent="handleImagePreview(message)"
+                    >
+                      <ElImage
+                        v-if="imageUrls[message.messageId]"
+                        class="message-image"
+                        :class="{ 'is-uploading': isLocalImageUploading(message) }"
+                        :style="messageImageStyle(message)"
+                        :src="imageUrls[message.messageId]"
+                        fit="cover"
+                        @load="handleImageLoad(message)"
+                        @error="handleImageError(message)"
+                      >
+                        <template #error
+                          ><div class="message-image__error">图片加载失败</div></template
+                        >
+                      </ElImage>
+                      <div
+                        v-else
+                        class="message-image message-image__status"
+                        :style="messageImageStyle(message)"
+                      >
+                        {{ imageLoadStates[message.messageId] === 'error' ? '图片加载失败' : '' }}
+                      </div>
+                    </div>
+                  </template>
+                  <CustomerServiceResourceCard
+                    v-else-if="message.order || message.product || message.afterSale"
+                    variant="message"
+                    :order="message.order"
+                    :product="message.product"
+                    :after-sale="message.afterSale"
+                    @open="openResource"
+                  />
+                  <div v-else class="message-delivery">
+                    <button
+                      v-if="isLocalTextSendFailed(message)"
+                      type="button"
+                      class="message-send-error"
+                      title="发送失败，点击重试"
+                      aria-label="发送失败，点击重试"
+                      @click="retryTextMessage(message)"
+                    >
+                      <CircleAlert :size="17" />
+                    </button>
+                    <div class="message-bubble">{{ message.content }}</div>
+                  </div>
                 </div>
               </div>
             </template>
@@ -439,131 +420,19 @@
         </div>
       </ElCard>
 
-      <ElCard
+      <CustomerServiceContextPanel
         v-if="selectedConversationId !== null"
         class="context-panel"
-        shadow="never"
-        body-class="context-body"
-      >
-        <template #header>
-          <div class="panel-header">
-            <span>基础信息</span>
-            <ElTag v-if="currentDetail" type="info" effect="plain"
-              >第 {{ currentDetail.consultationNo }} 次</ElTag
-            >
-          </div>
-        </template>
-        <template v-if="currentDetail">
-          <ElDescriptions :column="1" border>
-            <ElDescriptionsItem label="用户名称">
-              {{ currentDetail.userNickname || '-' }}
-            </ElDescriptionsItem>
-            <ElDescriptionsItem label="用户 ID">
-              {{ currentDetail.appUserId }}
-            </ElDescriptionsItem>
-            <ElDescriptionsItem label="当前客服">
-              {{ currentDetail.assignedAdminDisplayName || '未分配' }}
-            </ElDescriptionsItem>
-          </ElDescriptions>
-
-          <div class="context-section-title">当前咨询对象</div>
-          <button
-            v-if="currentDetail.currentContext.afterSale"
-            type="button"
-            class="linked-order"
-            @click="openAfterSale(currentDetail.currentContext.afterSale.afterSaleId)"
-          >
-            <strong>售后 {{ currentDetail.currentContext.afterSale.afterSaleNo }}</strong>
-            <span
-              >{{ afterSaleStatusLabel(currentDetail.currentContext.afterSale.status) }} ·
-              {{ currentDetail.currentContext.afterSale.reason }}</span
-            >
-          </button>
-          <button
-            v-if="currentDetail.currentContext.order"
-            type="button"
-            class="linked-order"
-            @click="openOrder(currentDetail.currentContext.order.orderNo)"
-          >
-            <strong>{{ currentDetail.currentContext.order.orderNo }}</strong>
-            <span>{{ currentDetail.currentContext.order.primaryProductTitle || '订单商品' }}</span>
-            <span
-              >{{ orderStatusLabel(currentDetail.currentContext.order.status) }} ·
-              {{ formatMoney(currentDetail.currentContext.order.payableAmountCent) }}</span
-            >
-          </button>
-          <button
-            v-if="currentDetail.currentContext.product"
-            type="button"
-            class="linked-order"
-            @click="openProduct(currentDetail.currentContext.product.productId)"
-          >
-            <strong>{{ currentDetail.currentContext.product.title }}</strong>
-            <span>{{ productPrice(currentDetail.currentContext.product) }}</span>
-          </button>
-          <ElEmpty
-            v-if="currentDetail.currentContext.type === 'GENERAL'"
-            description="普通咨询"
-            :image-size="48"
-          />
-
-          <template v-if="currentDetail.linkedAfterSales?.length">
-            <div class="context-section-title">本次相关售后</div>
-            <div class="linked-orders">
-              <button
-                v-for="sale in currentDetail.linkedAfterSales"
-                :key="sale.afterSaleId"
-                type="button"
-                class="linked-order"
-                @click="openAfterSale(sale.afterSaleId)"
-              >
-                <strong>{{ sale.afterSaleNo }}</strong>
-                <span
-                  >{{ afterSaleStatusLabel(sale.status) }} ·
-                  {{ formatMoney(sale.requestedAmountCent) }}</span
-                >
-                <span>{{ sale.reason }}</span>
-              </button>
-            </div>
-          </template>
-          <div class="context-section-title">本次相关订单</div>
-          <div v-if="currentDetail.linkedOrders.length" class="linked-orders">
-            <button
-              v-for="order in currentDetail.linkedOrders"
-              :key="order.orderId"
-              type="button"
-              class="linked-order"
-              @click="openOrder(order.orderNo)"
-            >
-              <strong>{{ order.orderNo }}</strong>
-              <span
-                >{{ orderStatusLabel(order.status) }} ·
-                {{ formatMoney(order.payableAmountCent) }}</span
-              >
-              <span>{{ formatDateTime(order.createdAt) }}</span>
-            </button>
-          </div>
-          <ElEmpty v-else description="暂无相关订单" :image-size="48" />
-
-          <div class="context-section-title">本次相关商品</div>
-          <div v-if="currentDetail.linkedProducts.length" class="linked-orders">
-            <button
-              v-for="product in currentDetail.linkedProducts"
-              :key="product.productId"
-              type="button"
-              class="linked-order"
-              @click="openProduct(product.productId)"
-            >
-              <strong>{{ product.title }}</strong>
-              <span>{{ productPrice(product) }}</span>
-            </button>
-          </div>
-          <ElEmpty v-else description="暂无相关商品" :image-size="48" />
-        </template>
-        <ElEmpty v-else description="暂无用户信息" />
-      </ElCard>
+        :detail="currentDetail"
+        @open="openResource"
+      />
       <div v-else class="workspace-empty">暂无会话内容</div>
     </div>
+
+    <CustomerServiceResourceDrawer
+      v-model="resourceTarget"
+      :conversation-id="selectedConversationId"
+    />
 
     <ElDialog v-model="transferDialogVisible" title="转接会话" width="520px">
       <ElForm label-width="90px">
@@ -734,6 +603,7 @@
     onDeactivated,
     onMounted,
     ref,
+    watch,
     type ComponentPublicInstance
   } from 'vue'
   import { ElLoading, ElMessage, ElMessageBox } from 'element-plus'
@@ -751,7 +621,7 @@
     UserCheck,
     UserRound
   } from '@lucide/vue'
-  import { useRouter } from 'vue-router'
+  import defaultCustomerServiceAvatar from '@/assets/images/customer-service/default-avatar.jpg'
   import {
     acceptCustomerServiceTransfer,
     claimCustomerServiceConversation,
@@ -804,8 +674,14 @@
   import { preserveCustomerServicePrependScrollTop } from '@/utils/customer-service-scroll'
   import { formatLocalDateTime } from '@/utils/date-time'
   import CustomerServiceNotificationStack from './CustomerServiceNotificationStack.vue'
+  import CustomerServiceContextPanel from './CustomerServiceContextPanel.vue'
+  import CustomerServiceResourceCard from './CustomerServiceResourceCard.vue'
+  import CustomerServiceResourceDrawer from './CustomerServiceResourceDrawer.vue'
 
-  const router = useRouter()
+  const resourceTarget = ref<Api.CustomerService.ResourceTarget | null>(null)
+  const openResource = (target: Api.CustomerService.ResourceTarget) => {
+    resourceTarget.value = target
+  }
   const userStore = useUserStore()
   const { hasAuth } = useAuth()
   const canReadQuickReplies = computed(() => hasAuth('customer-service:quick-reply:read'))
@@ -824,6 +700,9 @@
     CLOSED: 0
   })
   const selectedConversationId = ref<number | null>(null)
+  watch(selectedConversationId, () => {
+    resourceTarget.value = null
+  })
   const currentDetail = ref<Api.CustomerService.ConversationDetail | null>(null)
   const listLoading = ref(false)
   const detailLoading = ref(false)
@@ -2101,34 +1980,6 @@
     ElMessage.success('商品卡片已发送')
   }
 
-  const openOrder = (orderNo: string) => {
-    void router.push({ path: '/trade/orders', query: { orderNo } })
-  }
-
-  const afterSaleStatusLabel = (status: string) => {
-    const labels: Record<string, string> = {
-      REQUESTED: '待审核',
-      APPROVED: '审核已通过',
-      REJECTED: '申请未通过',
-      WAITING_RETURN: '待寄回商品',
-      RETURNING: '退货运输中',
-      WAITING_INSPECTION: '待商家验收',
-      RETURN_REJECTED: '退货验收未通过',
-      REFUNDING: '退款处理中',
-      REFUNDED: '退款已完成',
-      REFUND_FAILED: '退款处理异常',
-      CANCELLED: '申请已取消'
-    }
-    return labels[status] || '售后处理中'
-  }
-  const openAfterSale = (afterSaleId: number) => {
-    void router.push({ path: '/trade/after-sales', query: { afterSaleId: String(afterSaleId) } })
-  }
-
-  const openProduct = (productId: number) => {
-    void router.push({ path: '/product/spu', query: { mode: 'edit', id: String(productId) } })
-  }
-
   const createClientMessageId = () => {
     if (typeof crypto !== 'undefined' && 'randomUUID' in crypto) return crypto.randomUUID()
     return `admin-${Date.now()}-${Math.random().toString(16).slice(2)}`
@@ -2830,42 +2681,6 @@
     background: #d8dce2;
   }
 
-  .message-card {
-    display: flex;
-    gap: 12px;
-    width: min(360px, 76%);
-    padding: 12px;
-    color: inherit;
-    text-align: left;
-    cursor: pointer;
-    background: var(--el-bg-color);
-    border: 1px solid var(--el-border-color-light);
-    border-radius: 10px;
-  }
-
-  .message-card img {
-    width: 72px;
-    height: 72px;
-    object-fit: cover;
-    border-radius: 8px;
-  }
-
-  .message-card span {
-    display: flex;
-    flex: 1;
-    flex-direction: column;
-    gap: 6px;
-    justify-content: center;
-    min-width: 0;
-  }
-
-  .message-card small {
-    overflow: hidden;
-    color: var(--el-text-color-secondary);
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
   .is-admin .message-bubble,
   .is-bot .message-bubble {
     color: #fff;
@@ -2933,40 +2748,6 @@
     border-radius: 6px;
   }
 
-  .context-panel :deep(.context-body) {
-    padding: 16px;
-    overflow-y: auto;
-  }
-
-  .context-section-title {
-    margin: 22px 0 10px;
-    font-weight: 600;
-  }
-
-  .linked-orders {
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
-  }
-
-  .linked-order {
-    display: flex;
-    flex-direction: column;
-    gap: 5px;
-    padding: 12px;
-    color: inherit;
-    text-align: left;
-    cursor: pointer;
-    background: #f8fafc;
-    border: 1px solid #e5eaf1;
-    border-radius: 10px;
-  }
-
-  .linked-order span {
-    font-size: 12px;
-    color: var(--el-text-color-secondary);
-  }
-
   .dialog-select {
     width: 100%;
   }
@@ -3014,7 +2795,7 @@
   }
 
   .workspace {
-    grid-template-columns: minmax(270px, 320px) minmax(520px, 1fr) minmax(310px, 360px);
+    grid-template-columns: minmax(220px, 280px) minmax(0, 1fr) minmax(280px, 340px);
     gap: 0;
     height: 100%;
   }
@@ -3363,12 +3144,12 @@
 
   .chat-content,
   .chat-content__loading {
-    background: #f0f0f0;
+    background: #f5f6f8;
   }
 
   .message-list {
-    padding: 26px 22px;
-    background: #f0f0f0;
+    padding: 26px 28px;
+    background: #f5f6f8;
   }
 
   .message-bubble {
@@ -3381,8 +3162,8 @@
 
   .is-admin .message-bubble,
   .is-bot .message-bubble {
-    color: #126526;
-    background: #8bea63;
+    color: #254837;
+    background: #e1f4e8;
     border: 0;
     border-radius: 5px;
     box-shadow: none;
@@ -3515,7 +3296,7 @@
     box-sizing: border-box;
     display: flex;
     flex-direction: column;
-    min-height: 180px;
+    min-height: 148px;
     padding: 8px 20px 12px;
     background: #f0f0f0;
     border-top-color: #dedede;
@@ -3534,7 +3315,7 @@
 
   .composer :deep(.el-textarea__inner) {
     height: 100%;
-    min-height: 112px !important;
+    min-height: 84px !important;
     padding: 10px 0;
     background: transparent;
   }
@@ -3553,36 +3334,90 @@
     white-space: nowrap;
   }
 
-  .context-panel :deep(.context-body) {
-    padding: 22px;
+  .message-row {
+    flex-direction: row;
+    gap: 10px;
+    align-items: flex-start;
+    margin-bottom: 22px;
   }
-
-  .context-panel :deep(.el-descriptions__body),
-  .context-panel :deep(.el-descriptions__table),
-  .context-panel :deep(.el-descriptions__cell) {
-    background: transparent;
+  .message-row.is-admin,
+  .message-row.is-bot {
+    flex-direction: row-reverse;
+    align-items: flex-start;
+  }
+  .message-row.is-system {
+    justify-content: center;
+  }
+  .message-avatar {
+    display: grid;
+    flex: none;
+    width: 34px;
+    height: 34px;
+    margin-top: 21px;
+    overflow: hidden;
+    color: #929ba8;
+    place-items: center;
+    background: #e6e9ef;
+    border-radius: 50%;
+  }
+  .message-avatar img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+  .message-flow {
+    display: flex;
+    min-width: 0;
+    max-width: min(76%, 520px);
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 6px;
+  }
+  .message-flow--card {
+    width: 360px;
+  }
+  .is-admin .message-flow,
+  .is-bot .message-flow {
+    align-items: flex-end;
+  }
+  .message-name {
+    max-width: 100%;
+    overflow: hidden;
+    font-size: 11px;
+    color: #a0a6b1;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .message-flow .message-delivery {
+    max-width: 100%;
+  }
+  .message-flow .message-bubble {
+    max-width: 100%;
+    padding: 12px 16px;
+    font-size: 14px;
+    line-height: 1.65;
+    border-radius: 12px;
+  }
+  .message-flow .message-image {
+    max-width: 100%;
+  }
+  .chat-tools {
+    padding: 10px 16px 0;
+    background: #fff;
+    border-top: 1px solid #e8ebf0;
+  }
+  .composer {
+    background: #fff;
     border: 0;
   }
-
-  .context-panel :deep(.el-descriptions__label) {
-    width: 84px;
-    color: #999;
-  }
-
-  .linked-order {
-    background: #fafafa;
-    border-color: #ececec;
-    border-radius: 6px;
+  .chat-user__avatar {
+    border-radius: 50%;
   }
   /* stylelint-enable no-duplicate-selectors */
 
   @media (width <= 1280px) {
     .workspace {
-      grid-template-columns: 280px 1fr;
-    }
-
-    .context-panel {
-      display: none;
+      grid-template-columns: 220px minmax(0, 1fr) 280px;
     }
   }
 
@@ -3605,6 +3440,10 @@
     .workspace {
       grid-template-columns: 1fr;
       min-height: 1000px;
+    }
+
+    .context-panel {
+      min-height: 400px;
     }
 
     .workspace-empty {

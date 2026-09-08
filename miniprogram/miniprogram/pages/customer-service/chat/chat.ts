@@ -106,6 +106,7 @@ interface MessageView {
   createdAt: string;
   senderType: string;
   isMine: boolean;
+  isResourceCard: boolean;
   isSystem: boolean;
   senderName: string;
   senderAvatar: string;
@@ -131,6 +132,8 @@ interface MessageView {
   orderStatusText: string;
   orderAmountText: string;
   orderItemText: string;
+  orderCreatedAtText: string;
+  afterSaleReason: string;
   productId: number;
   productTitle: string;
   productImage: string;
@@ -456,6 +459,7 @@ function messageViews(
       createdAt: message.createdAt,
       senderType: message.senderType,
       isMine,
+      isResourceCard: ["PRODUCT_CARD", "ORDER_CARD", "AFTER_SALE_CARD"].includes(message.messageType),
       isSystem: message.messageType === "SYSTEM",
       senderName,
       senderAvatar,
@@ -480,7 +484,9 @@ function messageViews(
       orderImage: cleanText(order?.primaryProductImage),
       orderStatusText: customerServiceOrderStatusText(order?.status),
       orderAmountText: formatCustomerServiceMoney(order?.payableAmountCent),
-      orderItemText: order ? `共 ${order.itemCount || 1} 件商品` : "",
+      orderItemText: order ? `共 ${order.itemCount || 1} 件` : "",
+      orderCreatedAtText: order ? messageTimeText(order.createdAt) : "",
+      afterSaleReason: message.afterSale?.reason ?? "",
       productId: product?.productId ?? 0,
       productTitle: cleanText(product?.title) || "商品",
       productImage: cleanText(product?.image),
@@ -598,7 +604,6 @@ Page({
     errorText: "",
     conversationId: 0,
     conversationStatus: "DRAFT",
-    contextCard: null as CustomerServiceContextCard | null,
     pendingContextCard: null as CustomerServiceContextCard | null,
     contextSending: false,
     messages: [] as MessageView[],
@@ -998,12 +1003,10 @@ Page({
         views,
         conversation.consultationNo
       );
-    const context = conversation.currentContext;
     this.setData(
       {
         conversationId: conversation.conversationId,
         conversationStatus: conversation.status,
-        contextCard: customerServiceContextCard(context),
         messages: views,
         hasMoreHistory: isInitialPositioning
           ? rawMessages.length >= HISTORY_PAGE_SIZE
@@ -2026,14 +2029,6 @@ Page({
     } finally {
       if (generation === initializeGeneration) this.setData({ contextSending: false });
     }
-  },
-
-  onContextCardTap() {
-    const card = this.data.contextCard;
-    if (!card) return;
-    const url = card.kind === "afterSale" ? `/pages/after-sale/detail/detail?after_sale_id=${card.id}`
-      : card.kind === "order" ? buildOrderDetailUrl(card.id) : `/pages/product/detail/detail?id=${card.id}`;
-    wx.navigateTo({ url });
   },
 
   onAfterSaleCardTap(event: DatasetEvent) {

@@ -1635,10 +1635,14 @@ public class CustomerServiceService {
 
     private List<LinkedAfterSaleResponse> linkedAfterSales(Long conversationId, int consultationNo) {
         return jdbcClient.sql(afterSaleSelect() + """
-                        join customer_service_consultation_resource resource on resource.resource_id = sale.id
-                        where resource.conversation_id = :conversationId
-                          and resource.consultation_no = :consultationNo and resource.resource_type = 'AFTER_SALE'
-                        order by resource.created_at desc, resource.id desc
+                        where exists (
+                          select 1 from customer_service_consultation_resource resource
+                          where resource.conversation_id = :conversationId
+                            and resource.consultation_no = :consultationNo
+                            and ((resource.resource_type = 'AFTER_SALE' and resource.resource_id = sale.id)
+                              or (resource.resource_type = 'ORDER' and resource.resource_id = sale.order_id))
+                        )
+                        order by sale.created_at desc, sale.id desc
                         """)
                 .param("conversationId", conversationId).param("consultationNo", consultationNo)
                 .query(this::mapLinkedAfterSale).list();
@@ -2556,6 +2560,59 @@ public class CustomerServiceService {
                 && principal.permissions().contains("customer-service:agent:manage");
     }
 
+    public void requireResourceAccessForAdmin(AuthenticatedPrincipal principal, Long conversationId,
+                                               String resourceType, Long resourceId) {
+        ConversationRow conversation = requireAdminReadableConversation(principal, conversationId);
+        boolean referenced = hasConversationResource(conversationId, resourceType, resourceId);
+        List<Long> orderIds = referencedOrderIds(conversationId);
+        if ("ORDER".equals(resourceType)) {
+            requireOwnedOrder(conversation.appUserId(), resourceId);
+            referenced |= orderIds.contains(resourceId);
+        } else if ("AFTER_SALE".equals(resourceType)) {
+            LinkedAfterSaleResponse sale = requireOwnedAfterSale(conversation.appUserId(), resourceId);
+            referenced |= orderIds.contains(sale.orderId());
+        } else if ("PRODUCT".equals(resourceType) && !referenced && !orderIds.isEmpty()) {
+            referenced = jdbcClient.sql("select count(*) from order_item where spu_id = :id and order_id in (:orderIds)")
+                    .param("id", resourceId).param("orderIds", orderIds).query(Long.class).single() > 0;
+        }
+        if (!referenced) throw new BusinessException(ErrorCode.CUSTOMER_SERVICE_CONVERSATION_UNAVAILABLE);
+    }
+
+    private boolean hasConversationResource(Long conversationId, String type, Long resourceId) {
+        return jdbcClient.sql("""
+                        select count(*) from (
+                          select resource_id from customer_service_consultation_resource
+                          where conversation_id = :conversationId and resource_type = :type
+                          union all
+                          select resource_id from customer_service_message
+                          where conversation_id = :conversationId and message_type = :messageType
+                        ) resources where resource_id = :resourceId
+                        """)
+                .param("conversationId", conversationId).param("type", type)
+                .param("messageType", type + "_CARD").param("resourceId", resourceId)
+                .query(Long.class).single() > 0;
+    }
+
+    private List<Long> referencedOrderIds(Long conversationId) {
+        return jdbcClient.sql("""
+                        select resource_id as order_id from customer_service_consultation_resource
+                        where conversation_id = :conversationId and resource_type = 'ORDER'
+                        union
+                        select resource_id from customer_service_message
+                        where conversation_id = :conversationId and message_type = 'ORDER_CARD'
+                        union
+                        select sale.order_id from after_sale_request sale
+                        where sale.id in (
+                          select resource_id from customer_service_consultation_resource
+                          where conversation_id = :conversationId and resource_type = 'AFTER_SALE'
+                          union
+                          select resource_id from customer_service_message
+                          where conversation_id = :conversationId and message_type = 'AFTER_SALE_CARD'
+                        )
+                        """)
+                .param("conversationId", conversationId).query(Long.class).list();
+    }
+
     private void markReadForAssignedAgent(ConversationRow conversation, Long adminUserId) {
         if (!adminUserId.equals(conversation.assignedAdminUserId())) {
             return;
@@ -3107,7 +3164,7 @@ public class CustomerServiceService {
                        (select item.product_title from order_item item
                         where item.order_id = card_order.id order by item.id limit 1)
                            as card_order_product_title,
-                       (select coalesce(item.display_image, item.sku_image, item.main_image)
+                       (select coalesce(nullif(item.display_image, ''), nullif(item.sku_image, ''), item.main_image)
                         from order_item item
                         where item.order_id = card_order.id order by item.id limit 1)
                            as card_order_product_image,
@@ -3186,7 +3243,7 @@ public class CustomerServiceService {
                 select o.id as order_id, o.order_no, o.status, o.payable_amount_cent,
                        (select item.product_title from order_item item
                         where item.order_id = o.id order by item.id limit 1) as primary_product_title,
-                       (select coalesce(item.display_image, item.sku_image, item.main_image)
+                       (select coalesce(nullif(item.display_image, ''), nullif(item.sku_image, ''), item.main_image)
                         from order_item item
                         where item.order_id = o.id order by item.id limit 1) as primary_product_image,
                        (select coalesce(sum(item.quantity), 0) from order_item item

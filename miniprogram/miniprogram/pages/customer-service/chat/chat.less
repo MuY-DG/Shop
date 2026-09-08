@@ -201,23 +201,34 @@ button::after {
   overflow-anchor: none;
 }
 .welcome-greeting {
-  display: flex;
-  align-items: center;
+  position: relative;
+  box-sizing: border-box;
   width: fit-content;
   max-width: 100%;
+  min-height: 102rpx;
   margin-bottom: 28rpx;
-  padding-right: 24rpx;
-  border-radius: 18rpx;
-  background: #fff;
-  font-size: 25rpx;
-  line-height: 1.5;
+  padding-top: 30rpx;
 }
 .welcome-greeting image {
-  width: 88rpx;
-  height: 88rpx;
-  flex: none;
-  margin-right: 18rpx;
+  position: absolute;
+  z-index: 1;
+  left: 0;
+  bottom: 0;
+  box-sizing: border-box;
+  width: 104rpx;
+  height: 104rpx;
+  border: 3rpx solid #fff;
   border-radius: 50%;
+}
+.welcome-greeting__text {
+  display: block;
+  box-sizing: border-box;
+  padding: 18rpx 24rpx 18rpx 128rpx;
+  border-radius: 18rpx;
+  color: #222;
+  background: #fff;
+  font-size: 25rpx;
+  line-height: 36rpx;
 }
 .welcome-card {
   box-sizing: border-box;
@@ -398,61 +409,70 @@ button::after {
   font-size: 22rpx;
 }
 
+.message-row--card .message-body {
+  width: 580rpx;
+  max-width: 100%;
+}
 .chat-card {
   box-sizing: border-box;
-  width: 500rpx;
-  overflow: hidden;
-  border-radius: 10rpx;
-  background: #ffffff;
+  width: 580rpx;
+  max-width: 100%;
+  padding: 22rpx;
+  border-radius: 18rpx;
+  background: #fff;
 }
-
-.chat-card__eyebrow {
+.chat-card__heading {
   display: flex;
-  padding: 18rpx 20rpx 10rpx;
   align-items: center;
-  justify-content: space-between;
-  color: #777777;
-  font-size: 22rpx;
+  gap: 16rpx;
+  margin-bottom: 18rpx;
+  color: #979ba5;
+  font-size: 23rpx;
 }
-
+.chat-card__number {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .chat-card__status {
-  color: #d05b32;
+  flex: none;
+  padding: 4rpx 8rpx;
+  border-radius: 4rpx;
+  color: #676b75;
+  background: #f0f1f5;
+  font-size: 21rpx;
+  line-height: 1.4;
+  white-space: nowrap;
 }
-
 .chat-card__main {
   display: flex;
-  padding: 8rpx 20rpx 20rpx;
-  align-items: center;
+  align-items: flex-start;
   gap: 18rpx;
 }
-
 .chat-card__image-shell,
 .candidate__image-shell {
   display: flex;
-  width: 112rpx;
-  height: 112rpx;
+  width: 120rpx;
+  height: 120rpx;
   flex: none;
   align-items: center;
   justify-content: center;
   overflow: hidden;
-  border-radius: 8rpx;
-  color: #8b776d;
+  border-radius: 6rpx;
   background: #ffffff;
-  font-size: 30rpx;
 }
-
 .chat-card__image-shell image,
 .candidate__image-shell image {
   width: 100%;
   height: 100%;
 }
-
 .chat-card__image-shell .chat-card__placeholder-icon,
 .candidate__image-shell .candidate__placeholder-icon {
-  width: 54rpx;
-  height: 54rpx;
+  width: 64rpx;
+  height: 64rpx;
 }
-
 .chat-card__body {
   display: flex;
   min-width: 0;
@@ -460,52 +480,72 @@ button::after {
   align-self: stretch;
   flex-direction: column;
 }
-
 .chat-card__title {
   display: -webkit-box;
   overflow: hidden;
-  color: #222222;
+  color: #222;
   font-size: 27rpx;
-  line-height: 1.4;
+  line-height: 1.5;
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 2;
 }
-
-.chat-card__meta {
-  margin-top: 5rpx;
-  color: #999999;
-  font-size: 21rpx;
+.chat-card__aside {
+  display: flex;
+  flex: none;
+  min-width: 112rpx;
+  max-width: 156rpx;
+  min-height: 120rpx;
+  align-items: flex-end;
+  flex-direction: column;
+  gap: 12rpx;
 }
-
-.chat-card__price {
+.chat-card__amount {
+  color: #222;
+  font-size: 26rpx;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.chat-card__meta,
+.chat-card__date {
+  color: #969aa4;
+  font-size: 21rpx;
+  line-height: 1.5;
+}
+.chat-card__body .chat-card__meta {
+  margin-top: 8rpx;
+}
+.chat-card__date {
   margin-top: auto;
+  white-space: nowrap;
+}
+.chat-card--product .chat-card__image-shell {
+  width: 150rpx;
+  height: 150rpx;
+}
+.chat-card__product-bottom {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 12rpx;
+  margin-top: auto;
+  padding-top: 16rpx;
+}
+.chat-card__price {
   color: @color-price;
   font-family: @font-family-commerce-price;
-  font-size: 27rpx;
-  font-variant-numeric: proportional-nums;
+  font-size: 34rpx;
   font-weight: 600;
+  font-variant-numeric: proportional-nums;
 }
-
-.chat-card__footer {
-  display: flex;
-  min-height: 58rpx;
-  padding: 0 20rpx;
-  align-items: center;
-  justify-content: space-between;
-  border-top: 1rpx solid #eeeeee;
-  color: #888888;
-  font-size: 20rpx;
-}
-
-.chat-card__link {
-  display: flex;
-  align-items: center;
-  gap: 2rpx;
-}
-
-.chat-card__link image {
-  width: 28rpx;
-  height: 28rpx;
+.chat-card__action {
+  flex: none;
+  padding: 9rpx 16rpx;
+  border-radius: 8rpx;
+  color: #fff;
+  background: @color-price;
+  font-size: 23rpx;
+  line-height: 1.4;
+  white-space: nowrap;
 }
 
 .composer {
@@ -532,7 +572,8 @@ button::after {
   min-height: 64rpx;
   max-height: 220rpx;
   flex: 1 1 0;
-  align-items: flex-end;
+  align-items: center;
+  padding: 11rpx 20rpx;
   overflow: hidden;
   border-radius: 16rpx;
   background: #ffffff;
@@ -541,9 +582,9 @@ button::after {
 .composer__input {
   box-sizing: border-box;
   width: 100%;
-  min-height: 64rpx;
-  max-height: 220rpx;
-  padding: 13rpx 20rpx 9rpx;
+  min-height: 42rpx;
+  max-height: 198rpx;
+  padding: 0;
   border: 0;
   border-radius: 0;
   color: #111111;
@@ -607,11 +648,6 @@ button::after {
   align-items: flex-start;
 }
 
-.attachment-grid--three {
-  min-height: 224rpx;
-  padding-top: 18rpx;
-}
-
 .attachment-action {
   display: flex;
   width: 25%;
@@ -620,10 +656,6 @@ button::after {
   gap: 14rpx;
   color: #666666;
   font-size: 23rpx;
-}
-
-.attachment-grid--three .attachment-action {
-  width: 33.3333%;
 }
 
 .attachment-action__icon {
@@ -860,45 +892,6 @@ button::after {
   }
 }
 
-.context-bar {
-  display: flex;
-  box-sizing: border-box;
-  padding: 16rpx 24rpx;
-  gap: 16rpx;
-  align-items: center;
-  flex: none;
-  border-bottom: 1rpx solid #e9eaf0;
-}
-.context-bar__image {
-  width: 80rpx;
-  height: 80rpx;
-  border-radius: 8rpx;
-  flex: none;
-}
-.context-bar__body {
-  min-width: 0;
-  flex: 1;
-}
-.context-bar__title {
-  display: block;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: 27rpx;
-}
-.context-bar__price {
-  display: block;
-  margin-top: 10rpx;
-  color: #777b86;
-  font-size: 23rpx;
-}
-.context-bar__link {
-  padding: 8rpx 16rpx;
-  border: 1rpx solid #dedfe5;
-  border-radius: 8rpx;
-  font-size: 23rpx;
-  flex: none;
-}
 .pending-context {
   display: flex;
   width: calc(100% - 48rpx);

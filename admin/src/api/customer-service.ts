@@ -1,4 +1,5 @@
 import request from '@/utils/http'
+
 import { requirePersistedCustomerServiceMessageId } from '@/utils/customer-service-message'
 import {
   uploadFileToCosPostWithSessionCancellation,
@@ -6,6 +7,38 @@ import {
 } from '@/utils/cos-post-upload'
 import { isHttpError, showError } from '@/utils/http/error'
 
+export function fetchCustomerServiceOrderDetail(conversationId: number, orderId: number) {
+  return request.get<Api.Order.OrderDetail>({
+    url: `/admin/customer-service/conversations/${conversationId}/orders/${orderId}/detail`,
+    showErrorMessage: false
+  })
+}
+
+export function fetchCustomerServiceProductDetail(conversationId: number, productId: number) {
+  return request.get<Api.CustomerService.ProductDetail>({
+    url: `/admin/customer-service/conversations/${conversationId}/products/${productId}/detail`,
+    showErrorMessage: false
+  })
+}
+
+export function fetchCustomerServiceAfterSaleDetail(conversationId: number, afterSaleId: number) {
+  return request.get<Api.AfterSale.Detail>({
+    url: `/admin/customer-service/conversations/${conversationId}/after-sales/${afterSaleId}/detail`,
+    showErrorMessage: false
+  })
+}
+
+export function fetchCustomerServiceAfterSaleEvidence(
+  conversationId: number,
+  afterSaleId: number,
+  fileId: number
+) {
+  return request.get<Blob>({
+    url: `/admin/customer-service/conversations/${conversationId}/after-sales/${afterSaleId}/evidence/${fileId}`,
+    responseType: 'blob',
+    showErrorMessage: false
+  })
+}
 const DIRECT_UPLOAD_UNAVAILABLE_HTTP_STATUSES = new Set([404, 405, 501])
 const DIRECT_UPLOAD_UNAVAILABLE_CODE = 800009
 const LEGACY_IMAGE_UPLOAD_TIMEOUT_MS = 180_000

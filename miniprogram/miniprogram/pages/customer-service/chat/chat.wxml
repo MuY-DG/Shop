@@ -29,14 +29,6 @@
   </view>
 
   <block wx:else>
-    <view wx:if="{{contextCard && !pendingContextCard}}" class="context-bar" bindtap="onContextCardTap" aria-role="button">
-      <image wx:if="{{contextCard.image}}" class="context-bar__image" src="{{contextCard.image}}" mode="aspectFill" />
-      <view class="context-bar__body">
-        <text class="context-bar__title">{{contextCard.title}}</text>
-        <text class="context-bar__price">{{contextCard.priceText}}</text>
-      </view>
-      <text class="context-bar__link">{{contextCard.viewText}}</text>
-    </view>
     <scroll-view
       class="message-scroll {{historyAnchoring ? 'message-scroll--history-anchoring' : ''}}"
       scroll-y
@@ -79,7 +71,7 @@
           >
             <view class="welcome-greeting">
               <image src="{{item.senderAvatar}}" mode="aspectFill" />
-              <text>您好，很高兴为您服务！</text>
+              <text class="welcome-greeting__text">您好，很高兴为您服务！</text>
             </view>
             <view class="welcome-card">
               <text class="welcome-card__title">欢迎您光临本店</text>
@@ -106,9 +98,9 @@
           <view
             wx:else
             id="message-{{item.messageId}}"
-            class="message-row {{item.isMine ? 'message-row--mine' : ''}}"
+            class="message-row {{item.isResourceCard ? 'message-row--card' : ''}} {{item.isMine ? 'message-row--mine' : ''}}"
           >
-            <view wx:if="{{!item.isMine}}" class="message-avatar">
+            <view wx:if="{{!item.isMine && !item.isResourceCard}}" class="message-avatar">
               <image
                 src="{{item.senderAvatar}}"
                 mode="aspectFill"
@@ -116,7 +108,7 @@
             </view>
 
             <view class="message-body">
-              <text wx:if="{{!item.isMine}}" class="message-sender">{{item.senderName}}</text>
+              <text wx:if="{{!item.isMine && !item.isResourceCard}}" class="message-sender">{{item.senderName}}</text>
 
               <view
                 wx:if="{{item.messageType === 'TEXT'}}"
@@ -197,90 +189,61 @@
                 </view>
               </view>
 
-              <view
-                wx:elif="{{item.messageType === 'ORDER_CARD'}}"
-                class="chat-card"
-                data-id="{{item.orderId}}"
-                bindtap="onOrderCardTap"
-                aria-role="button"
-              >
-                <view class="chat-card__eyebrow">
-                  <text>订单</text>
+              <view wx:elif="{{item.messageType === 'ORDER_CARD'}}" class="chat-card chat-card--order"
+                data-id="{{item.orderId}}" bindtap="onOrderCardTap" aria-role="button" aria-label="查看订单详情">
+                <view class="chat-card__heading">
+                  <text class="chat-card__number">订单号：{{item.orderNo}}</text>
                   <text class="chat-card__status">{{item.orderStatusText}}</text>
                 </view>
                 <view class="chat-card__main">
                   <view class="chat-card__image-shell">
-                    <image
-                      wx:if="{{item.orderImage}}"
-                      src="{{item.orderImage}}"
-                      mode="aspectFill"
-                    />
-                    <image
-                      wx:else
-                      class="chat-card__placeholder-icon"
-                      src="/assets/icons/order-all.svg"
-                      mode="aspectFit"
-                      aria-hidden="true"
-                    />
+                    <image wx:if="{{item.orderImage}}" src="{{item.orderImage}}" mode="aspectFill" />
+                    <image wx:else class="chat-card__placeholder-icon" src="/assets/icons/order-all.svg" mode="aspectFit" aria-hidden="true" />
                   </view>
-                  <view class="chat-card__body">
-                    <text class="chat-card__title">{{item.orderTitle}}</text>
+                  <view class="chat-card__body"><text class="chat-card__title">{{item.orderTitle}}</text></view>
+                  <view class="chat-card__aside">
+                    <text class="chat-card__amount">{{item.orderAmountText}}</text>
                     <text class="chat-card__meta">{{item.orderItemText}}</text>
-                    <text class="chat-card__price">{{item.orderAmountText}}</text>
-                  </view>
-                </view>
-                <view class="chat-card__footer">
-                  <text>订单号 {{item.orderNo}}</text>
-                  <view class="chat-card__link">
-                    <text>查看</text>
-                    <image src="/assets/icons/chevron-right-light.svg" mode="aspectFit" />
+                    <text class="chat-card__date">{{item.orderCreatedAtText}}</text>
                   </view>
                 </view>
               </view>
 
-              <view wx:elif="{{item.messageType === 'AFTER_SALE_CARD'}}" class="chat-card"
-                data-id="{{item.afterSaleId}}" bindtap="onAfterSaleCardTap" aria-role="button">
-                <view class="chat-card__eyebrow"><text>售后 {{item.afterSaleNo}}</text><text class="chat-card__status">{{item.afterSaleStatusText}}</text></view>
-                <view class="chat-card__main">
-                  <view class="chat-card__image-shell"><image wx:if="{{item.afterSaleImage}}" src="{{item.afterSaleImage}}" mode="aspectFill" /></view>
-                  <view class="chat-card__body"><text class="chat-card__title">{{item.afterSaleTitle}}</text><text class="chat-card__price">申请退款 {{item.afterSaleAmountText}}</text></view>
+              <view wx:elif="{{item.messageType === 'AFTER_SALE_CARD'}}" class="chat-card chat-card--after-sale"
+                data-id="{{item.afterSaleId}}" bindtap="onAfterSaleCardTap" aria-role="button" aria-label="查看售后详情">
+                <view class="chat-card__heading">
+                  <text class="chat-card__number">售后单：{{item.afterSaleNo}}</text>
+                  <text class="chat-card__status">{{item.afterSaleStatusText}}</text>
                 </view>
-                <view class="chat-card__footer"><text>售后详情</text><view class="chat-card__link"><text>查看</text><image src="/assets/icons/chevron-right-light.svg" mode="aspectFit" /></view></view>
-              </view>
-
-              <view
-                wx:elif="{{item.messageType === 'PRODUCT_CARD'}}"
-                class="chat-card"
-                data-id="{{item.productId}}"
-                bindtap="onProductCardTap"
-                aria-role="button"
-              >
-                <view class="chat-card__eyebrow">商品</view>
                 <view class="chat-card__main">
                   <view class="chat-card__image-shell">
-                    <image
-                      wx:if="{{item.productImage}}"
-                      src="{{item.productImage}}"
-                      mode="aspectFill"
-                    />
-                    <image
-                      wx:else
-                      class="chat-card__placeholder-icon"
-                      src="/assets/icons/chat-product.svg"
-                      mode="aspectFit"
-                      aria-hidden="true"
-                    />
+                    <image wx:if="{{item.afterSaleImage}}" src="{{item.afterSaleImage}}" mode="aspectFill" />
+                    <image wx:else class="chat-card__placeholder-icon" src="/assets/icons/order-all.svg" mode="aspectFit" aria-hidden="true" />
+                  </view>
+                  <view class="chat-card__body">
+                    <text class="chat-card__title">{{item.afterSaleTitle}}</text>
+                    <text class="chat-card__meta">{{item.afterSaleReason}}</text>
+                  </view>
+                  <view class="chat-card__aside">
+                    <text class="chat-card__amount">{{item.afterSaleAmountText}}</text>
+                    <text class="chat-card__meta">申请退款</text>
+                  </view>
+                </view>
+              </view>
+
+              <view wx:elif="{{item.messageType === 'PRODUCT_CARD'}}" class="chat-card chat-card--product"
+                data-id="{{item.productId}}" bindtap="onProductCardTap" aria-role="button" aria-label="查看商品详情">
+                <view class="chat-card__main">
+                  <view class="chat-card__image-shell">
+                    <image wx:if="{{item.productImage}}" src="{{item.productImage}}" mode="aspectFill" />
+                    <image wx:else class="chat-card__placeholder-icon" src="/assets/icons/chat-product.svg" mode="aspectFit" aria-hidden="true" />
                   </view>
                   <view class="chat-card__body">
                     <text class="chat-card__title">{{item.productTitle}}</text>
-                    <text class="chat-card__price">{{item.productPriceText}}</text>
-                  </view>
-                </view>
-                <view class="chat-card__footer">
-                  <text>商品详情</text>
-                  <view class="chat-card__link">
-                    <text>查看</text>
-                    <image src="/assets/icons/chevron-right-light.svg" mode="aspectFit" />
+                    <view class="chat-card__product-bottom">
+                      <text class="chat-card__price">{{item.productPriceText}}</text>
+                      <text class="chat-card__action">查看商品</text>
+                    </view>
                   </view>
                 </view>
               </view>
@@ -292,7 +255,7 @@
             </view>
 
             <view
-              wx:if="{{item.isMine}}"
+              wx:if="{{item.isMine && !item.isResourceCard}}"
               class="message-avatar"
             >
               <image

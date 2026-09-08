@@ -489,7 +489,7 @@ class CustomerServiceControllerTest {
         mockMvc.perform(post("/app/customer-service/conversation/open")
                         .header("Authorization", bearer(app.token())).contentType(MediaType.APPLICATION_JSON)
                         .content("{\"contextType\":\"ORDER\",\"contextId\":" + orderId + "}"))
-                .andExpect(status().isOk()).andExpect(jsonPath("$.data.linkedAfterSales.length()").value(0))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.data.linkedAfterSales.length()").value(1))
                 .andExpect(jsonPath("$.data.linkedOrders.length()").value(1))
                 .andExpect(jsonPath("$.data.linkedProducts.length()").value(2));
         mockMvc.perform(post("/app/customer-service/conversation/orders/{id}", orderId)
@@ -503,6 +503,72 @@ class CustomerServiceControllerTest {
                 .andExpect(jsonPath("$.data.linkedAfterSales.length()").value(0))
                 .andExpect(jsonPath("$.data.linkedOrders.length()").value(0))
                 .andExpect(jsonPath("$.data.linkedProducts.length()").value(1));
+    }
+
+    @Test
+    void resourceDetailsStayScopedToTheAssignedConversationAndItsHistory() throws Exception {
+        jdbcClient.sql("insert into product_category (id, name, sort_order, status) values (1, '火锅底料', 0, 'ENABLED')").update();
+        AppLogin app = appLogin("cs-resource-detail-user");
+        AppLogin other = appLogin("cs-resource-detail-other");
+        long productId = insertProduct("客服详情商品", 3990);
+        long unrelatedProductId = insertProduct("无关商品", 990);
+        long orderId = insertOrder(app.userId(), "CS-DETAIL-ORDER");
+        long saleId = insertAfterSale(app.userId(), orderId, insertOrderItem(orderId, productId));
+        jdbcClient.sql("update order_item set display_image = '', sku_image = '', main_image = '/product.png' where order_id = :id")
+                .param("id", orderId).update();
+        long unrelatedOrderId = insertOrder(app.userId(), "CS-DETAIL-UNRELATED");
+        long otherOrderId = insertOrder(other.userId(), "CS-DETAIL-OTHER");
+        long otherSaleId = insertAfterSale(other.userId(), otherOrderId,
+                insertOrderItem(otherOrderId, unrelatedProductId));
+        long agentId = insertCustomerServiceAgent("DetailAgent", "详情客服", "agent-pass");
+        String agentToken = adminLogin("DetailAgent", "agent-pass");
+        String managerToken = adminLogin("Super", "123456");
+        long conversationId = objectMapper.readTree(mockMvc.perform(post("/app/customer-service/conversation/open")
+                        .header("Authorization", bearer(app.token())).contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"contextType\":\"ORDER\",\"contextId\":" + orderId + "}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.linkedAfterSales[0].afterSaleId").value(saleId))
+                .andExpect(jsonPath("$.data.linkedOrders[0].primaryProductImage").value("/product.png"))
+                .andReturn().getResponse().getContentAsString()).path("data").path("conversationId").asLong();
+        String base = "/admin/customer-service/conversations/" + conversationId;
+        mockMvc.perform(get(base + "/orders/{id}/detail", orderId)
+                        .header("Authorization", bearer(agentToken)))
+                .andExpect(status().isBadRequest());
+        // Establish the same assigned state used by the existing claim flow.
+        jdbcClient.sql("update customer_service_conversation set status = 'ACTIVE', assigned_admin_user_id = :agent where id = :id")
+                .param("agent", agentId).param("id", conversationId).update();
+        mockMvc.perform(get(base + "/orders/{id}/detail", orderId)
+                        .header("Authorization", bearer(agentToken)))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.data.orderId").value(orderId));
+        mockMvc.perform(get(base + "/after-sales/{id}/detail", saleId)
+                        .header("Authorization", bearer(agentToken)))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.data.id").value(saleId));
+        mockMvc.perform(get(base + "/products/{id}/detail", productId)
+                        .header("Authorization", bearer(agentToken)))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.data.id").value(productId))
+                .andExpect(jsonPath("$.data.skus[0].priceCent").value(3990))
+                .andExpect(jsonPath("$.data.skus[0].costPriceCent").doesNotExist());
+        for (long deniedOrderId : List.of(unrelatedOrderId, otherOrderId)) {
+            mockMvc.perform(get(base + "/orders/{id}/detail", deniedOrderId)
+                            .header("Authorization", bearer(agentToken))).andExpect(status().isBadRequest());
+        }
+        mockMvc.perform(get(base + "/products/{id}/detail", unrelatedProductId)
+                        .header("Authorization", bearer(agentToken))).andExpect(status().isBadRequest());
+        mockMvc.perform(get(base + "/after-sales/{id}/detail", otherSaleId)
+                        .header("Authorization", bearer(agentToken))).andExpect(status().isBadRequest());
+        mockMvc.perform(get(base + "/after-sales/{id}/evidence/1", otherSaleId)
+                        .header("Authorization", bearer(agentToken))).andExpect(status().isBadRequest());
+        // A sent order remains readable from history after the current entry changes to a product.
+        mockMvc.perform(post("/app/customer-service/conversation/orders/{id}", orderId)
+                        .header("Authorization", bearer(app.token()))).andExpect(status().isOk());
+        mockMvc.perform(post("/app/customer-service/conversation/open")
+                        .header("Authorization", bearer(app.token())).contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"contextType\":\"PRODUCT\",\"contextId\":" + unrelatedProductId + "}"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.data.linkedAfterSales.length()").value(0));
+        mockMvc.perform(get(base + "/orders/{id}/detail", orderId)
+                        .header("Authorization", bearer(managerToken))).andExpect(status().isOk());
+        mockMvc.perform(get(base + "/after-sales/{id}/detail", saleId)
+                        .header("Authorization", bearer(managerToken))).andExpect(status().isOk());
     }
 
     @Test
