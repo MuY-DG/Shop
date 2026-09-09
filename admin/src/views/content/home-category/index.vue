@@ -199,6 +199,7 @@
     updateHomeCategory
   } from '@/api/content'
   import { toHomeCategoryPayload } from '../home-decoration-state'
+  import { buildHomeCategoryOptions } from '../home-category-options'
 
   defineOptions({ name: 'ContentHomeCategory' })
 
@@ -212,14 +213,6 @@
 
   interface EditorForm extends Api.Content.HomeCategoryForm {
     imageUrl: string
-  }
-
-  interface CategoryTreeOption {
-    [key: string]: unknown
-    value: number
-    label: string
-    disabled?: boolean
-    children?: CategoryTreeOption[]
   }
 
   const loading = ref(false)
@@ -248,27 +241,13 @@
     checkStrictly: true,
     expandTrigger: 'hover'
   } as const
-  const categoryTreeOptions = computed<CategoryTreeOption[]>(() => {
-    const childrenByParent = new Map<number, Api.Content.HomeCategoryOption[]>()
-    categoryOptions.value.forEach((option) => {
-      const siblings = childrenByParent.get(option.parentId) || []
-      siblings.push(option)
-      childrenByParent.set(option.parentId, siblings)
-    })
-
-    const buildChildren = (parentId: number): CategoryTreeOption[] =>
-      (childrenByParent.get(parentId) || []).map((option) => {
-        const children = buildChildren(option.id)
-        return {
-          value: option.id,
-          label: option.name,
-          disabled: usedCategoryIds.value.has(option.id) && option.id !== editingCategoryId.value,
-          children: children.length ? children : undefined
-        }
-      })
-
-    return buildChildren(0)
-  })
+  const categoryTreeOptions = computed(() =>
+    buildHomeCategoryOptions(
+      categoryOptions.value,
+      (categoryId) =>
+        usedCategoryIds.value.has(categoryId) && categoryId !== editingCategoryId.value
+    )
+  )
   const rules: FormRules<EditorForm> = {
     categoryId: [{ required: true, message: '请选择商城分类', trigger: 'change' }],
     imageFileId: [{ required: true, message: '请选择展示图片', trigger: 'change' }]

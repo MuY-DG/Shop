@@ -242,6 +242,7 @@
     updateHomeBanner
   } from '@/api/content'
   import { fetchCouponTemplates } from '@/api/coupon'
+  import { buildHomeCategoryOptions } from '../home-category-options'
 
   defineOptions({ name: 'ContentBanner' })
 
@@ -264,13 +265,6 @@
     value: number
     label: string
     meta: string
-  }
-
-  interface CategoryTargetOption {
-    [key: string]: unknown
-    value: number
-    label: string
-    children?: CategoryTargetOption[]
   }
 
   const loading = ref(false)
@@ -364,26 +358,7 @@
     checkStrictly: true,
     expandTrigger: 'hover'
   } as const
-  const categoryTargetOptions = computed<CategoryTargetOption[]>(() => {
-    const childrenByParent = new Map<number, Api.Content.HomeCategoryOption[]>()
-    categoryOptions.value.forEach((option) => {
-      const siblings = childrenByParent.get(option.parentId) || []
-      siblings.push(option)
-      childrenByParent.set(option.parentId, siblings)
-    })
-
-    const buildChildren = (parentId: number): CategoryTargetOption[] =>
-      (childrenByParent.get(parentId) || []).map((option) => {
-        const children = buildChildren(option.id)
-        return {
-          value: option.id,
-          label: option.name,
-          children: children.length ? children : undefined
-        }
-      })
-
-    return buildChildren(0)
-  })
+  const categoryTargetOptions = computed(() => buildHomeCategoryOptions(categoryOptions.value))
 
   const rules: FormRules<BannerEditorForm> = {
     imageFileId: [
