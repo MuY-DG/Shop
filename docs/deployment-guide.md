@@ -7,7 +7,17 @@
 ./deploy.sh shop
 ```
 
-脚本同时部署后端和 Admin。小程序仍由微信开发者工具单独上传。
+省略范围参数时，脚本同时部署后端和 Admin。也可通过第二个参数分别发布：
+
+```bash
+./deploy.sh shop admin           # 只更新管理后台
+./deploy.sh shop backend         # 只更新后端
+./deploy.sh shop all             # 更新管理后台和后端，与省略参数相同
+./deploy.sh shop auto            # 根据服务器上各组件的部署记录选择更新范围
+./deploy.sh shop auto --plan     # 只读取服务器状态、显示计划，不构建或发布
+```
+
+`txcloud` 支持完全相同的参数。这里的 `admin` 指管理后台；小程序仍由微信开发者工具单独上传。
 
 服务器准备完成后，空库首次部署和已升级环境的日常更新都只执行对应的一条命令。
 后端启动时由 Flyway 自动建表、校验并执行尚未应用的结构迁移，无需手工执行 SQL。
@@ -168,7 +178,10 @@ WebSocket 已完成 `101` 握手；真实连接可在登录 Admin 后通过浏�
 
 ## 本机准备
 
-需要 Git、SSH、Node.js、pnpm、OpenSSL、`htpasswd`、tar 和 `shasum`。先安装项目依赖：
+所有范围都需要 Git、SSH 和 `shasum`，实际发布还需要 tar。
+发布 Admin 才需要 Node.js、pnpm；发布后端才需要本机 OpenSSL、`htpasswd` 和目标服务器 Docker。
+`--plan` 只读取记录和已部署组件的状态，不初始化密钥、不构建、不上传。
+需要发布 Admin 时，先安装项目依赖：
 
 ```bash
 pnpm --dir admin install --frozen-lockfile
@@ -195,18 +208,79 @@ backend/shop-server/config/runtime/shop.env
 ./deploy.sh shop
 ```
 
-一次执行会完成：
+`all` 或省略范围时，一次执行会完成：
 
-1. 检查 SSH、Docker、Compose 和 1Panel 网站目录。
+1. 读取组件部署记录，显示计划，检查 SSH、Docker、Compose 和 1Panel 网站目录。
 2. 校验目标运行密钥。
 3. 构建 Admin，并确认自动导入声明没有变化。
 4. 上传 Compose、运行密钥、后端构建上下文和 Admin 静态文件。
 5. 在服务器构建 `shop-server:local`。
 6. 初始化持久化日志卷权限，再启动或更新 MySQL、Redis 和后端；已有 Docker 数据卷会继续复用。
 7. 用新 Admin 构建产物替换网站 `index` 目录。
-8. 检查后端健康和 Git SHA，并只读验收 API HTTPS、Admin 静态文件、SPA 回退、
-   `/admin/` 代理及两个域名的 `/realtime` 后端路由。
-9. 全新空库会自动引导一次 Super；日常部署会跳过。
+8. 分组件检查后端健康和 Git SHA、API HTTPS、Admin 静态文件、SPA 回退、
+   `/admin/` 代理及两个域名的 `/realtime` 后端路由，每个组件验收成功后独立保存记录。
+9. 全新空库会自动引导一次 Super；日常部署会跳过。首次后端成功记录在引导完成后保存。
+
+### 分别发布
+
+- `admin` 只构建、上传管理后台静态文件，切换站点并验收页面、SPA 回退、Admin API 和
+  实时代理。它要求已有后端健康可用，但不要求后端 SHA 等于本次仓库 SHA；不读取或上传
+  运行密钥，不调用 Docker，不查询数据库或执行 Super 初始化。
+- `backend` 只上传后端构建上下文、Compose 和经过一致性校验的运行密钥，构建镜像并更新
+  后端。它仍会确认 MySQL、Redis 健康、初始化日志卷权限和执行正常 Flyway 启动迁移；
+  不构建或替换 Admin，也不要求本机安装 pnpm。已有 Admin 网站时会检查其 API 和实时代理。
+- `all` 显式重新发布两个组件，包括它们的构建输入没有变化的情况；单独指定 `admin` 或
+  `backend` 也会重新发布所指定的组件。只有 `auto` 会自动跳过。
+
+若显式只发布一端，而另一端的记录缺失或构建输入有变化，计划会提示另一端仍有待确认或
+待发布内容。涉及配套接口、权限菜单或数据结构变更时使用 `all`；目录变化检测不能证明
+前后端接口兼容。
+
+### 自动判断与版本记录
+
+每台服务器独立保存以下记录，内容为版本号、构建输入指纹、完整 Git SHA、构建时间和
+验收用的文件摘要，不包含运行密钥：
+
+```text
+/opt/shop/.deploy-state/admin.state
+/opt/shop/.deploy-state/backend.state
+```
+
+指纹基于已提交文件的路径、模式和内容计算：
+
+- Admin：`admin/`、`.nvmrc`。
+- 后端：Dockerfile、`.dockerignore`、`pom.xml`、`src/`、`compose.prod.yaml` 和运行配置辅助脚本。
+- 两端共同包含 `deploy.sh` 与 `scripts/deploy/` 下的两个执行辅助脚本。
+
+因此，`auto` 比较的是当前构建输入与目标服务器上该组件最后一次验收成功的输入，跨多个
+提交也有效。根目录文档、`docs/` 或小程序的单独修改不会触发这两个组件更新；组件目录内
+的文件采用保守检测，包括测试和说明文件。实际发布后端时，运行密钥继续采用原有一致性检查，不能通过
+`auto` 自动轮换密钥。
+
+读取记录时还会核对 Admin 当前 `index.html`，以及后端健康、实际 SHA/构建时间和服务器
+Compose 文件摘要。记录缺失、格式不兼容或与实际运行状态不符时，该组件视为需要部署。
+两端均没有记录的旧环境或首次环境，第一次执行 `auto` 会完整部署以建立基准；也可先显式
+发布某个组件，只为该组件建立记录。
+
+前端单独更新后，后端记录保留原来的 SHA 和构建时间，这是正常状态。两个组件都未变化时，
+`auto` 只检查并退出。需要强制重新构建时使用显式范围。
+
+计划读取和远端发布共用原来的目标部署锁。远端发布拿到锁后会重新核对计划时的记录；
+如果构建期间其他部署改变了组件状态，本次会停止，请重新运行以重新计算计划。
+不要删除锁文件来解除部署锁。
+
+一个组件开始切换运行版本时会使它的旧记录失效，验收通过后再原子写入新记录。
+例如后端已成功但 Admin 验收失败，后端的新记录仍保留，Admin 不会被误记为成功。
+脚本不自动回滚或操作数据库备份；首次 Super 引导异常时，仍按下方临时凭据说明处理。
+
+部署逻辑的隔离回归验证可以在本机执行，不需要 SSH、Docker 或真实服务器：
+
+```bash
+python3 -m unittest discover -s scripts/tests -p 'test_deploy.py' -v
+```
+
+这些验证使用临时仓库和替代命令，覆盖部署范围、上传内容、版本记录、失败及并发状态变化；
+不能代替服务器上真实 Docker、1Panel 和 HTTPS 的发布验收。
 
 首次 Super 凭据只写入本机：
 

@@ -86,3 +86,7 @@ Shop/
 - [验收清单](docs/smoke-checks.md)
 - [后端架构约定](docs/backend-architecture.md)
 - [COS 图片直传](docs/cos-direct-upload.md)
+
+部署入口为 `./deploy.sh <txcloud|shop> [admin|backend|all|auto] [--plan]`。
+省略范围时部署管理后台和后端；`auto` 按目标服务器的组件记录跳过未变化部分，
+`--plan` 只显示计划。小程序仍单独上传。
