@@ -118,15 +118,17 @@
 
     <block wx:else>
       <view class="catalog-grid catalog-grid--{{viewMode}}">
-        <view wx:for="{{products}}" wx:key="spuId" class="catalog-item">
-          <product-card
-            product="{{item}}"
-            variant="{{viewMode === 'list' ? 'list' : 'compact'}}"
-            flat="{{true}}"
-            adding="{{addingSpuId === item.spuId}}"
-            bindselect="onProductSelect"
-            bindadd="onProductAdd"
-          />
+        <view wx:for="{{productColumns}}" wx:key="id" wx:for-item="column" class="catalog-column">
+          <view wx:for="{{column.products}}" wx:key="spuId" class="catalog-item">
+            <product-card
+              product="{{item}}"
+              variant="{{viewMode === 'list' ? 'list' : 'waterfall'}}"
+              flat="{{true}}"
+              adding="{{addingSpuId === item.spuId}}"
+              bindselect="onProductSelect"
+              bindadd="onProductAdd"
+            />
+          </view>
         </view>
       </view>
 

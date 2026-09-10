@@ -91,6 +91,7 @@
 
 .featured-track {
   display: flex;
+  align-items: flex-start;
   padding-right: @page-gutter;
 }
 
@@ -107,7 +108,15 @@
 .compact-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: start;
   padding-top: @space-2;
+  gap: @space-5;
+}
+
+.compact-column {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
   gap: @space-5;
 }
 

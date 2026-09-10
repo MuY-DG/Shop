@@ -125,6 +125,7 @@ Component({
     activeKeyword: "",
     sourceProducts: [] as ProductListItem[],
     products: [] as CatalogProductCardView[],
+    productColumns: [] as Array<{ id: string; products: CatalogProductCardView[] }>,
     sortMode: "COMPREHENSIVE" as ProductListSort,
     viewMode: "grid" as "grid" | "list",
     filterVisible: false,
@@ -144,6 +145,19 @@ Component({
     loaded: false,
     errorText: "",
     addingSpuId: 0
+  },
+
+  observers: {
+    "products, viewMode"(products: CatalogProductCardView[], viewMode: string) {
+      this.setData({
+        productColumns: viewMode === "list"
+          ? [{ id: "list", products }]
+          : [
+              { id: "left", products: products.filter((_, index) => index % 2 === 0) },
+              { id: "right", products: products.filter((_, index) => index % 2 === 1) }
+            ]
+      });
+    }
   },
 
   lifetimes: {

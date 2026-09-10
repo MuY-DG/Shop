@@ -193,7 +193,7 @@
 
 .catalog-grid {
   display: grid;
-  align-items: stretch;
+  align-items: start;
 }
 
 .catalog-grid--grid {
@@ -203,6 +203,13 @@
 
 .catalog-grid--list {
   grid-template-columns: minmax(0, 1fr);
+  gap: 18rpx;
+}
+
+.catalog-column {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
   gap: 18rpx;
 }
 

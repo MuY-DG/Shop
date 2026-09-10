@@ -48,15 +48,17 @@
     </scroll-view>
 
     <view wx:else class="compact-grid">
-      <view wx:for="{{products}}" wx:key="placementId" class="compact-item">
-        <product-card
-          product="{{item}}"
-          variant="compact"
-          flat="{{true}}"
-          adding="{{addingSpuId === item.spuId}}"
-          bindselect="onProductSelect"
-          bindadd="onProductAdd"
-        />
+      <view wx:for="{{productColumns}}" wx:key="id" wx:for-item="column" class="compact-column">
+        <view wx:for="{{column.products}}" wx:key="placementId" class="compact-item">
+          <product-card
+            product="{{item}}"
+            variant="waterfall"
+            flat="{{true}}"
+            adding="{{addingSpuId === item.spuId}}"
+            bindselect="onProductSelect"
+            bindadd="onProductAdd"
+          />
+        </view>
       </view>
     </view>
   </view>
