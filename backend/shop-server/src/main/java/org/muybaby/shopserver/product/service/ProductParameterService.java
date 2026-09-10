@@ -138,12 +138,12 @@ public class ProductParameterService {
         List<Long> parameterIds = definitions.stream()
                 .map(AdminProductParameterDefinitionResponse::id)
                 .toList();
-        MapSqlParameterSource parameters = new MapSqlParameterSource()
+        ProductSearchQuery search = ProductSearchQuery.publicCatalog(keyword);
+        MapSqlParameterSource parameters = new MapSqlParameterSource(search.parameters())
                 .addValue("parameterIds", parameterIds)
                 .addValue("spuStatus", "ON_SALE")
                 .addValue("categoryStatus", "ENABLED")
-                .addValue("categoryId", categoryId)
-                .addValue("keywordLike", StringUtils.hasText(keyword) ? "%" + keyword.trim() + "%" : null);
+                .addValue("categoryId", categoryId);
         Map<Long, Map<String, Long>> counts = new HashMap<>();
         namedParameterJdbcTemplate.query("""
                         select v.parameter_id, v.option_codes_json
@@ -155,8 +155,8 @@ public class ProductParameterService {
                           and s.deleted_at is null
                           and c.status = :categoryStatus
                           and (:categoryId is null or s.category_id = :categoryId)
-                          and (:keywordLike is null or s.title like :keywordLike)
-                        """,
+                          and %s
+                        """.formatted(search.predicate("s")),
                 parameters,
                 rs -> {
                     Long parameterId = rs.getLong("parameter_id");

@@ -73,6 +73,13 @@ export interface ProductGuaranteeService {
   sortOrder: number;
 }
 
+export interface ProductSearchMatch {
+  skuId: number;
+  specText: string;
+  status: string;
+  saleState: ProductSaleState;
+}
+
 export interface ProductListItem {
   id: number;
   categoryId: number;
@@ -87,6 +94,7 @@ export interface ProductListItem {
   badgeText?: string;
   badgeTone?: ProductBadgeTone;
   parameters: ProductParameterValue[];
+  searchMatches?: ProductSearchMatch[];
 }
 
 export interface ProductListQuery {

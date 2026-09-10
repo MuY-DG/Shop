@@ -17,6 +17,7 @@ public record AppSpuListItemResponse(
         ProductSaleState saleState,
         String badgeText,
         String badgeTone,
-        List<AppProductParameterValueResponse> parameters
+        List<AppProductParameterValueResponse> parameters,
+        List<ProductSearchMatchResponse> searchMatches
 ) {
 }

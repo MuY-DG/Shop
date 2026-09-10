@@ -141,7 +141,7 @@
             reserve-keyword
             :remote-method="searchProducts"
             :loading="optionLoading"
-            placeholder="输入商品名称搜索"
+            placeholder="搜索名称、规格、SKU 编码或商品 ID"
             @visible-change="handleSelectorVisible"
           >
             <ElOption

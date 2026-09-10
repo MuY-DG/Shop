@@ -351,7 +351,7 @@
   const requiresPath = computed(() => ['APP_PATH', 'URL'].includes(formData.jumpType))
   const usesRemoteTarget = computed(() => ['PRODUCT', 'COUPON'].includes(formData.jumpType))
   const targetPlaceholder = computed(() =>
-    formData.jumpType === 'PRODUCT' ? '输入商品名称搜索' : '输入优惠券名称搜索'
+    formData.jumpType === 'PRODUCT' ? '搜索名称、规格、SKU 编码或商品 ID' : '输入优惠券名称搜索'
   )
   const categoryTargetProps = {
     emitPath: false,

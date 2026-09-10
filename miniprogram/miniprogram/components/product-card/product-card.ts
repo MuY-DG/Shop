@@ -3,6 +3,7 @@ interface ProductCardValue {
   spuId: number;
   title: string;
   subtitle: string;
+  searchMatchText?: string;
   imageUrl: string;
   hasImage: boolean;
   placeholder: string;
@@ -41,6 +42,7 @@ const EMPTY_PRODUCT: ProductCardValue = {
   spuId: 0,
   title: "",
   subtitle: "",
+  searchMatchText: "",
   imageUrl: "",
   hasImage: false,
   placeholder: "灶",

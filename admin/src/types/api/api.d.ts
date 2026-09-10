@@ -296,6 +296,14 @@ declare namespace Api {
 
     type SpuList = Api.Common.PaginatedResponse<SpuListItem>
 
+    interface ProductSearchMatch {
+      skuId: number
+      specText: string
+      skuCode: string
+      status: string
+      saleState: 'AVAILABLE' | 'SOLD_OUT'
+    }
+
     interface SpuListItem {
       id: number
       categoryId: number
@@ -317,6 +325,7 @@ declare namespace Api {
       updatedAt: string
       expiresAt?: string | null
       deletedAt?: string | null
+      searchMatches?: ProductSearchMatch[]
     }
 
     type SpuSearchParams = Partial<

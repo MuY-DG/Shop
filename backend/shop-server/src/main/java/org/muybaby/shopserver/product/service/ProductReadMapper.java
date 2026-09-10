@@ -14,7 +14,6 @@ import org.muybaby.shopserver.product.dto.AdminSpuQueryRequest;
 import org.muybaby.shopserver.product.dto.ProductImageResponse;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Service;
-import org.springframework.util.StringUtils;
 
 import java.sql.ResultSet;
 import java.sql.SQLException;
@@ -80,7 +79,7 @@ public class ProductReadMapper {
                 ? "s.deleted_at desc, s.id desc"
                 : "s.sort_order asc, s.id desc";
 
-        String titleLike = StringUtils.hasText(normalizedQuery.title()) ? "%" + normalizedQuery.title().trim() + "%" : null;
+        ProductSearchQuery search = ProductSearchQuery.adminCatalog(normalizedQuery.title());
 
         Long total = jdbcClient.sql("""
                         select count(*)
@@ -88,11 +87,11 @@ public class ProductReadMapper {
                         where %s
                           and (:categoryId is null or s.category_id = :categoryId)
                           and (:status is null or s.status = :status)
-                          and (:titleLike is null or s.title like :titleLike)
-                        """.formatted(recyclePredicate))
+                          and %s
+                        """.formatted(recyclePredicate, search.predicate("s")))
                 .param("categoryId", normalizedQuery.categoryId())
                 .param("status", normalizedQuery.status())
-                .param("titleLike", titleLike)
+                .params(search.parameters())
                 .query(Long.class)
                 .single();
 
@@ -117,21 +116,25 @@ public class ProductReadMapper {
                         where %s
                           and (:categoryId is null or s.category_id = :categoryId)
                           and (:status is null or s.status = :status)
-                          and (:titleLike is null or s.title like :titleLike)
+                          and %s
                         group by s.id, s.category_id, c.name, s.title, s.subtitle, s.main_image,
                                  s.status, s.sort_order, s.virtual_sales, sales.actual_sales,
                                  s.created_at, s.updated_at, s.deleted_at
                         order by %s
                         limit :limit offset :offset
-                        """.formatted(recyclePredicate, orderBy))
+                        """.formatted(recyclePredicate, search.predicate("s"), orderBy))
                 .param("categoryId", normalizedQuery.categoryId())
                 .param("status", normalizedQuery.status())
-                .param("titleLike", titleLike)
+                .params(search.parameters())
                 .param("limit", size)
                 .param("offset", offset)
                 .query(this::mapAdminSpuListItem)
                 .list();
 
+        var searchMatches = search.matches(jdbcClient, records.stream().map(AdminSpuListItemResponse::id).toList());
+        records = records.stream()
+                .map(record -> record.withSearchMatches(searchMatches.getOrDefault(record.id(), List.of())))
+                .toList();
         return PageResult.of(records, total == null ? 0 : total, current, size);
     }
 
@@ -314,7 +317,8 @@ public class ProductReadMapper {
                 rs.getLong("actual_sales") + rs.getLong("virtual_sales"),
                 rs.getObject("created_at", LocalDateTime.class),
                 rs.getObject("updated_at", LocalDateTime.class),
-                rs.getObject("deleted_at", LocalDateTime.class)
+                rs.getObject("deleted_at", LocalDateTime.class),
+                List.of()
         );
     }
 

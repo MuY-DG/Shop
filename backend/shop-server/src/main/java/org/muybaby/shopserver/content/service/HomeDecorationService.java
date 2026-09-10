@@ -18,6 +18,7 @@ import org.muybaby.shopserver.storage.StorageFileUsageType;
 import org.muybaby.shopserver.storage.StorageMediaKind;
 import org.muybaby.shopserver.storage.StorageUsageOwnerType;
 import org.muybaby.shopserver.storage.service.StorageUsageService;
+import org.muybaby.shopserver.product.service.ProductSearchQuery;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.jdbc.core.namedparam.MapSqlParameterSource;
@@ -394,9 +395,7 @@ public class HomeDecorationService {
         long current = normalized.pageCurrent();
         long size = normalized.pageSize();
         long offset = (current - 1) * size;
-        String keywordText = StringUtils.hasText(normalized.keyword()) ? normalized.keyword().trim() : null;
-        String keyword = keywordText == null ? null : "%" + keywordText + "%";
-        Long keywordId = parsePositiveLong(keywordText);
+        ProductSearchQuery search = ProductSearchQuery.adminSelection(normalized.keyword());
         Long total = jdbcClient.sql("""
                         select count(*)
                         from product_spu s
@@ -405,14 +404,9 @@ public class HomeDecorationService {
                           and s.deleted_at is null
                           and s.purged_at is null
                           and c.status = 'ENABLED'
-                          and (
-                              :keyword is null
-                              or s.title like :keyword
-                              or (:keywordId is not null and s.id = :keywordId)
-                          )
-                        """)
-                .param("keyword", keyword)
-                .param("keywordId", keywordId)
+                          and %s
+                        """.formatted(search.predicate("s")))
+                .params(search.parameters())
                 .query(Long.class)
                 .single();
         List<AdminHomeProductOptionResponse> records = jdbcClient.sql("""
@@ -426,17 +420,12 @@ public class HomeDecorationService {
                           and s.deleted_at is null
                           and s.purged_at is null
                           and c.status = 'ENABLED'
-                          and (
-                              :keyword is null
-                              or s.title like :keyword
-                              or (:keywordId is not null and s.id = :keywordId)
-                          )
+                          and %s
                         group by s.id, s.category_id, c.name, s.title, s.subtitle, s.main_image, s.sort_order
                         order by s.sort_order asc, s.id desc
                         limit :limit offset :offset
-                        """)
-                .param("keyword", keyword)
-                .param("keywordId", keywordId)
+                        """.formatted(search.predicate("s")))
+                .params(search.parameters())
                 .param("limit", size)
                 .param("offset", offset)
                 .query((rs, rowNum) -> new AdminHomeProductOptionResponse(
@@ -704,18 +693,6 @@ public class HomeDecorationService {
             return HomeBannerStatus.valueOf(value == null ? "" : value.trim().toUpperCase());
         } catch (IllegalArgumentException ex) {
             throw new BusinessException(ErrorCode.VALIDATION_FAILED);
-        }
-    }
-
-    private Long parsePositiveLong(String value) {
-        if (!StringUtils.hasText(value)) {
-            return null;
-        }
-        try {
-            long parsed = Long.parseLong(value);
-            return parsed > 0 ? parsed : null;
-        } catch (NumberFormatException ex) {
-            return null;
         }
     }
 

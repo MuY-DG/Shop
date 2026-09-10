@@ -35,6 +35,7 @@ import org.muybaby.shopserver.storage.provider.PrivateObjectAccess;
 import org.muybaby.shopserver.storage.provider.StorageObjectLocation;
 import org.muybaby.shopserver.storage.service.StorageService;
 import org.muybaby.shopserver.storage.service.DirectUploadService;
+import org.muybaby.shopserver.product.service.ProductSearchQuery;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.core.io.InputStreamResource;
 import org.springframework.dao.DuplicateKeyException;
@@ -859,7 +860,7 @@ public class CustomerServiceService {
             String keyword
     ) {
         requireAdminReadableConversation(principal, conversationId);
-        return productCandidates(keyword);
+        return productCandidates(ProductSearchQuery.adminSelection(keyword));
     }
 
     public List<LinkedProductResponse> productCandidatesForApp(
@@ -867,19 +868,18 @@ public class CustomerServiceService {
             String keyword
     ) {
         requirePrincipal(principal, TokenKind.APP);
-        return productCandidates(keyword);
+        return productCandidates(ProductSearchQuery.publicCatalog(keyword));
     }
 
-    private List<LinkedProductResponse> productCandidates(String keyword) {
-        String keywordLike = StringUtils.hasText(keyword) ? "%" + keyword.trim() + "%" : null;
+    private List<LinkedProductResponse> productCandidates(ProductSearchQuery search) {
         return jdbcClient.sql(productSelect() + """
                         where p.deleted_at is null
                           and p.status = 'ON_SALE'
-                          and (:keywordLike is null or p.title like :keywordLike)
+                          and %s
                         order by p.sort_order, p.id desc
                         limit 50
-                        """)
-                .param("keywordLike", keywordLike)
+                        """.formatted(search.predicate("p")))
+                .params(search.parameters())
                 .query(this::mapLinkedProduct)
                 .list();
     }

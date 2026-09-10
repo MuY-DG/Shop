@@ -46,6 +46,7 @@
       <text class="product-card__title-measure">{{product.title}}</text>
     </view>
     <view wx:if="{{product.subtitle}}" class="product-card__subtitle">{{product.subtitle}}</view>
+    <view wx:if="{{product.searchMatchText}}" class="product-card__search-match">{{product.searchMatchText}}</view>
 
     <view wx:if="{{featureViews.length}}" class="product-card__features">
       <block

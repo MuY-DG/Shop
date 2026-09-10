@@ -1,6 +1,7 @@
 package org.muybaby.shopserver.product.dto;
 
 import java.time.LocalDateTime;
+import java.util.List;
 
 public record AdminSpuListItemResponse(
         Long id,
@@ -20,6 +21,12 @@ public record AdminSpuListItemResponse(
         Long displaySales,
         LocalDateTime createdAt,
         LocalDateTime updatedAt,
-        LocalDateTime deletedAt
+        LocalDateTime deletedAt,
+        List<ProductSearchMatchResponse> searchMatches
 ) {
+    public AdminSpuListItemResponse withSearchMatches(List<ProductSearchMatchResponse> matches) {
+        return new AdminSpuListItemResponse(id, categoryId, categoryName, title, subtitle, mainImage,
+                status, sortOrder, minPriceCent, maxPriceCent, totalStock, skuCount, actualSales,
+                virtualSales, displaySales, createdAt, updatedAt, deletedAt, matches);
+    }
 }

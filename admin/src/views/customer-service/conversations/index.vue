@@ -558,7 +558,7 @@
         <ElInput
           v-model="productKeyword"
           clearable
-          placeholder="搜索商品名称"
+          placeholder="搜索名称、规格、SKU 编码或商品 ID"
           @keyup.enter="loadProductCandidates"
         />
         <ElButton type="primary" @click="loadProductCandidates">搜索</ElButton>

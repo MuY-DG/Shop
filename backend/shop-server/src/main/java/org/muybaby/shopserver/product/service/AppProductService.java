@@ -69,12 +69,12 @@ public class AppProductService {
         long current = normalizedRequest.pageCurrent();
         long size = normalizedRequest.pageSize();
         long offset = (current - 1) * size;
-        String keywordLike = likeKeyword(normalizedRequest.keyword());
+        ProductSearchQuery search = ProductSearchQuery.publicCatalog(normalizedRequest.keyword());
         Map<String, String> parameterFilters = normalizedRequest.normalizedParameterFilters();
         String parameterFilterClause = parameterFilterClause(parameterFilters);
         Map<String, Object> baseParameters = baseListParameters(
                 normalizedRequest,
-                keywordLike,
+                search,
                 parameterFilters
         );
 
@@ -86,9 +86,9 @@ public class AppProductService {
                           AND s.deleted_at IS NULL
                           AND c.status = :categoryStatus
                           AND (:categoryId IS NULL OR s.category_id = :categoryId)
-                          AND (:keywordLike IS NULL OR s.title LIKE :keywordLike)
+                          AND %s
                           %s
-                        """.formatted(parameterFilterClause))
+                        """.formatted(search.predicate("s"), parameterFilterClause))
                 .params(baseParameters)
                 .query(Long.class)
                 .single();
@@ -127,14 +127,14 @@ public class AppProductService {
                           AND s.deleted_at IS NULL
                           AND c.status = :categoryStatus
                           AND (:categoryId IS NULL OR s.category_id = :categoryId)
-                          AND (:keywordLike IS NULL OR s.title LIKE :keywordLike)
+                          AND %s
                           %s
                         GROUP BY s.id, s.category_id, s.title, s.subtitle, s.main_image, s.selling_points,
                                  s.display_badge_text, s.display_badge_tone,
                                  s.virtual_sales, sales.actual_sales, s.sort_order
                         ORDER BY %s
                         LIMIT :limit OFFSET :offset
-                        """.formatted(parameterFilterClause, normalizedRequest.orderByClause()))
+                        """.formatted(search.predicate("s"), parameterFilterClause, normalizedRequest.orderByClause()))
                 .params(rowParameters)
                 .query(this::mapSpuListRow)
                 .list();
@@ -143,6 +143,7 @@ public class AppProductService {
                         rows.stream().map(SpuListRow::id).toList(),
                         true
                 );
+        var searchMatches = search.matches(jdbcClient, rows.stream().map(SpuListRow::id).toList());
         List<AppSpuListItemResponse> records = rows.stream()
                 .map(row -> new AppSpuListItemResponse(
                         row.id(),
@@ -157,7 +158,8 @@ public class AppProductService {
                         row.saleState(),
                         row.badgeText(),
                         row.badgeTone(),
-                        cardParameters(row, parametersBySpuId.getOrDefault(row.id(), List.of()))
+                        cardParameters(row, parametersBySpuId.getOrDefault(row.id(), List.of())),
+                        searchMatches.getOrDefault(row.id(), List.of())
                 ))
                 .toList();
 
@@ -453,13 +455,9 @@ public class AppProductService {
                 .list();
     }
 
-    private String likeKeyword(String keyword) {
-        return StringUtils.hasText(keyword) ? "%" + keyword.trim() + "%" : null;
-    }
-
     private Map<String, Object> baseListParameters(
             ProductPageRequest request,
-            String keywordLike,
+            ProductSearchQuery search,
             Map<String, String> parameterFilters
     ) {
         Map<String, Object> parameters = new LinkedHashMap<>();
@@ -467,7 +465,7 @@ public class AppProductService {
         parameters.put("spuStatus", ProductStatus.ON_SALE.name());
         parameters.put("categoryStatus", "ENABLED");
         parameters.put("categoryId", request.categoryId());
-        parameters.put("keywordLike", keywordLike);
+        parameters.putAll(search.parameters());
         int index = 0;
         for (Map.Entry<String, String> filter : parameterFilters.entrySet()) {
             parameters.put("parameterCode" + index, filter.getKey());

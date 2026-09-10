@@ -46,6 +46,13 @@
         @pagination:size-change="handleSizeChange"
         @pagination:current-change="handleCurrentChange"
       >
+        <template #title="{ row }">
+          <div>{{ row.title }}</div>
+          <div v-if="row.searchMatches?.length" class="product-search-match">
+            {{ formatProductSearchMatches(row.searchMatches) }}
+          </div>
+        </template>
+
         <template #sales="{ row }">
           <ElTooltip
             :content="`实际销量 ${row.actualSales ?? 0} + 虚拟销量 ${row.virtualSales ?? 0}`"
@@ -186,6 +193,7 @@
     unpublishProductSpu
   } from '@/api/product'
   import SpuEditor from './modules/spu-editor.vue'
+  import { formatProductSearchMatches } from '@/utils/product-search'
   import { ElImage, ElMessage, ElMessageBox } from 'element-plus'
 
   defineOptions({ name: 'ProductSpu' })
@@ -284,12 +292,12 @@
 
   const searchItems = computed<SearchFormItem[]>(() => [
     {
-      label: '商品名称',
+      label: '商品搜索',
       key: 'title',
       type: 'input',
       props: {
         clearable: true,
-        placeholder: '请输入商品名称'
+        placeholder: '名称 / 规格 / SKU 编码 / 商品 ID'
       }
     },
     {
@@ -369,7 +377,8 @@
         {
           prop: 'title',
           label: '商品名称',
-          minWidth: 180
+          minWidth: 240,
+          useSlot: true
         },
         {
           prop: 'skuCount',
@@ -673,6 +682,14 @@
 </script>
 
 <style scoped lang="scss">
+  .product-search-match {
+    margin-top: 4px;
+    font-size: 12px;
+    line-height: 1.5;
+    color: var(--el-text-color-secondary);
+    overflow-wrap: anywhere;
+  }
+
   .status-filter-card {
     margin-top: 12px;
 

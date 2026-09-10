@@ -11,6 +11,7 @@ import type {
   ProductParameterValue,
   ProductSpecType,
   ProductSku,
+  ProductSearchMatch,
   WholesaleTier
 } from "../types/product";
 
@@ -42,6 +43,7 @@ export interface CatalogProductCardView {
   spuId: number;
   title: string;
   subtitle: string;
+  searchMatchText: string;
   imageUrl: string;
   hasImage: boolean;
   placeholder: string;
@@ -396,6 +398,21 @@ function productFacts(parameters: ProductParameterValue[]): ProductFactView[] {
     .slice(0, 3);
 }
 
+export function productSearchMatchText(matches?: ProductSearchMatch[]): string {
+  const labels = (Array.isArray(matches) ? matches : [])
+    .filter((match) => match?.status === "ENABLED")
+    .map((match) => {
+      const specText = displaySpecText(match.specText);
+      return specText
+        ? `${specText}${match.saleState === "SOLD_OUT" ? "（缺货）" : ""}`
+        : "";
+    })
+    .filter(Boolean);
+  return labels.length
+    ? `相关规格：${labels.slice(0, 2).join("；")}${labels.length > 2 ? " 等" : ""}`
+    : "";
+}
+
 export function buildCatalogProductCard(
   product: ProductListItem
 ): CatalogProductCardView | undefined {
@@ -436,6 +453,7 @@ export function buildCatalogProductCard(
     spuId,
     title,
     subtitle: cleanText(product.subtitle),
+    searchMatchText: productSearchMatchText(product.searchMatches),
     imageUrl,
     hasImage: Boolean(imageUrl),
     placeholder: title.slice(0, 1),
