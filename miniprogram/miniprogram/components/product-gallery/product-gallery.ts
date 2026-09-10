@@ -1,7 +1,10 @@
+import { getCachedProductImage, loadProductImage } from "../../utils/product-image-cache";
+
 interface ProductGalleryImage {
   key: string;
   url: string;
   hasImage: boolean;
+  displayUrl?: string;
 }
 
 interface ProductGalleryAnimationFinishEvent {
@@ -21,6 +24,8 @@ interface ProductGalleryTransitionEvent {
 interface ProductGalleryRuntime {
   pendingCurrent: number;
   transitioning: boolean;
+  imageVersion?: number;
+  previewPending?: boolean;
   settleTimer?: ReturnType<typeof setTimeout>;
 }
 
@@ -59,12 +64,28 @@ Component({
       value: [],
       observer(value: ProductGalleryImage[]) {
         clearSettleTimer(this);
+        const runtime = galleryRuntime(this);
+        const imageVersion = (runtime.imageVersion ?? 0) + 1;
+        runtime.imageVersion = imageVersion;
         const displayImages = Array.isArray(value)
-          ? value.map((image) => ({ ...image }))
+          ? value.map((image) => ({
+              ...image,
+              displayUrl: image.hasImage ? getCachedProductImage(image.url) || "" : ""
+            }))
           : [];
         galleryRuntime(this).pendingCurrent = 0;
         galleryRuntime(this).transitioning = false;
         this.setData({ displayImages, current: 0, swiperVisible: true });
+        displayImages.forEach((image, index) => {
+          if (!image.hasImage || image.displayUrl) {
+            return;
+          }
+          void loadProductImage(image.url).then((displayUrl) => {
+            if (runtime.imageVersion === imageVersion) {
+              this.setData({ [`displayImages[${index}].displayUrl`]: displayUrl });
+            }
+          });
+        });
       }
     }
   },
@@ -78,10 +99,41 @@ Component({
   lifetimes: {
     detached() {
       clearSettleTimer(this);
+      const runtime = galleryRuntime(this);
+      runtime.imageVersion = (runtime.imageVersion ?? 0) + 1;
     }
   },
 
   methods: {
+    async onImagePreview(event: ProductGalleryErrorEvent) {
+      const index = Number(event.currentTarget.dataset.index);
+      const runtime = galleryRuntime(this);
+      if (
+        runtime.transitioning || runtime.previewPending ||
+        !validGalleryIndex(index, this.data.displayImages.length)
+      ) {
+        return;
+      }
+      const current = this.data.displayImages[index];
+      if (!current.hasImage || !current.url) {
+        return;
+      }
+      const urls = this.data.displayImages
+        .filter((image) => image.hasImage && image.url)
+        .map((image) => image.url);
+      const currentIndex = urls.indexOf(current.url);
+      const imageVersion = runtime.imageVersion;
+      runtime.previewPending = true;
+      try {
+        const localUrls = await Promise.all(urls.map(loadProductImage));
+        if (runtime.imageVersion === imageVersion) {
+          wx.previewImage({ current: localUrls[currentIndex], urls: localUrls });
+        }
+      } finally {
+        runtime.previewPending = false;
+      }
+    },
+
     onChange(event: ProductGalleryAnimationFinishEvent) {
       const current = Number(event.detail.current);
       if (validGalleryIndex(current, this.data.displayImages.length)) {

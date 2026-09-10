@@ -15,13 +15,17 @@
   >
     <swiper-item wx:for="{{displayImages}}" wx:key="key">
       <image
-        wx:if="{{item.hasImage}}"
+        wx:if="{{item.hasImage && item.displayUrl}}"
         class="gallery-image"
-        src="{{item.url}}"
+        src="{{item.displayUrl}}"
         mode="aspectFill"
         data-index="{{index}}"
+        bindtap="onImagePreview"
         binderror="onImageError"
+        aria-role="button"
+        aria-label="查看第{{index + 1}}张商品图片"
       />
+      <view wx:elif="{{item.hasImage}}" class="gallery-placeholder" />
       <view wx:else class="gallery-placeholder">
         <view class="gallery-placeholder__seal">灶</view>
         <text>商品图片加载失败</text>

@@ -58,6 +58,7 @@ import type {
 import { isApiError } from "../../../utils/api-error";
 import { openLoginPage } from "../../../utils/login-navigation";
 import { enableNativeShareMenu } from "../../../utils/share";
+import { getCachedProductImage, loadProductImage } from "../../../utils/product-image-cache";
 
 interface PageOptions {
   id?: string;
@@ -218,16 +219,6 @@ function buildReviewSpecOptions(
   }));
 }
 
-function cachePreviewImage(url: string): Promise<string> {
-  return new Promise((resolve) => {
-    wx.getImageInfo({
-      src: url,
-      success: (result) => resolve(cleanText(result.path) || url),
-      fail: () => resolve(url)
-    });
-  });
-}
-
 async function openImagePreview(
   currentUrl: string,
   specificationGroups: SkuSpecificationGroupView[]
@@ -238,9 +229,7 @@ async function openImagePreview(
   }
   const specificationUrls = buildSpecificationPreviewUrls(specificationGroups, current);
   const urls = specificationUrls.includes(current) ? specificationUrls : [current];
-  wx.showLoading({ title: "图片加载中", mask: true });
-  const cachedUrls = await Promise.all(urls.map(cachePreviewImage));
-  wx.hideLoading();
+  const cachedUrls = await Promise.all(urls.map(loadProductImage));
   wx.previewImage({
     current: cachedUrls[0] ?? current,
     urls: cachedUrls.length ? cachedUrls : urls
@@ -260,8 +249,10 @@ Page({
     specificationImageMode: "list" as "list" | "image",
     ...EMPTY_SELECTION,
     selectedSkuName: "",
+    selectedSkuCode: "",
     selectedNetContentText: "",
     purchaseImageUrl: "",
+    purchaseImageSources: {} as Record<string, string>,
     guaranteeSummary: "",
     freightSummary: "",
     freightChargeText: "",
@@ -410,8 +401,10 @@ Page({
         specificationImageMode: "list",
         ...selection,
         selectedSkuName: displaySpecText(selectedSku?.specText),
+        selectedSkuCode: cleanText(selectedSku?.skuCode),
         selectedNetContentText: cleanText(selectedSku?.netContentText),
         purchaseImageUrl: cleanText(selectedSku?.image) || cleanText(normalizedDetail.mainImage),
+        purchaseImageSources: {},
         guaranteeSummary: guaranteeSummary(normalizedDetail),
         freightSummary: freight.summary,
         freightChargeText: freight.chargeText,
@@ -521,9 +514,11 @@ Page({
       return;
     }
     const purchaseMode = event.currentTarget.dataset.mode === "CART" ? "CART" : "BUY";
+    this.preloadPurchaseImages();
     this.setData({
       purchaseSheetOpen: true,
       purchaseSheetClosing: false,
+      specificationImageMode: "list",
       purchaseMode,
       purchaseActionText: purchaseMode === "CART" ? "加入购物车" : "立即购买"
     });
@@ -582,6 +577,36 @@ Page({
 
   onPreventMove() {},
 
+  preloadPurchaseImages() {
+    const requestId = latestDetailRequest;
+    const urls = [...new Set([
+      this.data.purchaseImageUrl,
+      ...buildSpecificationPreviewUrls(this.data.specificationGroups)
+    ].filter(Boolean))];
+    const sources = { ...this.data.purchaseImageSources };
+    for (const url of urls) {
+      const cached = getCachedProductImage(url);
+      if (cached) {
+        sources[url] = cached;
+      } else {
+        delete sources[url];
+      }
+    }
+    this.setData({ purchaseImageSources: sources });
+    for (const url of urls) {
+      if (sources[url]) {
+        continue;
+      }
+      void loadProductImage(url).then((path) => {
+        if (requestId === latestDetailRequest) {
+          this.setData({
+            purchaseImageSources: { ...this.data.purchaseImageSources, [url]: path }
+          });
+        }
+      });
+    }
+  },
+
   onSheetSpecificationSelect(event: DatasetEvent) {
     if (!this.data.detail) {
       return;
@@ -597,6 +622,10 @@ Page({
       return;
     }
     if (sku.id === this.data.selectedSkuId) {
+      const imageUrl = cleanText(event.currentTarget.dataset.imageUrl);
+      if (imageUrl) {
+        openImagePreview(imageUrl, this.data.specificationGroups);
+      }
       return;
     }
     this.applySelection(sku, 1);
@@ -1067,10 +1096,14 @@ Page({
           )
         : [],
       selectedSkuName: displaySpecText(sku.specText),
+      selectedSkuCode: cleanText(sku.skuCode),
       selectedNetContentText: cleanText(sku.netContentText),
       purchaseImageUrl: cleanText(sku.image) || cleanText(fallbackImage),
       wholesaleSummary: wholesaleSummary(selection.wholesaleTiers)
     });
+    if (this.data.purchaseSheetOpen) {
+      this.preloadPurchaseImages();
+    }
   },
 
   selectedSku(): ProductSku | undefined {

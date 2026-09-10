@@ -1644,7 +1644,7 @@ test("商品详情使用自建规格、评价和收货地址弹层", () => {
   );
   assert.match(detailStyle, /\.selected-spec\s*\{[\s\S]*?color: @color-text-black;/);
   assert.match(detailStyle, /\.sheet-wholesale-hint\s*\{[\s\S]*?color: @color-text-gray;/);
-  assert.match(detailStyle, /\.sheet-section-note,\s*\.quantity-note\s*\{[\s\S]*?color: @color-text-gray;/);
+  assert.match(detailStyle, /\.sheet-section-note\s*\{[\s\S]*?color: @color-text-gray;/);
   assert.match(detailStyle, /\.specification-option\s*\{[\s\S]*?color: @color-text-black;/);
   assert.match(detailStyle, /\.specification-option__sold-out\s*\{[\s\S]*?color: @color-text-gray;/);
   assert.match(detailStyle, /\.wholesale-shortcut__quantity\s*\{[\s\S]*?color: @color-text-black;/);

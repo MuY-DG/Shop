@@ -357,19 +357,18 @@
     <view class="sheet-panel sheet-panel--purchase {{purchaseSheetClosing ? 'sheet-panel--closing' : ''}}" catchtap="onPreventMove">
       <block>
         <view class="purchase-sheet-header">
-          <view wx:if="{{purchaseImageUrl}}" class="purchase-image-wrap">
+          <view
+            wx:if="{{purchaseImageUrl}}"
+            class="purchase-image-wrap"
+            catchtap="onPreviewPurchaseImage"
+            aria-role="button"
+            aria-label="查看已选商品图片"
+          >
             <image
               class="purchase-image"
-              src="{{purchaseImageUrl}}"
+              src="{{purchaseImageSources[purchaseImageUrl] || ''}}"
               mode="aspectFill"
             />
-            <button
-              class="image-preview-button purchase-image-preview"
-              catchtap="onPreviewPurchaseImage"
-              aria-label="放大查看当前商品图片"
-            >
-              <image class="image-preview-button__icon" src="/assets/icons/zoom-in-material-symbols.svg" mode="aspectFit" />
-            </button>
           </view>
           <view class="purchase-sheet-summary">
             <view wx:if="{{priceText}}" class="sheet-price">
@@ -379,6 +378,32 @@
             </view>
             <text wx:if="{{hasOriginalPrice}}" class="sheet-original-price">¥{{originalPriceText}}</text>
             <text wx:if="{{selectedSkuName}}" class="selected-spec">已选：{{selectedSkuName}}</text>
+            <view class="purchase-sheet-quantity">
+              <view class="quantity-control">
+                <view
+                  class="quantity-button {{quantity <= 1 ? 'quantity-button--disabled' : ''}}"
+                  bindtap="onQuantityMinus"
+                  aria-role="button"
+                  aria-label="减少数量"
+                >−</view>
+                <input
+                  class="quantity-value"
+                  type="number"
+                  maxlength="3"
+                  value="{{quantity}}"
+                  confirm-type="done"
+                  bindblur="onQuantityInputCommit"
+                  bindconfirm="onQuantityInputCommit"
+                  aria-label="输入购买数量"
+                />
+                <view
+                  class="quantity-button {{quantityMax <= 0 || quantity >= quantityMax ? 'quantity-button--disabled' : ''}}"
+                  bindtap="onQuantityPlus"
+                  aria-role="button"
+                  aria-label="增加数量"
+                >＋</view>
+              </view>
+            </view>
             <text wx:if="{{wholesaleHint}}" class="sheet-wholesale-hint">{{wholesaleHint}}</text>
           </view>
           <button class="sheet-close" bindtap="onClosePurchaseSheet" aria-label="关闭规格选择">
@@ -399,11 +424,15 @@
             <view
               wx:for="{{specificationGroups}}"
               wx:for-item="group"
+              wx:for-index="groupIndex"
               wx:key="key"
               class="specification-group"
             >
               <view class="specification-group__header">
-                <text class="sheet-section-title">{{group.name}}</text>
+                <view class="specification-group__heading">
+                  <text class="sheet-section-title">{{group.name}}（{{group.options.length}}）</text>
+                  <text wx:if="{{groupIndex === 0 && selectedSkuCode}}" class="specification-sku-code">编号：{{selectedSkuCode}}</text>
+                </view>
                 <button
                   wx:if="{{group.hasImages}}"
                   class="specification-view-toggle"
@@ -415,6 +444,7 @@
                     src="{{specificationImageMode === 'list' ? '/assets/icons/view-grid-outline.svg' : '/assets/icons/view-list-rounded.svg'}}"
                     mode="aspectFit"
                   />
+                  <text class="specification-view-toggle__label">{{specificationImageMode === 'list' ? '大图' : '列表'}}</text>
                 </button>
               </view>
               <view class="specification-options {{group.hasImages && specificationImageMode === 'image' ? 'specification-options--image' : ''}}">
@@ -425,6 +455,7 @@
                   class="specification-option {{option.hasImage ? 'specification-option--with-image' : ''}} {{group.hasImages && specificationImageMode === 'image' ? 'specification-option--image-mode' : ''}} {{option.selected ? 'specification-option--selected' : ''}} {{option.disabled ? 'specification-option--disabled' : ''}}"
                   data-spec-name="{{group.name}}"
                   data-spec-value="{{option.value}}"
+                  data-image-url="{{option.imageUrl}}"
                   bindtap="onSheetSpecificationSelect"
                   aria-role="button"
                   aria-label="{{group.name}}：{{option.value}}{{option.disabled ? '，暂不可选' : ''}}"
@@ -432,7 +463,7 @@
                   <view wx:if="{{option.hasImage}}" class="specification-image-frame">
                     <image
                       class="specification-option__image"
-                      src="{{option.imageUrl}}"
+                      src="{{purchaseImageSources[option.imageUrl] || ''}}"
                       mode="aspectFill"
                     />
                     <button
@@ -442,11 +473,14 @@
                       catchtap="onPreviewSpecificationImage"
                       aria-label="放大查看{{option.value}}规格图片"
                     >
-                      <image class="image-preview-button__icon" src="/assets/icons/zoom-in-material-symbols.svg" mode="aspectFit" />
+                      <image class="image-preview-button__icon" src="/assets/icons/expand-corners.svg" mode="aspectFit" />
                     </button>
                   </view>
-                  <text class="specification-option__text">{{option.value}}</text>
-                  <text wx:if="{{option.disabled}}" class="specification-option__sold-out">售罄</text>
+                  <view class="specification-option__caption">
+                    <text class="specification-option__text">{{option.value}}</text>
+                    <text wx:if="{{option.disabled}}" class="specification-option__sold-out">售罄</text>
+                    <text wx:if="{{option.priceText}}" class="specification-option__price">¥{{option.priceText}}</text>
+                  </view>
                 </view>
               </view>
             </view>
@@ -472,36 +506,6 @@
             </view>
           </view>
 
-          <view class="sheet-section quantity-section">
-            <view>
-              <text class="sheet-section-title">购买数量</text>
-              <text class="quantity-note">达到门槛自动享受对应批发价</text>
-            </view>
-            <view class="quantity-control">
-              <view
-                class="quantity-button {{quantity <= 1 ? 'quantity-button--disabled' : ''}}"
-                bindtap="onQuantityMinus"
-                aria-role="button"
-                aria-label="减少数量"
-              >−</view>
-              <input
-                class="quantity-value"
-                type="number"
-                maxlength="3"
-                value="{{quantity}}"
-                confirm-type="done"
-                bindblur="onQuantityInputCommit"
-                bindconfirm="onQuantityInputCommit"
-                aria-label="输入购买数量"
-              />
-              <view
-                class="quantity-button {{quantityMax <= 0 || quantity >= quantityMax ? 'quantity-button--disabled' : ''}}"
-                bindtap="onQuantityPlus"
-                aria-role="button"
-                aria-label="增加数量"
-              >＋</view>
-            </view>
-          </view>
           </view>
         </scroll-view>
 

@@ -339,9 +339,9 @@ test("单规格展示文案隐藏内部占位值并保留真实规格说明", ()
 test("规格按名称和值分组并只允许选择真实可售组合", () => {
   const variants = [
     sku({ id: 201, specJson: "{\"颜色\":\"红色\",\"尺寸\":\"x\"}", specText: "红色 / x", image: "https://example.test/red.png" }),
-    sku({ id: 202, specJson: "{\"颜色\":\"红色\",\"尺寸\":\"l\"}", specText: "红色 / l", image: "https://example.test/red.png" }),
-    sku({ id: 203, specJson: "{\"颜色\":\"绿色\",\"尺寸\":\"x\"}", specText: "绿色 / x", image: "https://example.test/green.png", saleState: "SOLD_OUT" }),
-    sku({ id: 204, specJson: "{\"颜色\":\"绿色\",\"尺寸\":\"l\"}", specText: "绿色 / l", image: "https://example.test/green.png" })
+    sku({ id: 202, specJson: "{\"颜色\":\"红色\",\"尺寸\":\"l\"}", specText: "红色 / l", priceCent: 2500, image: "https://example.test/red.png" }),
+    sku({ id: 203, specJson: "{\"颜色\":\"绿色\",\"尺寸\":\"x\"}", specText: "绿色 / x", priceCent: 2100, image: "https://example.test/green.png", saleState: "SOLD_OUT" }),
+    sku({ id: 204, specJson: "{\"颜色\":\"绿色\",\"尺寸\":\"l\"}", specText: "绿色 / l", priceCent: 2800, image: "https://example.test/green.png" })
   ];
 
   const redSmallGroups = buildSkuSpecificationGroups(variants, 201);
@@ -369,6 +369,10 @@ test("规格按名称和值分组并只允许选择真实可售组合", () => {
     }
   ]);
   assert.equal(redSmallGroups[0]?.hasImages, true);
+  assert.deepEqual(redSmallGroups.map((group) => group.options.map((option) => option.priceText)), [
+    ["20.00", "21.00"],
+    ["20.00", "25.00"]
+  ]);
   assert.equal(redSmallGroups[0]?.options[0]?.imageUrl, "https://example.test/red.png");
   assert.equal(redSmallGroups[1]?.hasImages, false);
   assert.equal(redSmallGroups[1]?.options.every((option) => !option.hasImage), true);
@@ -385,8 +389,13 @@ test("规格按名称和值分组并只允许选择真实可售组合", () => {
   assert.equal(redLarge?.id, 202);
   const redLargeGroups = buildSkuSpecificationGroups(variants, redLarge?.id ?? 0);
   assert.equal(redLargeGroups[0]?.options[1]?.disabled, false);
+  assert.deepEqual(redLargeGroups[0]?.options.map((option) => option.priceText), ["25.00", "28.00"]);
   assert.equal(resolveSkuSpecificationSelection(variants, 202, "颜色", "绿色")?.id, 204);
   assert.equal(resolveSkuSpecificationSelection(variants, 201, "颜色", "绿色"), undefined);
+
+  const missingCombination = buildSkuSpecificationGroups(variants.filter((item) => item.id !== 203), 201);
+  assert.equal(missingCombination[0]?.options[1]?.disabled, true);
+  assert.equal(missingCombination[0]?.options[1]?.priceText, "");
 
   const legacyGroups = buildSkuSpecificationGroups([
     sku({ id: 205, specJson: "invalid", specText: "500g 袋装" })

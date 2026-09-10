@@ -14,7 +14,7 @@
 - `close-material-symbols.svg`：[Iconify Material Symbols `material-symbols:close`](https://icon-sets.iconify.design/material-symbols/close/)，Apache 2.0，用于规格弹层关闭按钮。
 - `view-grid-outline.svg`：[Iconify Material Design Icons `mdi:view-grid-outline`](https://icon-sets.iconify.design/mdi/view-grid-outline/)，Apache 2.0，用于切换规格大图模式。
 - `view-list-rounded.svg`：[Iconify Material Symbols `material-symbols:view-list-rounded`](https://icon-sets.iconify.design/material-symbols/view-list-rounded/)，Apache 2.0，用于切换规格列表模式。
-- `zoom-in-material-symbols.svg`：[Iconify Material Symbols `material-symbols:zoom-in-rounded`](https://icon-sets.iconify.design/material-symbols/zoom-in-rounded/)，Apache 2.0，用于规格图片和当前商品图的放大预览入口。
+- `expand-corners.svg`：项目自绘 SVG，以左下、右上两段白色方框搭配半透明黑底，表示所有 SKU 大图的图片预览入口；仅顶部已选商品图不叠加按钮，直接点击预览。
 - `member-crown.svg`：[Iconify Material Symbols `material-symbols:crown-rounded`](https://icon-sets.iconify.design/material-symbols/crown-rounded/)，Apache 2.0，用于昵称右侧的金牌会员标签。
 - `navigation-back.svg`：用户提供的全局导航返回 SVG。
 - `edit-square-outline-mdi-iconify.svg`：[Iconify Material Design Icons `mdi:square-edit-outline`](https://icon-sets.iconify.design/mdi/square-edit-outline/)，Apache 2.0，用于编辑收货地址。

@@ -10,9 +10,9 @@ const MAX_CACHE_ENTRIES = 80;
 const MAX_CACHE_AGE_MS = 7 * 24 * 60 * 60 * 1000;
 const activeDownloads = new Map<string, Promise<string>>();
 
-function cacheRecords(): CachedImageRecord[] {
+function cacheRecords(storageKey: string): CachedImageRecord[] {
   try {
-    const value: unknown = wx.getStorageSync(CACHE_STORAGE_KEY);
+    const value: unknown = wx.getStorageSync(storageKey);
     if (!Array.isArray(value)) {
       return [];
     }
@@ -33,11 +33,11 @@ function cacheRecords(): CachedImageRecord[] {
   }
 }
 
-function saveCacheRecords(records: CachedImageRecord[]): void {
+function saveCacheRecords(records: CachedImageRecord[], storageKey: string): void {
   try {
-    wx.setStorageSync(CACHE_STORAGE_KEY, records);
+    wx.setStorageSync(storageKey, records);
   } catch {
-    // 缓存元数据写入失败不应影响聊天图片展示。
+    // 缓存元数据写入失败不应影响图片展示。
   }
 }
 
@@ -78,28 +78,28 @@ function normalizedRecords(records: CachedImageRecord[]): CachedImageRecord[] {
   return retained.slice(0, MAX_CACHE_ENTRIES);
 }
 
-export function getCachedImageFile(key: string): string | null {
+export function getCachedImageFile(key: string, storageKey = CACHE_STORAGE_KEY): string | null {
   const normalizedKey = key.trim();
   if (!normalizedKey) {
     return null;
   }
-  const records = normalizedRecords(cacheRecords());
+  const records = normalizedRecords(cacheRecords(storageKey));
   const record = records.find((item) => item.key === normalizedKey);
   if (!record) {
-    saveCacheRecords(records);
+    saveCacheRecords(records, storageKey);
     return null;
   }
   record.lastAccessAt = Date.now();
-  saveCacheRecords(records);
+  saveCacheRecords(records, storageKey);
   return record.filePath;
 }
 
-function persistImageFile(key: string, tempFilePath: string): Promise<string> {
+function persistImageFile(key: string, tempFilePath: string, storageKey: string): Promise<string> {
   return new Promise((resolve) => {
     wx.getFileSystemManager().saveFile({
       tempFilePath,
       success: (result) => {
-        const records = normalizedRecords(cacheRecords());
+        const records = normalizedRecords(cacheRecords(storageKey));
         const previous = records.find((item) => item.key === key);
         if (previous && previous.filePath !== result.savedFilePath) {
           removeCachedFile(previous.filePath);
@@ -114,7 +114,7 @@ function persistImageFile(key: string, tempFilePath: string): Promise<string> {
           },
           ...records.filter((item) => item.key !== key)
         ]);
-        saveCacheRecords(nextRecords);
+        saveCacheRecords(nextRecords, storageKey);
         resolve(result.savedFilePath);
       },
       fail: () => resolve(tempFilePath)
@@ -124,21 +124,23 @@ function persistImageFile(key: string, tempFilePath: string): Promise<string> {
 
 export function loadCachedImageFile(
   key: string,
-  loader: () => Promise<string>
+  loader: () => Promise<string>,
+  storageKey = CACHE_STORAGE_KEY
 ): Promise<string> {
-  const cached = getCachedImageFile(key);
+  const cached = getCachedImageFile(key, storageKey);
   if (cached) {
     return Promise.resolve(cached);
   }
-  const existing = activeDownloads.get(key);
+  const downloadKey = `${storageKey}:${key}`;
+  const existing = activeDownloads.get(downloadKey);
   if (existing) {
     return existing;
   }
   const download = loader()
-    .then((tempFilePath) => persistImageFile(key, tempFilePath))
+    .then((tempFilePath) => persistImageFile(key, tempFilePath, storageKey))
     .finally(() => {
-      activeDownloads.delete(key);
+      activeDownloads.delete(downloadKey);
     });
-  activeDownloads.set(key, download);
+  activeDownloads.set(downloadKey, download);
   return download;
 }

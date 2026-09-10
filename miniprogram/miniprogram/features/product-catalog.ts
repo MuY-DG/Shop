@@ -92,6 +92,7 @@ export interface SkuOptionView {
 export interface SkuSpecificationOptionView {
   key: string;
   value: string;
+  priceText: string;
   imageUrl: string;
   hasImage: boolean;
   selected: boolean;
@@ -635,8 +636,8 @@ export function buildSkuSpecificationGroups(
       name,
       hasImages: name === imageGroupName,
       options: values.map((value, optionIndex) => {
-        const available = normalizedSkus.some(({ sku, values: candidateValues }) => {
-          if (!validSku(sku) || candidateValues.get(name) !== value) {
+        const matchingSkus = normalizedSkus.filter(({ values: candidateValues }) => {
+          if (candidateValues.get(name) !== value) {
             return false;
           }
           return groupNames.every((otherName) => (
@@ -645,6 +646,8 @@ export function buildSkuSpecificationGroups(
             candidateValues.get(otherName) === selectedValues.get(otherName)
           ));
         });
+        const availableSku = matchingSkus.find(({ sku }) => validSku(sku))?.sku;
+        const displaySku = availableSku ?? matchingSkus[0]?.sku;
         const imageUrl = name === imageGroupName
           ? cleanText(normalizedSkus.find(({ sku, values: candidateValues }) => (
             candidateValues.get(name) === value && cleanText(sku.image)
@@ -653,10 +656,11 @@ export function buildSkuSpecificationGroups(
         return {
           key: `${groupIndex}-${optionIndex}-${value}`,
           value,
+          priceText: displaySku ? formatMoney(displaySku.priceCent) : "",
           imageUrl,
           hasImage: Boolean(imageUrl),
           selected: selectedValues.get(name) === value,
-          disabled: !available
+          disabled: !availableSku
         };
       })
     };
