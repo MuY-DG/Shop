@@ -128,12 +128,18 @@
                   <view class="order-product__details">
                     <view class="order-product__title">{{product.titleText}}</view>
                     <view wx:if="{{product.specificationText}}" class="order-product__spec">{{product.specificationText}}</view>
+                    <view wx:if="{{item.refundSummaryText || item.afterSaleStatusText}}" class="order-product__after-sale-status">
+                      <text wx:if="{{item.refundSummaryText}}" class="order-product__refund">{{item.refundSummaryText}}</text>
+                      <text wx:if="{{item.afterSaleStatusText}}">{{item.afterSaleStatusText}}</text>
+                    </view>
                   </view>
-                  <text class="order-product__quantity">{{product.quantityText}}</text>
-                  <text class="order-product__price">{{product.unitPriceText}}</text>
-                  <view wx:if="{{item.refundSummaryText || item.afterSaleStatusText}}" class="order-product__after-sale-status">
-                    <text wx:if="{{item.refundSummaryText}}" class="order-product__refund">{{item.refundSummaryText}}</text>
-                    <text wx:if="{{item.afterSaleStatusText}}">{{item.afterSaleStatusText}}</text>
+                  <view class="order-product__summary">
+                    <view class="order-product__price" aria-label="{{product.unitPriceText}}">
+                      <text class="order-product__currency">¥</text>
+                      <text class="order-product__price-integer">{{product.unitPriceIntegerText}}</text>
+                      <text class="order-product__price-decimal">{{product.unitPriceDecimalText}}</text>
+                    </view>
+                    <text class="order-product__quantity">{{product.quantityText}}</text>
                   </view>
                 </view>
               </view>
@@ -168,15 +174,21 @@
                     <view class="order-product__title">{{item.items[0].titleText}}</view>
                     <view wx:if="{{item.items[0].specificationText}}" class="order-product__spec">{{item.items[0].specificationText}}</view>
                     <view wx:else class="order-product__spec">共 {{item.items.length}} 种商品</view>
+                    <view wx:if="{{item.refundSummaryText || item.afterSaleStatusText}}" class="order-product__after-sale-status">
+                      <text wx:if="{{item.refundSummaryText}}" class="order-product__refund">{{item.refundSummaryText}}</text>
+                      <text wx:if="{{item.afterSaleStatusText}}">{{item.afterSaleStatusText}}</text>
+                    </view>
                   </view>
-                  <text class="order-product__quantity">{{item.itemCountText}}</text>
-                  <view class="order-product__bundle-amount">
-                    <text class="order-product__bundle-amount-label">合计</text>
-                    <text class="order-product__price">{{item.amountText}}</text>
-                  </view>
-                  <view wx:if="{{item.refundSummaryText || item.afterSaleStatusText}}" class="order-product__after-sale-status">
-                    <text wx:if="{{item.refundSummaryText}}" class="order-product__refund">{{item.refundSummaryText}}</text>
-                    <text wx:if="{{item.afterSaleStatusText}}">{{item.afterSaleStatusText}}</text>
+                  <view class="order-product__summary">
+                    <view class="order-product__bundle-amount">
+                      <text class="order-product__bundle-amount-label">合计</text>
+                      <view class="order-product__price" aria-label="{{item.amountText}}">
+                        <text class="order-product__currency">¥</text>
+                        <text class="order-product__price-integer">{{item.amountIntegerText}}</text>
+                        <text class="order-product__price-decimal">{{item.amountDecimalText}}</text>
+                      </view>
+                    </view>
+                    <text class="order-product__quantity">{{item.itemCountText}}</text>
                   </view>
                 </view>
               </view>

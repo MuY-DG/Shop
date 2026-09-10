@@ -249,7 +249,7 @@ test("多商品订单按累计退款显示部分或全部退款，新的售后�
   // 最新一笔金额仍小于整单实付，但累计已退满，订单的权威状态是 REFUNDED。
   const fullyRefunded = buildOrderSummaryView({ ...order, status: "REFUNDED", refundedAmountCent: 4540 });
   assert.equal(fullyRefunded.afterSaleStatusText, "");
-  assert.equal(fullyRefunded.refundSummaryText, "全部退款 · 已退 ¥45.40");
+  assert.equal(fullyRefunded.refundSummaryText, "退款成功");
   assert.equal(fullyRefunded.statusText, "交易关闭");
 
   const processing = buildOrderSummaryView({ ...order, latestAfterSale: {

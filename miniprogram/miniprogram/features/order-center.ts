@@ -245,6 +245,8 @@ export interface OrderSummaryItemView extends OrderSummaryItemResponse, ReturnTy
   imageUrl: string;
   hasImage: boolean;
   unitPriceText: string;
+  unitPriceIntegerText: string;
+  unitPriceDecimalText: string;
   quantityText: string;
 }
 
@@ -253,6 +255,8 @@ export interface OrderSummaryView extends Omit<OrderSummaryResponse, "items">, O
   statusText: string;
   statusTone: string;
   amountText: string;
+  amountIntegerText: string;
+  amountDecimalText: string;
   createdAtText: string;
   itemCountText: string;
   afterSaleStatusText: string;
@@ -367,6 +371,11 @@ function normalizedShipmentViews(order: AppOrderDetailResponse): OrderShipmentVi
 
 function money(cent: unknown): string {
   return `¥${formatMoney(cent) || "0.00"}`;
+}
+
+function moneyParts(cent: unknown): { integerText: string; decimalText: string } {
+  const [integerText, fraction = "00"] = (formatMoney(cent) || "0.00").split(".");
+  return { integerText, decimalText: `.${fraction}` };
 }
 
 export function orderStatusText(status: OrderStatus): string {
@@ -576,6 +585,11 @@ export function buildOrderSummaryView(order: OrderSummaryResponse): OrderSummary
     : afterSaleStatus?.text ?? "";
   const refundNeedsMerchantHandling = order.status === "REFUNDING"
     && order.latestAfterSale?.status === "REFUND_FAILED";
+  const amountCent = order.status === "PAID" || order.status === "PARTIALLY_SHIPPED"
+    || order.paidAmountCent > 0
+    ? order.paidAmountCent
+    : order.payableAmountCent;
+  const amountParts = moneyParts(amountCent);
   return {
     ...order,
     ...orderActions,
@@ -588,10 +602,9 @@ export function buildOrderSummaryView(order: OrderSummaryResponse): OrderSummary
         ? "交易关闭"
         : refundNeedsMerchantHandling ? "退款待处理" : orderStatusText(order.status),
     statusTone: orderActions.canReview ? "brand" : orderStatusTone(order.status),
-    amountText: money(order.status === "PAID" || order.status === "PARTIALLY_SHIPPED"
-      || order.paidAmountCent > 0
-      ? order.paidAmountCent
-      : order.payableAmountCent),
+    amountText: money(amountCent),
+    amountIntegerText: amountParts.integerText,
+    amountDecimalText: amountParts.decimalText,
     createdAtText: formatLocalDateTime(order.createdAt, "second"),
     itemCountText: `共 ${Math.max(0, order.itemCount)} 件商品`,
     refundSummaryText: buildOrderRefundSummary(order),
@@ -611,6 +624,7 @@ function buildOrderSummaryItemView(
   const quantity = Number.isSafeInteger(item.quantity)
     ? Math.max(0, item.quantity)
     : 0;
+  const unitPriceParts = moneyParts(item.unitPriceCent);
   return {
     ...item,
     ...buildOrderItemAfterSaleView(item),
@@ -619,6 +633,8 @@ function buildOrderSummaryItemView(
     imageUrl,
     hasImage: Boolean(imageUrl),
     unitPriceText: money(item.unitPriceCent),
+    unitPriceIntegerText: unitPriceParts.integerText,
+    unitPriceDecimalText: unitPriceParts.decimalText,
     quantity,
     quantityText: `共${quantity}件`
   };

@@ -34,5 +34,5 @@ export function buildOrderRefundSummary(order: { paidAmountCent: number; refunde
   const amount = order.refundedAmountCent
   if (typeof amount !== 'number' || !Number.isSafeInteger(amount) || amount <= 0
       || !Number.isSafeInteger(order.paidAmountCent) || order.paidAmountCent <= 0) return ''
-  return `${amount >= order.paidAmountCent ? '全部退款' : '部分退款'} · 已退 ${money(amount)}`
+  return amount >= order.paidAmountCent ? '退款成功' : `部分退款 · 已退 ${money(amount)}`
 }

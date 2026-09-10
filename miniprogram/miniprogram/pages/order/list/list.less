@@ -176,7 +176,7 @@
 .order-card__detail {
   .press-feedback();
   position: relative;
-  padding: 24rpx @space-5 28rpx;
+  padding: @space-6 @space-5;
 }
 
 .order-card--pressed {
@@ -187,7 +187,7 @@
 .order-card__header {
   min-width: 0;
   display: flex;
-  margin-bottom: 28rpx;
+  margin-bottom: @space-6;
   align-items: center;
   justify-content: space-between;
   gap: @space-4;
@@ -218,10 +218,10 @@
 
 .order-product {
   min-width: 0;
-  min-height: 176rpx;
+  min-height: 144rpx;
   display: grid;
-  align-items: stretch;
-  grid-template-columns: 176rpx minmax(0, 1fr) 190rpx;
+  align-items: center;
+  grid-template-columns: 144rpx minmax(0, 1fr);
   column-gap: @space-5;
 }
 
@@ -231,8 +231,8 @@
 
 .order-product__image-shell {
   position: relative;
-  width: 176rpx;
-  height: 176rpx;
+  width: 144rpx;
+  height: 144rpx;
   display: flex;
   overflow: hidden;
   border-radius: @radius-md;
@@ -256,16 +256,18 @@
 }
 
 .order-product__bundle-amount {
+  max-width: 100%;
   display: flex;
-  align-items: baseline;
+  align-items: center;
   justify-content: flex-end;
   gap: 8rpx;
 }
 
 .order-product__bundle-amount-label {
+  flex: none;
   color: @color-text-muted;
   font-size: @font-size-xs;
-  line-height: 1.35;
+  line-height: 40rpx;
 }
 
 .order-product__image {
@@ -281,20 +283,24 @@
 
 .order-product__content {
   min-width: 0;
-  min-height: 176rpx;
+  min-height: 144rpx;
   display: grid;
-  grid-column: 2 / 4;
   grid-template-columns: minmax(0, 1fr) 190rpx;
-  grid-template-rows: auto auto;
-  align-content: center;
+  align-items: center;
   column-gap: @space-5;
-  row-gap: @space-3;
 }
 
 .order-product__details {
   min-width: 0;
-  grid-column: 1;
-  grid-row: 1;
+}
+
+.order-product__summary {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  justify-content: center;
+  gap: @space-2;
 }
 
 .order-product__title {
@@ -309,13 +315,13 @@
   max-width: 100%;
   display: inline-flex;
   margin-top: @space-2;
-  padding: 4rpx @space-3;
+  padding: 4rpx @space-3 4rpx 0;
   overflow: hidden;
   border-radius: @radius-xs;
   box-sizing: border-box;
   align-items: center;
   color: @color-text-muted;
-  background: #f5f5f5;
+  background: transparent;
   font-size: @font-size-xs;
   line-height: 1.35;
   text-overflow: ellipsis;
@@ -323,50 +329,53 @@
 }
 
 .order-product__quantity {
-  grid-column: 1;
-  grid-row: 2;
   color: @color-text-muted;
   font-size: @font-size-sm;
   line-height: 1.4;
+  text-align: right;
 }
 
 .order-product__after-sale-status {
   display: flex;
   min-width: 0;
-  grid-column: 1 / -1;
+  margin-top: @space-3;
   flex-direction: column;
   gap: @space-1;
-  color: @color-warning-text;
-  font-size: @font-size-xs;
+  color: #fe0000;
+  font-size: 20rpx;
   line-height: 1.5;
   white-space: normal;
 }
-.order-product__refund {
-  color: @color-success-text;
-}
 
 .order-product__price {
+  min-width: 0;
   max-width: 100%;
+  display: flex;
+  align-items: baseline;
   overflow: hidden;
-  grid-column: 2;
-  grid-row: 1;
-  align-self: start;
-  justify-self: end;
-  color: @color-price;
+  color: @color-text-primary;
   font-family: @font-family-commerce-price;
-  font-size: 30rpx;
   font-variant-numeric: proportional-nums;
   font-weight: 600;
-  line-height: @line-height-tight;
-  text-overflow: ellipsis;
+  line-height: 1.08;
+  letter-spacing: 0;
   white-space: nowrap;
 }
 
-.order-product__bundle-amount {
-  grid-column: 2;
-  grid-row: 1;
-  align-self: start;
-  justify-self: end;
+.order-product__currency {
+  margin-right: 2rpx;
+  font-size: 20rpx;
+  font-weight: 500;
+}
+
+.order-product__price-integer {
+  font-size: 32rpx;
+}
+
+.order-product__price-decimal {
+  margin-left: 1rpx;
+  font-size: 23rpx;
+  font-weight: 600;
 }
 
 .order-card__empty-product {
@@ -380,7 +389,7 @@
 .order-card__actions {
   position: relative;
   display: flex;
-  padding: 0 @space-5 24rpx;
+  padding: 0 @space-5 @space-6;
   border: 0;
   align-items: center;
   justify-content: flex-end;
@@ -391,15 +400,15 @@
 button.order-action {
   .press-feedback();
   width: auto;
-  min-width: 128rpx;
-  height: 64rpx;
-  min-height: 64rpx;
+  min-width: 120rpx;
+  height: 52rpx;
+  min-height: 52rpx;
   margin: 0;
-  padding: 0 22rpx;
-  border-radius: 14rpx;
+  padding: 0 @space-5;
+  border-radius: @radius-xs;
   background: transparent;
   font-size: @font-size-sm;
-  line-height: 62rpx;
+  line-height: 48rpx;
 }
 
 button.order-action--secondary {
