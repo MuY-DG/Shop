@@ -66,6 +66,7 @@ export interface CatalogProductCardView {
 }
 
 export interface GalleryImageView {
+  previewUrl?: string;
   key: string;
   url: string;
   hasImage: boolean;
@@ -90,6 +91,8 @@ export interface SkuOptionView {
 }
 
 export interface SkuSpecificationOptionView {
+  sourceUrl?: string;
+  displayUrl?: string;
   key: string;
   value: string;
   priceText: string;
@@ -509,7 +512,12 @@ export function buildGalleryImages(detail: ProductDetail): GalleryImageView[] {
       seen.add(url);
       return true;
     })
-    .map((url, index) => ({ key: `${index}-${url}`, url, hasImage: true }));
+    .map((url, index) => {
+      const displayUrl = detail.imageVariants?.[url]?.displayUrl;
+      return displayUrl
+        ? { key: `${index}-${url}`, url: displayUrl, previewUrl: url, hasImage: true }
+        : { key: `${index}-${url}`, url, hasImage: true };
+    });
 }
 
 export function buildParameterViews(

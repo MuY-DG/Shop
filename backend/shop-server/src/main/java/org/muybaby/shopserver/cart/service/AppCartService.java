@@ -12,6 +12,7 @@ import org.muybaby.shopserver.common.error.ErrorCode;
 import org.muybaby.shopserver.product.ProductStatus;
 import org.muybaby.shopserver.product.SkuStatus;
 import org.muybaby.shopserver.security.AuthenticatedPrincipal;
+import org.muybaby.shopserver.storage.service.PublicImageVariants;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.jdbc.core.namedparam.MapSqlParameterSource;
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
@@ -397,6 +398,7 @@ public class AppCartService {
                        next_tier.unit_price_cent AS next_wholesale_tier_price_cent,
                        k.stock_available,
                        k.image AS sku_image,
+                       %s AS display_image,
                        k.status AS sku_status,
                        s.title AS product_title,
                        s.subtitle AS product_subtitle,
@@ -426,7 +428,9 @@ public class AppCartService {
                           WHERE candidate.sku_id = k.id
                             AND candidate.min_quantity > ci.quantity
                       )
-                """;
+                """.formatted(PublicImageVariants.thumbnailSql(
+                        "case when k.image is not null and trim(k.image) <> '' then k.image else s.main_image end",
+                        "case when k.image is not null and trim(k.image) <> '' then k.image_file_id else s.main_image_file_id end"));
     }
 
     private CartItemResponse mapCartItem(ResultSet rs, int rowNum) throws SQLException {
@@ -453,7 +457,7 @@ public class AppCartService {
                 defaultString(rs.getString("product_subtitle")),
                 mainImage,
                 defaultString(skuImage),
-                StringUtils.hasText(skuImage) ? skuImage : mainImage,
+                defaultString(rs.getString("display_image")),
                 defaultString(rs.getString("spec_text")),
                 priceCent,
                 retailPriceCent,

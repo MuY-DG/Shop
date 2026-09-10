@@ -159,7 +159,13 @@ export interface ProductFoodDisclosure {
   labelAssets: ProductFoodLabelAsset[];
 }
 
+export interface ProductImageVariants {
+  thumbnailUrl: string;
+  displayUrl: string;
+}
+
 export interface ProductDetail {
+  imageVariants?: Record<string, ProductImageVariants>;
   id: number;
   categoryId: number;
   categoryName: string;

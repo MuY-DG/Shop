@@ -366,7 +366,9 @@
           >
             <image
               class="purchase-image"
-              src="{{purchaseImageSources[purchaseImageUrl] || ''}}"
+              src="{{purchaseImageDisplayUrl}}"
+              data-source-url="{{purchaseImageSourceUrl}}"
+              binderror="onPurchaseImageError"
               mode="aspectFill"
             />
           </view>
@@ -451,6 +453,7 @@
                 <view
                   wx:for="{{group.options}}"
                   wx:for-item="option"
+                  wx:for-index="optionIndex"
                   wx:key="key"
                   class="specification-option {{option.hasImage ? 'specification-option--with-image' : ''}} {{group.hasImages && specificationImageMode === 'image' ? 'specification-option--image-mode' : ''}} {{option.selected ? 'specification-option--selected' : ''}} {{option.disabled ? 'specification-option--disabled' : ''}}"
                   data-spec-name="{{group.name}}"
@@ -463,7 +466,11 @@
                   <view wx:if="{{option.hasImage}}" class="specification-image-frame">
                     <image
                       class="specification-option__image"
-                      src="{{purchaseImageSources[option.imageUrl] || ''}}"
+                      src="{{option.displayUrl}}"
+                      data-source-url="{{option.sourceUrl}}"
+                      data-group-index="{{groupIndex}}"
+                      data-option-index="{{optionIndex}}"
+                      binderror="onPurchaseImageError"
                       mode="aspectFill"
                     />
                     <button

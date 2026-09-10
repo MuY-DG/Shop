@@ -19,6 +19,8 @@ import org.muybaby.shopserver.product.dto.AppSpuListItemResponse;
 import org.muybaby.shopserver.product.dto.ProductImageResponse;
 import org.muybaby.shopserver.product.dto.WholesaleTierResponse;
 import org.muybaby.shopserver.product.dto.ProductPageRequest;
+import org.muybaby.shopserver.storage.service.PublicImageVariantService;
+import org.muybaby.shopserver.storage.service.PublicImageVariants;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
@@ -37,15 +39,18 @@ import java.util.Map;
 public class AppProductService {
 
     private final JdbcClient jdbcClient;
+    private final PublicImageVariantService imageVariants;
     private final ProductParameterService productParameterService;
     private final ProductFoodComplianceService productFoodComplianceService;
 
     public AppProductService(
             JdbcClient jdbcClient,
             ProductParameterService productParameterService,
-            ProductFoodComplianceService productFoodComplianceService
+            ProductFoodComplianceService productFoodComplianceService,
+            PublicImageVariantService imageVariants
     ) {
         this.jdbcClient = jdbcClient;
+        this.imageVariants = imageVariants;
         this.productParameterService = productParameterService;
         this.productFoodComplianceService = productFoodComplianceService;
     }
@@ -98,7 +103,7 @@ public class AppProductService {
         rowParameters.put("limit", size);
         rowParameters.put("offset", offset);
         List<SpuListRow> rows = jdbcClient.sql("""
-                        SELECT s.id, s.category_id, s.title, s.subtitle, s.main_image, s.selling_points,
+                        SELECT s.id, s.category_id, s.title, s.subtitle, %s AS main_image, s.selling_points,
                                s.display_badge_text, s.display_badge_tone,
                                min(k.price_cent) AS min_price_cent,
                                max(k.price_cent) AS max_price_cent,
@@ -129,12 +134,13 @@ public class AppProductService {
                           AND (:categoryId IS NULL OR s.category_id = :categoryId)
                           AND %s
                           %s
-                        GROUP BY s.id, s.category_id, s.title, s.subtitle, s.main_image, s.selling_points,
+                        GROUP BY s.id, s.category_id, s.title, s.subtitle, s.main_image, s.main_image_file_id, s.selling_points,
                                  s.display_badge_text, s.display_badge_tone,
                                  s.virtual_sales, sales.actual_sales, s.sort_order
                         ORDER BY %s
                         LIMIT :limit OFFSET :offset
-                        """.formatted(search.predicate("s"), parameterFilterClause, normalizedRequest.orderByClause()))
+                        """.formatted(PublicImageVariants.thumbnailSql("s.main_image", "s.main_image_file_id"),
+                        search.predicate("s"), parameterFilterClause, normalizedRequest.orderByClause()))
                 .params(rowParameters)
                 .query(this::mapSpuListRow)
                 .list();
@@ -270,6 +276,10 @@ public class AppProductService {
                 : ProductSaleState.SOLD_OUT;
         List<AppGuaranteeServiceResponse> guaranteeServices = findGuaranteeServices(spuId);
 
+        List<String> imageUrls = new ArrayList<>();
+        imageUrls.add(spu.mainImage());
+        images.forEach(image -> imageUrls.add(image.url()));
+        skus.forEach(sku -> imageUrls.add(sku.image()));
         return new AppSpuDetailResponse(
                 spu.id(),
                 spu.categoryId(),
@@ -289,7 +299,8 @@ public class AppProductService {
                 productParameterService.displayValues(spuId, false),
                 spu.freightTemplate(),
                 guaranteeServices,
-                reviewSummary(spuId)
+                reviewSummary(spuId),
+                imageVariants.findByUrls(imageUrls)
         );
     }
 

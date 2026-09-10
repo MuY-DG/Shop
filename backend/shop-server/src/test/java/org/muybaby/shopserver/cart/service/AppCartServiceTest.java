@@ -49,6 +49,31 @@ class AppCartServiceTest {
     private PlatformTransactionManager transactionManager;
 
     @Test
+    void cartUsesReadyThumbnailAndKeepsOriginalImageFields() {
+        long userId = insertAppUser("cart-image-openid");
+        long skuId = insertSellableSku("CART-IMAGE-SKU", 3990L, 4990L, 20);
+        String key = "public/cart-variant-test.webp";
+        String url = "https://images.example.test/" + key;
+        jdbcClient.sql("""
+                insert into storage_asset (scope, media_kind, visibility, provider, object_key,
+                    original_filename, content_type, extension, size_bytes, public_url, uploaded_by_type, uploaded_by_id)
+                values ('LIBRARY', 'IMAGE', 'PUBLIC', 'TENCENT_COS', :key, 'photo.webp', 'image/webp', 'webp', 10, :url, 'ADMIN', 1)
+                """).param("key", key).param("url", url).update();
+        Long fileId = jdbcClient.sql("select id from storage_asset where object_key = :key")
+                .param("key", key).query(Long.class).single();
+        jdbcClient.sql("update product_sku set image = :url, image_file_id = :fileId where id = :id")
+                .param("url", url).param("fileId", fileId).param("id", skuId).update();
+        var principal = new AuthenticatedPrincipal(TokenKind.APP, userId, "app-user", List.of(), List.of());
+        var before = appCartService.add(principal, new AddCartItemRequest(skuId, 1));
+        assertThat(before.displayImage()).isEqualTo(url);
+        jdbcClient.sql("update storage_asset set public_image_variants_ready = true where id = :id")
+                .param("id", fileId).update();
+        var after = appCartService.list(principal).items().getFirst();
+        assertThat(after.displayImage()).isEqualTo(url + ".thumb-480.webp");
+        assertThat(after.skuImage()).isEqualTo(url);
+    }
+
+    @Test
     void addMergesExistingRowAfterDuplicateKeyRetryThroughTransactionalProxy() {
         long userId = insertAppUser("cart-race-openid");
         long skuId = insertSellableSku("CART-RACE-SKU", 3990L, 4990L, 20);

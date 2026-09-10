@@ -38,6 +38,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 import java.util.Objects;
@@ -1038,6 +1039,11 @@ public class DirectUploadService {
                 settings.quality(),
                 session.profile().visibility() == FileVisibility.PUBLIC
         );
+        if (session.profile() == StorageUploadProfile.LIBRARY_IMAGE) {
+            List<StorageProvider.ImageProcessOutput> outputs = new ArrayList<>(List.of(main));
+            outputs.addAll(PublicImageVariants.outputs(session.finalObjectKey()));
+            return List.copyOf(outputs);
+        }
         if (session.profile() != StorageUploadProfile.CUSTOMER_SERVICE_IMAGE) {
             return List.of(main);
         }
@@ -1052,8 +1058,8 @@ public class DirectUploadService {
             SessionRow session,
             List<ProcessedImage> processed
     ) {
-        int expectedOutputCount = session.profile()
-                == StorageUploadProfile.CUSTOMER_SERVICE_IMAGE ? 2 : 1;
+        int expectedOutputCount = session.profile() == StorageUploadProfile.LIBRARY_IMAGE ? 3
+                : session.profile() == StorageUploadProfile.CUSTOMER_SERVICE_IMAGE ? 2 : 1;
         if (processed == null || processed.size() != expectedOutputCount) {
             throw new BusinessException(ErrorCode.STORAGE_UPLOAD_POLICY_REJECTED);
         }
@@ -1086,6 +1092,9 @@ public class DirectUploadService {
                 imageProfileSettings(session.profile()).maxDimension());
         if (session.profile() == StorageUploadProfile.AFTER_SALE_EVIDENCE) {
             uploadPolicy.requireAllowed(session.profile(), "evidence.webp", "image/webp", main.sizeBytes(), true);
+        }
+        if (session.profile() == StorageUploadProfile.LIBRARY_IMAGE) {
+            PublicImageVariants.validate(session.finalObjectKey(), processed);
         }
         ProcessedImage thumbnail = session.profile()
                 == StorageUploadProfile.CUSTOMER_SERVICE_IMAGE
@@ -1206,7 +1215,7 @@ public class DirectUploadService {
                                  thumbnail_status, thumbnail_object_key,
                                  thumbnail_content_type, thumbnail_size_bytes,
                                  thumbnail_sha256, thumbnail_object_etag,
-                                 thumbnail_width, thumbnail_height, cleanup_attempts,
+                                 thumbnail_width, thumbnail_height, public_image_variants_ready, cleanup_attempts,
                                  cleanup_next_retry_at, cleanup_lease_token)
                             values
                                 (:scope, :mediaKind, :folderId, :visibility, 'TENCENT_COS',
@@ -1218,7 +1227,7 @@ public class DirectUploadService {
                                  :thumbnailStatus, :thumbnailObjectKey,
                                  :thumbnailContentType, :thumbnailSizeBytes,
                                  :thumbnailSha256, :thumbnailObjectEtag,
-                                 :thumbnailWidth, :thumbnailHeight, 0, null, null)
+                                 :thumbnailWidth, :thumbnailHeight, :publicVariantsReady, 0, null, null)
                             """)
                     .param("scope", session.profile().scope().name())
                     .param("mediaKind", session.profile().mediaKind().name())
@@ -1240,6 +1249,7 @@ public class DirectUploadService {
                     .param("contextType", session.contextType())
                     .param("contextId", session.contextId())
                     .param("expiresAt", assetExpiresAt)
+                    .param("publicVariantsReady", session.profile() == StorageUploadProfile.LIBRARY_IMAGE)
                     .param("thumbnailStatus", thumbnail == null ? "NONE" : "READY")
                     .param("thumbnailObjectKey",
                             thumbnail == null ? null : thumbnail.objectKey())
@@ -1322,6 +1332,7 @@ public class DirectUploadService {
         if (outputsMayExist) {
             deleteQuietly(session.finalLocation());
             deleteQuietly(session.thumbnailLocation());
+            deletePublicVariants(session);
         }
         LocalDateTime retryAt = databaseNow().plus(
                 processingRetryDelay(session.processingAttempts()));
@@ -1425,9 +1436,19 @@ public class DirectUploadService {
         }
         if (session.outputsDeletedAt() == null
                 && deleteQuietly(session.finalLocation())
-                && deleteQuietly(session.thumbnailLocation())) {
+                && deleteQuietly(session.thumbnailLocation())
+                && deletePublicVariants(session)) {
             markOutputsDeleted(session.id());
         }
+    }
+
+    private boolean deletePublicVariants(SessionRow session) {
+        if (session.profile() != StorageUploadProfile.LIBRARY_IMAGE) return true;
+        boolean deleted = true;
+        for (StorageObjectLocation location : PublicImageVariants.locations(session.finalLocation())) {
+            deleted &= deleteQuietly(location);
+        }
+        return deleted;
     }
 
     private void markStagingDeleted(String uploadId) {

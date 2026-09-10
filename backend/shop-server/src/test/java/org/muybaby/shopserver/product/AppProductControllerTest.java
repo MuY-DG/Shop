@@ -100,6 +100,19 @@ class AppProductControllerTest {
                 .andExpect(jsonPath("$.data.skus[0].maxPurchaseQuantity").value(9))
                 .andExpect(jsonPath("$.data.skus[0].stockAvailable").doesNotExist());
 
+        jdbcClient.sql("update storage_asset set public_image_variants_ready = true where id in (:ids)")
+                .param("ids", List.of(mainFile.id(), galleryFile.id(), skuFile.id())).update();
+        mockMvc.perform(get("/app/product/spus").param("keyword", "App Published SPU"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.records[0].mainImage").value(mainFile.publicUrl() + ".thumb-480.webp"));
+        String withVariants = mockMvc.perform(get("/app/product/spus/" + spuId)).andExpect(status().isOk())
+                .andReturn().getResponse().getContentAsString();
+        var data = new com.fasterxml.jackson.databind.ObjectMapper().readTree(withVariants).path("data");
+        assertThat(data.path("mainImage").asText()).isEqualTo(mainFile.publicUrl());
+        assertThat(data.path("imageVariants").path(galleryFile.publicUrl()).path("displayUrl").asText())
+                .isEqualTo(galleryFile.publicUrl() + ".display-1080.webp");
+        assertThat(data.path("imageVariants").path(skuFile.publicUrl()).path("thumbnailUrl").asText())
+                .isEqualTo(skuFile.publicUrl() + ".thumb-480.webp");
         adminProductService.unpublishSpu(spuId);
 
         mockMvc.perform(get("/app/product/spus/" + spuId))

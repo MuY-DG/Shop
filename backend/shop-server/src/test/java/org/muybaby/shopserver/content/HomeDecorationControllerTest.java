@@ -143,6 +143,8 @@ class HomeDecorationControllerTest {
                 .andExpect(jsonPath("$.data.records[0].title").value(product.title()));
 
         insertCurrentBanner(categoryImage);
+        jdbcClient.sql("update storage_asset set public_image_variants_ready = true where public_url in (:urls)")
+                .param("urls", java.util.List.of(hotImage.url(), product.mainImage())).update();
         mockMvc.perform(get("/app/home"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.schemaVersion").value(3))
@@ -153,7 +155,7 @@ class HomeDecorationControllerTest {
                 .andExpect(jsonPath("$.data.productSections[0].code").value("HOT"))
                 .andExpect(jsonPath("$.data.productSections[0].presentation").value("FEATURED"))
                 .andExpect(jsonPath("$.data.productSections[0].products[0].spuId").value(product.spuId()))
-                .andExpect(jsonPath("$.data.productSections[0].products[0].imageUrl").value(hotImage.url()))
+                .andExpect(jsonPath("$.data.productSections[0].products[0].imageUrl").value(hotImage.url() + ".thumb-480.webp"))
                 .andExpect(jsonPath("$.data.productSections[0].products[0].price.minPriceCent").value(1990))
                 .andExpect(jsonPath("$.data.productSections[0].products[0].price.originalPriceCent").value(2990))
                 .andExpect(jsonPath("$.data.productSections[0].products[0].badge.text").value("店长推荐"))

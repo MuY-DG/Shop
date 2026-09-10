@@ -142,6 +142,11 @@ class DirectUploadServiceTest {
                 .endsWith(".webp");
         assertThat(first.width()).isEqualTo(1);
         assertThat(first.height()).isEqualTo(1);
+        assertThat(jdbcClient.sql("select public_image_variants_ready from storage_asset where id = :id")
+                .param("id", first.id()).query(Boolean.class).single()).isTrue();
+        for (var variant : PublicImageVariants.locations(sessionLocations(session.uploadId()).finalLocation())) {
+            assertThat(storageProvider.metadata(variant).sizeBytes()).isPositive();
+        }
         assertThat(jdbcClient.sql("""
                         select count(*) from storage_asset
                         where object_key = (

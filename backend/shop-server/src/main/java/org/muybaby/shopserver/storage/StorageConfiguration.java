@@ -42,6 +42,20 @@ public class StorageConfiguration {
         return new StorageObjectKeyGenerator();
     }
 
+    @Bean("publicImageVariantExecutor")
+    @Profile("!test")
+    TaskExecutor publicImageVariantExecutor() {
+        ThreadPoolTaskExecutor executor = new ThreadPoolTaskExecutor();
+        executor.setThreadNamePrefix("public-image-variant-");
+        executor.setCorePoolSize(1);
+        executor.setMaxPoolSize(1);
+        executor.setQueueCapacity(0);
+        executor.setWaitForTasksToCompleteOnShutdown(true);
+        executor.setAwaitTerminationSeconds(30);
+        executor.initialize();
+        return executor;
+    }
+
     @Bean("customerServiceThumbnailExecutor")
     @Profile("!test")
     TaskExecutor customerServiceThumbnailExecutor() {

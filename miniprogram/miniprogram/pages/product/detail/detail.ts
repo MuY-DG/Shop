@@ -58,7 +58,7 @@ import type {
 import { isApiError } from "../../../utils/api-error";
 import { openLoginPage } from "../../../utils/login-navigation";
 import { enableNativeShareMenu } from "../../../utils/share";
-import { getCachedProductImage, loadProductImage } from "../../../utils/product-image-cache";
+import { getCachedProductImage, invalidateProductImage, loadProductImage } from "../../../utils/product-image-cache";
 
 interface PageOptions {
   id?: string;
@@ -81,6 +81,9 @@ interface DatasetEvent {
       imageUrl?: string;
       reviewId?: number | string;
       foodLabelUrl?: string;
+      sourceUrl?: string;
+      groupIndex?: number | string;
+      optionIndex?: number | string;
     };
   };
 }
@@ -219,21 +222,35 @@ function buildReviewSpecOptions(
   }));
 }
 
-async function openImagePreview(
-  currentUrl: string,
-  specificationGroups: SkuSpecificationGroupView[]
-): Promise<void> {
+interface PurchaseImageRuntime {
+  observer?: WechatMiniprogram.IntersectionObserver;
+  version: number;
+  pending: Set<string>;
+}
+
+function purchaseRuntime(instance: unknown): PurchaseImageRuntime {
+  const target = instance as { purchaseImages?: PurchaseImageRuntime };
+  return target.purchaseImages ?? (target.purchaseImages = { version: 0, pending: new Set() });
+}
+
+function purchaseSource(detail: ProductDetail | null, url: string, mode: "list" | "image" = "list"): string {
+  const variant = detail?.imageVariants?.[url];
+  return (mode === "image" ? variant?.displayUrl : variant?.thumbnailUrl) || url;
+}
+
+function withSpecificationImages(groups: SkuSpecificationGroupView[], detail: ProductDetail,
+  mode: "list" | "image" = "list"): SkuSpecificationGroupView[] {
+  return groups.map(group => ({ ...group, options: group.options.map(option => {
+    const sourceUrl = purchaseSource(detail, option.imageUrl, mode);
+    return { ...option, sourceUrl, displayUrl: "" };
+  }) }));
+}
+
+function openImagePreview(currentUrl: string, specificationGroups: SkuSpecificationGroupView[]): void {
   const current = cleanText(currentUrl);
-  if (!current) {
-    return;
-  }
-  const specificationUrls = buildSpecificationPreviewUrls(specificationGroups, current);
-  const urls = specificationUrls.includes(current) ? specificationUrls : [current];
-  const cachedUrls = await Promise.all(urls.map(loadProductImage));
-  wx.previewImage({
-    current: cachedUrls[0] ?? current,
-    urls: cachedUrls.length ? cachedUrls : urls
-  });
+  if (!current) return;
+  const urls = buildSpecificationPreviewUrls(specificationGroups, current);
+  wx.previewImage({ current, urls: urls.includes(current) ? urls : [current] });
 }
 
 Page({
@@ -252,7 +269,8 @@ Page({
     selectedSkuCode: "",
     selectedNetContentText: "",
     purchaseImageUrl: "",
-    purchaseImageSources: {} as Record<string, string>,
+    purchaseImageSourceUrl: "",
+    purchaseImageDisplayUrl: "",
     guaranteeSummary: "",
     freightSummary: "",
     freightChargeText: "",
@@ -325,6 +343,7 @@ Page({
   },
 
   onUnload() {
+    this.stopPurchaseImages();
     if (sheetCloseTimer !== null) {
       clearTimeout(sheetCloseTimer);
       sheetCloseTimer = null;
@@ -393,18 +412,19 @@ Page({
         galleryImages: buildGalleryImages(normalizedDetail),
         parameterViews,
         ...parameterGroups,
-        specificationGroups: buildVisibleSkuSpecificationGroups(
+        specificationGroups: withSpecificationImages(buildVisibleSkuSpecificationGroups(
           normalizedDetail.specType,
           normalizedDetail.skus,
           selection.selectedSkuId
-        ),
+        ), normalizedDetail),
         specificationImageMode: "list",
         ...selection,
         selectedSkuName: displaySpecText(selectedSku?.specText),
         selectedSkuCode: cleanText(selectedSku?.skuCode),
         selectedNetContentText: cleanText(selectedSku?.netContentText),
         purchaseImageUrl: cleanText(selectedSku?.image) || cleanText(normalizedDetail.mainImage),
-        purchaseImageSources: {},
+        purchaseImageSourceUrl: purchaseSource(normalizedDetail, cleanText(selectedSku?.image) || cleanText(normalizedDetail.mainImage)),
+        purchaseImageDisplayUrl: "",
         guaranteeSummary: guaranteeSummary(normalizedDetail),
         freightSummary: freight.summary,
         freightChargeText: freight.chargeText,
@@ -514,14 +534,19 @@ Page({
       return;
     }
     const purchaseMode = event.currentTarget.dataset.mode === "CART" ? "CART" : "BUY";
-    this.preloadPurchaseImages();
+    const purchaseImageSourceUrl = this.data.detail
+      ? purchaseSource(this.data.detail, this.data.purchaseImageUrl, "list")
+      : "";
     this.setData({
       purchaseSheetOpen: true,
       purchaseSheetClosing: false,
       specificationImageMode: "list",
       purchaseMode,
-      purchaseActionText: purchaseMode === "CART" ? "加入购物车" : "立即购买"
-    });
+      purchaseActionText: purchaseMode === "CART" ? "加入购物车" : "立即购买",
+      specificationGroups: this.data.detail ? withSpecificationImages(this.data.specificationGroups, this.data.detail) : [],
+      purchaseImageSourceUrl,
+      purchaseImageDisplayUrl: getCachedProductImage(purchaseImageSourceUrl) || ""
+    }, () => wx.nextTick(() => this.observePurchaseImages()));
   },
 
   onClosePurchaseSheet() {
@@ -562,6 +587,7 @@ Page({
     if (!this.data.purchaseSheetOpen || this.data.purchaseSheetClosing) {
       return;
     }
+    this.stopPurchaseImages();
     this.setData({ purchaseSheetClosing: true });
     if (purchaseSheetCloseTimer !== null) {
       clearTimeout(purchaseSheetCloseTimer);
@@ -577,34 +603,62 @@ Page({
 
   onPreventMove() {},
 
-  preloadPurchaseImages() {
-    const requestId = latestDetailRequest;
-    const urls = [...new Set([
-      this.data.purchaseImageUrl,
-      ...buildSpecificationPreviewUrls(this.data.specificationGroups)
-    ].filter(Boolean))];
-    const sources = { ...this.data.purchaseImageSources };
-    for (const url of urls) {
-      const cached = getCachedProductImage(url);
-      if (cached) {
-        sources[url] = cached;
-      } else {
-        delete sources[url];
-      }
-    }
-    this.setData({ purchaseImageSources: sources });
-    for (const url of urls) {
-      if (sources[url]) {
-        continue;
-      }
-      void loadProductImage(url).then((path) => {
-        if (requestId === latestDetailRequest) {
-          this.setData({
-            purchaseImageSources: { ...this.data.purchaseImageSources, [url]: path }
-          });
+  stopPurchaseImages() {
+    const runtime = purchaseRuntime(this);
+    runtime.observer?.disconnect();
+    runtime.observer = undefined;
+    runtime.version++;
+    runtime.pending.clear();
+  },
+
+  observePurchaseImages() {
+    this.stopPurchaseImages();
+    if (!this.data.purchaseSheetOpen || this.data.purchaseSheetClosing) return;
+    const runtime = purchaseRuntime(this);
+    this.loadPurchaseImage(this.data.purchaseImageSourceUrl, "purchaseImageDisplayUrl");
+    if (!this.data.specificationGroups.some(group => group.options.some(option => option.hasImage))) return;
+    const version = runtime.version;
+    runtime.observer = this.createIntersectionObserver({ observeAll: true });
+    runtime.observer.relativeTo(".purchase-sheet-scroll", { top: 120, bottom: 240 })
+      .observe(".specification-option__image", result => {
+        if (version !== runtime.version || result.intersectionRatio <= 0) return;
+        const dataset = result.dataset;
+        const group = Number(dataset.groupIndex);
+        const option = Number(dataset.optionIndex);
+        const item = this.data.specificationGroups[group]?.options[option];
+        if (item?.sourceUrl && !item.displayUrl) {
+          this.loadPurchaseImage(item.sourceUrl, `specificationGroups[${group}].options[${option}].displayUrl`);
         }
       });
-    }
+  },
+
+  loadPurchaseImage(source: string, dataPath: string) {
+    const runtime = purchaseRuntime(this);
+    const version = runtime.version;
+    const pendingKey = `${dataPath}:${source}`;
+    if (!source || runtime.pending.has(pendingKey)) return;
+    runtime.pending.add(pendingKey);
+    void loadProductImage(source).then(path => {
+      if (version === runtime.version && this.data.purchaseSheetOpen) {
+        runtime.pending.delete(pendingKey);
+        this.setData({ [dataPath]: path });
+      }
+    });
+  },
+
+  onPurchaseImageError(event: DatasetEvent) {
+    const group = Number(event.currentTarget.dataset.groupIndex);
+    const option = Number(event.currentTarget.dataset.optionIndex);
+    const item = this.data.specificationGroups[group]?.options[option];
+    const header = !item;
+    const source = header ? this.data.purchaseImageSourceUrl : item.sourceUrl || item.imageUrl;
+    const original = header ? this.data.purchaseImageUrl : item.imageUrl;
+    const displayed = header ? this.data.purchaseImageDisplayUrl : item.displayUrl;
+    const path = header ? "purchaseImageDisplayUrl" : `specificationGroups[${group}].options[${option}].displayUrl`;
+    if (!displayed || (event.currentTarget.dataset.sourceUrl && event.currentTarget.dataset.sourceUrl !== source)) return;
+    invalidateProductImage(source);
+    // One remote fallback covers a removed local file or an unavailable derivative without a retry loop.
+    if (displayed !== original) this.setData({ [path]: original });
   },
 
   onSheetSpecificationSelect(event: DatasetEvent) {
@@ -632,9 +686,17 @@ Page({
   },
 
   onSpecificationImageModeToggle() {
+    const mode = this.data.specificationImageMode === "list" ? "image" : "list";
+    const purchaseImageSourceUrl = this.data.detail
+      ? purchaseSource(this.data.detail, this.data.purchaseImageUrl, mode)
+      : "";
     this.setData({
-      specificationImageMode: this.data.specificationImageMode === "list" ? "image" : "list"
-    });
+      specificationImageMode: mode,
+      specificationGroups: this.data.detail
+        ? withSpecificationImages(this.data.specificationGroups, this.data.detail, mode) : [],
+      purchaseImageSourceUrl,
+      purchaseImageDisplayUrl: getCachedProductImage(purchaseImageSourceUrl) || ""
+    }, () => wx.nextTick(() => this.observePurchaseImages()));
   },
 
   onPreviewPurchaseImage() {
@@ -1085,25 +1147,26 @@ Page({
 
   applySelection(sku: ProductSku, quantity: number) {
     const selection = resolvePurchaseSelection(sku, quantity);
-    const fallbackImage = this.data.detail?.mainImage ?? "";
+    if (sku.id === this.data.selectedSkuId) {
+      this.setData({ ...selection, wholesaleSummary: wholesaleSummary(selection.wholesaleTiers) });
+      return;
+    }
+    this.stopPurchaseImages();
+    const detail = this.data.detail;
+    const image = cleanText(sku.image) || cleanText(detail?.mainImage);
+    const source = purchaseSource(detail, image, this.data.specificationImageMode);
     this.setData({
       ...selection,
-      specificationGroups: this.data.detail
-        ? buildVisibleSkuSpecificationGroups(
-            this.data.detail.specType,
-            this.data.detail.skus,
-            selection.selectedSkuId
-          )
-        : [],
+      specificationGroups: detail ? withSpecificationImages(buildVisibleSkuSpecificationGroups(
+        detail.specType, detail.skus, selection.selectedSkuId), detail, this.data.specificationImageMode) : [],
       selectedSkuName: displaySpecText(sku.specText),
       selectedSkuCode: cleanText(sku.skuCode),
       selectedNetContentText: cleanText(sku.netContentText),
-      purchaseImageUrl: cleanText(sku.image) || cleanText(fallbackImage),
+      purchaseImageUrl: image,
+      purchaseImageSourceUrl: source,
+      purchaseImageDisplayUrl: getCachedProductImage(source) || "",
       wholesaleSummary: wholesaleSummary(selection.wholesaleTiers)
-    });
-    if (this.data.purchaseSheetOpen) {
-      this.preloadPurchaseImages();
-    }
+    }, () => wx.nextTick(() => this.observePurchaseImages()));
   },
 
   selectedSku(): ProductSku | undefined {

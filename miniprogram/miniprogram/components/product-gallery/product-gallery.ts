@@ -1,10 +1,11 @@
-import { getCachedProductImage, loadProductImage } from "../../utils/product-image-cache";
+import { invalidateProductImage, loadProductImage } from "../../utils/product-image-cache";
 
 interface ProductGalleryImage {
   key: string;
   url: string;
   hasImage: boolean;
   displayUrl?: string;
+  previewUrl?: string;
 }
 
 interface ProductGalleryAnimationFinishEvent {
@@ -26,6 +27,7 @@ interface ProductGalleryRuntime {
   transitioning: boolean;
   imageVersion?: number;
   previewPending?: boolean;
+  pendingImages?: Set<string>;
   settleTimer?: ReturnType<typeof setTimeout>;
 }
 
@@ -67,24 +69,17 @@ Component({
         const runtime = galleryRuntime(this);
         const imageVersion = (runtime.imageVersion ?? 0) + 1;
         runtime.imageVersion = imageVersion;
+        runtime.pendingImages = new Set();
         const displayImages = Array.isArray(value)
           ? value.map((image) => ({
               ...image,
-              displayUrl: image.hasImage ? getCachedProductImage(image.url) || "" : ""
+              displayUrl: ""
             }))
           : [];
         galleryRuntime(this).pendingCurrent = 0;
         galleryRuntime(this).transitioning = false;
-        this.setData({ displayImages, current: 0, swiperVisible: true });
-        displayImages.forEach((image, index) => {
-          if (!image.hasImage || image.displayUrl) {
-            return;
-          }
-          void loadProductImage(image.url).then((displayUrl) => {
-            if (runtime.imageVersion === imageVersion) {
-              this.setData({ [`displayImages[${index}].displayUrl`]: displayUrl });
-            }
-          });
+        this.setData({ displayImages, current: 0, swiperVisible: true }, () => {
+          this.loadNearbyImages(0);
         });
       }
     }
@@ -105,33 +100,33 @@ Component({
   },
 
   methods: {
-    async onImagePreview(event: ProductGalleryErrorEvent) {
-      const index = Number(event.currentTarget.dataset.index);
+    loadNearbyImages(current: number) {
       const runtime = galleryRuntime(this);
-      if (
-        runtime.transitioning || runtime.previewPending ||
-        !validGalleryIndex(index, this.data.displayImages.length)
-      ) {
-        return;
+      const version = runtime.imageVersion;
+      const length = this.data.displayImages.length;
+      const indexes = new Set([current, (current + 1) % length]);
+      if (current > 0) indexes.add(current - 1);
+      for (const index of indexes) {
+        const item = this.data.displayImages[index];
+        if (!item?.hasImage || item.displayUrl || runtime.pendingImages?.has(item.url)) continue;
+        runtime.pendingImages?.add(item.url);
+        void loadProductImage(item.url).then(displayUrl => {
+          if (runtime.imageVersion === version) {
+            runtime.pendingImages?.delete(item.url);
+            this.setData({ [`displayImages[${index}].displayUrl`]: displayUrl });
+          }
+        });
       }
+    },
+
+    onImagePreview(event: ProductGalleryErrorEvent) {
+      const index = Number(event.currentTarget.dataset.index);
+      if (galleryRuntime(this).transitioning || !validGalleryIndex(index, this.data.displayImages.length)) return;
       const current = this.data.displayImages[index];
-      if (!current.hasImage || !current.url) {
-        return;
-      }
-      const urls = this.data.displayImages
-        .filter((image) => image.hasImage && image.url)
-        .map((image) => image.url);
-      const currentIndex = urls.indexOf(current.url);
-      const imageVersion = runtime.imageVersion;
-      runtime.previewPending = true;
-      try {
-        const localUrls = await Promise.all(urls.map(loadProductImage));
-        if (runtime.imageVersion === imageVersion) {
-          wx.previewImage({ current: localUrls[currentIndex], urls: localUrls });
-        }
-      } finally {
-        runtime.previewPending = false;
-      }
+      if (!current.hasImage) return;
+      const urls = this.data.displayImages.filter(image => image.hasImage)
+        .map(image => image.previewUrl || image.url);
+      wx.previewImage({ current: current.previewUrl || current.url, urls });
     },
 
     onChange(event: ProductGalleryAnimationFinishEvent) {
@@ -140,6 +135,7 @@ Component({
         // Only remember the native target here. Writing current back during change
         // can interrupt the gesture and leave the swiper between two items.
         galleryRuntime(this).pendingCurrent = current;
+        this.loadNearbyImages(current);
       }
     },
 
@@ -203,10 +199,16 @@ Component({
       ) {
         return;
       }
-      const displayImages = this.data.displayImages.map((image, itemIndex) => (
-        itemIndex === index ? { ...image, hasImage: false } : image
-      ));
-      this.setData({ displayImages });
+      const item = this.data.displayImages[index];
+      invalidateProductImage(item.url);
+      if (item.previewUrl && item.url !== item.previewUrl) {
+        this.setData({ [`displayImages[${index}].url`]: item.previewUrl,
+          [`displayImages[${index}].displayUrl`]: "" }, () => this.loadNearbyImages(index));
+      } else if (item.displayUrl && item.displayUrl !== item.url) {
+        this.setData({ [`displayImages[${index}].displayUrl`]: item.url });
+      } else {
+        this.setData({ [`displayImages[${index}].hasImage`]: false });
+      }
     }
   }
 });

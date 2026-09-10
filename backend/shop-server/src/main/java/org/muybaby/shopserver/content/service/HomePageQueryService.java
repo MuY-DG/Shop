@@ -12,6 +12,7 @@ import org.muybaby.shopserver.content.dto.AppHomeWholesaleSummaryResponse;
 import org.muybaby.shopserver.product.dto.AppProductParameterOptionValueResponse;
 import org.muybaby.shopserver.product.dto.AppProductParameterValueResponse;
 import org.muybaby.shopserver.product.service.ProductParameterService;
+import org.muybaby.shopserver.storage.service.PublicImageVariants;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
@@ -88,7 +89,7 @@ public class HomePageQueryService {
 
     private List<HomeProductRow> productRows(HomeProductSection section) {
         return jdbcClient.sql("""
-                        select i.id, i.spu_id, s.title, s.subtitle, i.image_url, s.main_image,
+                        select i.id, i.spu_id, s.title, s.subtitle, %s as image_url, %s as main_image,
                                s.display_badge_text, s.display_badge_tone, s.virtual_sales,
                                pricing.min_price_cent, pricing.max_price_cent, pricing.original_price_cent,
                                pricing.net_content_text,
@@ -131,7 +132,8 @@ public class HomePageQueryService {
                           and s.purged_at is null
                           and c.status = 'ENABLED'
                         order by i.sort_order asc, i.id desc
-                        """)
+                        """.formatted(PublicImageVariants.thumbnailSql("i.image_url", "i.image_file_id"),
+                                PublicImageVariants.thumbnailSql("s.main_image", "s.main_image_file_id")))
                 .param("sectionType", section.name())
                 .query((rs, rowNum) -> {
                     Long spuId = rs.getLong("spu_id");

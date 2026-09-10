@@ -120,6 +120,11 @@ public class StorageAssetCleanupService {
         }
         try {
             storageProvider.delete(asset.objectLocation());
+            if (asset.publicImage()) {
+                for (StorageObjectLocation variant : PublicImageVariants.locations(asset.objectLocation())) {
+                    storageProvider.delete(variant);
+                }
+            }
             if (asset.thumbnailLocation() != null) {
                 storageProvider.delete(asset.thumbnailLocation());
             }
@@ -240,7 +245,10 @@ public class StorageAssetCleanupService {
                         select id, scope, status, expires_at, cleanup_attempts, created_at,
                                cleanup_next_retry_at, provider,
                                storage_container, storage_region, object_key,
-                               thumbnail_object_key
+                               thumbnail_object_key,
+                               (scope = 'LIBRARY' and visibility = 'PUBLIC' and media_kind = 'IMAGE'
+                                and uploaded_by_type = 'ADMIN'
+                                and content_type in ('image/webp', 'image/jpeg', 'image/png', 'image/gif')) as public_image
                         from storage_asset
                         where id = :assetId
                         for update
@@ -396,6 +404,8 @@ public class StorageAssetCleanupService {
                             folder_id = null,
                             public_url = null,
                             expires_at = null,
+                            public_image_variants_ready = false,
+                            public_image_variants_retry_at = null,
                             thumbnail_status = 'NONE',
                             thumbnail_object_key = null,
                             thumbnail_content_type = null,
@@ -456,6 +466,7 @@ public class StorageAssetCleanupService {
                 rs.getString("storage_region"),
                 rs.getString("object_key"),
                 rs.getString("thumbnail_object_key"),
+                rs.getBoolean("public_image"),
                 null
         );
     }
@@ -473,12 +484,13 @@ public class StorageAssetCleanupService {
             String storageRegion,
             String objectKey,
             String thumbnailObjectKey,
+            boolean publicImage,
             String leaseToken
     ) {
         private CleanupAsset withLeaseToken(String token) {
             return new CleanupAsset(
                     id, scope, status, expiresAt, cleanupAttempts, createdAt, cleanupNextRetryAt,
-                    provider, storageContainer, storageRegion, objectKey, thumbnailObjectKey, token
+                    provider, storageContainer, storageRegion, objectKey, thumbnailObjectKey, publicImage, token
             );
         }
 
