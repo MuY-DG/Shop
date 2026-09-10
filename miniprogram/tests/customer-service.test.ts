@@ -380,7 +380,7 @@ test("小程序客服使用自建接口、即时图片预览和带标签的咨�
   assert.match(pageSource, /commonQuestionMessageIds\.delete\(messageId\)/);
   assert.match(pageSource, /commonQuestionSending: false/);
   assert.doesNotMatch(template, /你好，我是在线客服/);
-  assert.match(template, />MuYbaby</);
+  assert.match(template, />\{\{displayName\}\}</);
   assert.match(template, />客服会话</);
   assert.doesNotMatch(template, /title="在线客服"/);
   assert.doesNotMatch(template, /service-status|statusHint/);

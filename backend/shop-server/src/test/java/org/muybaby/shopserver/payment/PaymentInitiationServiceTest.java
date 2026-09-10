@@ -3,6 +3,8 @@ package org.muybaby.shopserver.payment;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
 import org.muybaby.shopserver.common.error.BusinessException;
+import org.muybaby.shopserver.content.dto.DisplayConfigUpdateRequest;
+import org.muybaby.shopserver.content.service.DisplayConfigService;
 import org.muybaby.shopserver.payment.config.PaymentConfigResolver;
 import org.muybaby.shopserver.payment.config.ResolvedPaymentConfig;
 import org.muybaby.shopserver.payment.dto.WechatPaymentParamsResponse;
@@ -47,6 +49,9 @@ class PaymentInitiationServiceTest extends PaymentTestSupport {
 
     @Autowired
     private PaymentInitiationService paymentInitiationService;
+
+    @Autowired
+    private DisplayConfigService displayConfigService;
 
     @Autowired
     private TransactionProbeWechatPayProvider transactionProbeWechatPayProvider;
@@ -141,6 +146,7 @@ class PaymentInitiationServiceTest extends PaymentTestSupport {
         assertThat(transactionProbeWechatPayProvider.transactionObservedDuringPrepay()).isFalse();
 
         switchToClonedPaymentConfig(91002L);
+        displayConfigService.update(new DisplayConfigUpdateRequest("蜀香序甄选", 1L), 1L);
         WechatPaymentParamsResponse response = paymentInitiationService.initiate(session.userId(), order.orderId());
 
         PaymentPreparationSnapshot completed = preparationSnapshot(order.orderId());
@@ -155,7 +161,7 @@ class PaymentInitiationServiceTest extends PaymentTestSupport {
         assertThat(transactionProbeWechatPayProvider.requests().get(1))
                 .isEqualTo(transactionProbeWechatPayProvider.requests().get(0));
         assertThat(transactionProbeWechatPayProvider.requests().getFirst().description())
-                .isEqualTo("MuYbaby商城订单");
+                .isEqualTo("蜀香序商城订单");
         assertThat(transactionProbeWechatPayProvider.configIds()).containsExactly(91001L, 91001L);
         assertThat(attemptCount(completed.outTradeNo(), "PREPAY_FAILED", false)).isEqualTo(1);
         assertThat(attemptCount(completed.outTradeNo(), "PREPAY_SUCCEEDED", true)).isEqualTo(1);
@@ -163,6 +169,22 @@ class PaymentInitiationServiceTest extends PaymentTestSupport {
         WechatPaymentParamsResponse repeated = paymentInitiationService.initiate(session.userId(), order.orderId());
         assertThat(repeated.packageValue()).isEqualTo(response.packageValue());
         assertThat(transactionProbeWechatPayProvider.requests()).hasSize(2);
+    }
+
+    @Test
+    void newPaymentUsesTheConfiguredNameAndPersistsItsDescription() throws Exception {
+        seedEnabledPaymentConfig();
+        displayConfigService.update(new DisplayConfigUpdateRequest("蜀香序甄选", 1L), 1L);
+        AppLoginSession session = appLogin("payment-display-name-user");
+        SeedOrder order = seedCreatedOrder(session.userId(), 6980L, false);
+
+        paymentInitiationService.initiate(session.userId(), order.orderId());
+
+        assertThat(transactionProbeWechatPayProvider.requests().getFirst().description())
+                .isEqualTo("蜀香序甄选商城订单");
+        assertThat(jdbcClient.sql("SELECT provider_description FROM payment_order WHERE order_id = :orderId")
+                .param("orderId", order.orderId()).query(String.class).single())
+                .isEqualTo("蜀香序甄选商城订单");
     }
 
     @Test

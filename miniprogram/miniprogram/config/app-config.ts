@@ -41,7 +41,8 @@ function runtimeConfig(
   storageNamespace: string
 ): Readonly<AppRuntimeConfig> {
   return Object.freeze({
-    appName: "MuYbaby",
+    // 后台展示配置尚未获取时使用的本地默认名称。
+    appName: "蜀香序",
     appId,
     stage,
     apiBaseUrl,

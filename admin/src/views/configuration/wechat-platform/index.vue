@@ -1,5 +1,6 @@
 <template>
   <div class="wechat-platform-config">
+    <DisplayConfigCard />
     <ElAlert
       title="AppSecret 使用应用主密钥加密保存到数据库；后台不会返回明文。"
       description="业务凭据统一在后台维护；加密主密钥仍由服务器运行环境管理。"
@@ -64,6 +65,7 @@
 </template>
 
 <script setup lang="ts">
+  import DisplayConfigCard from './display-config-card.vue'
   import { computed, onMounted, reactive, ref } from 'vue'
   import { ElMessage, type FormInstance, type FormRules } from 'element-plus'
   import { fetchWechatPlatformConfig, updateWechatPlatformConfig } from '@/api/wechat-platform'

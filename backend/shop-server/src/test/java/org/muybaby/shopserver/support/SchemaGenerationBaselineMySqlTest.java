@@ -63,9 +63,15 @@ class SchemaGenerationBaselineMySqlTest {
         Flyway flyway = MigrationTestSupport.migrateToLatest(
                 MYSQL.getJdbcUrl(), MYSQL.getUsername(), MYSQL.getPassword());
 
-        assertThat(flyway.info().current().getVersion().getVersion()).isEqualTo("21");
-        assertThat(flyway.info().applied()).hasSize(21);
+        assertThat(flyway.info().current().getVersion().getVersion()).isEqualTo("22");
+        assertThat(flyway.info().applied()).hasSize(22);
         AfterSaleFulfillmentMigrationTestSupport.assertConservativeHistory(jdbc);
+        assertThat(jdbc.sql("select display_name from app_display_config where id = 1")
+                .query(String.class).single()).isEqualTo("蜀香序");
+        jdbc.sql("UPDATE app_display_config SET display_name = '已保存名称', revision = 2 WHERE id = 1").update();
+        flyway.migrate();
+        assertThat(jdbc.sql("SELECT display_name FROM app_display_config WHERE id = 1")
+                .query(String.class).single()).isEqualTo("已保存名称");
         assertThat(jdbc.sql("""
                         select count(*) from order_item item
                         join product_spu product on product.id = item.spu_id
@@ -113,7 +119,7 @@ class SchemaGenerationBaselineMySqlTest {
                         select count(*)
                         from information_schema.tables
                         where table_schema = database()
-                        """).query(Long.class).single()).isEqualTo(126);
+                        """).query(Long.class).single()).isEqualTo(127);
         assertThat(jdbc.sql("""
                         select count(*)
                         from information_schema.tables

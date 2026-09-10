@@ -35,7 +35,7 @@ test("隐私政策必须是当前已发布且内容完整的修订", () => {
     id: "101",
     documentType: "PRIVACY_POLICY",
     version: "2026.08.09",
-    title: "MuYbaby个人信息保护政策",
+    title: "蜀香序个人信息保护政策",
     content: "第一条\n我们依法保护个人信息。",
     contentSha256: "a".repeat(64),
     status: "PUBLISHED",

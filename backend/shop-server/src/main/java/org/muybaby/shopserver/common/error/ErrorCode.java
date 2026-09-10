@@ -22,6 +22,7 @@ public enum ErrorCode {
     ADMIN_REGISTRATION_DISABLED(110009, "管理后台注册当前未开放"),
     ADMIN_REGISTRATION_SETTING_UNAVAILABLE(110010, "管理后台注册配置不可用"),
     ADMIN_CURRENT_PASSWORD_INVALID(110011, "当前密码不正确"),
+    DISPLAY_CONFIG_CONFLICT(110012, "展示名称已被其他管理员修改，请刷新后重试"),
     WECHAT_LOGIN_FAILED(100101, "WeChat login failed"),
     WECHAT_PHONE_FAILED(100102, "WeChat phone authorization failed"),
     APP_USER_UNAVAILABLE(100103, "App user unavailable"),

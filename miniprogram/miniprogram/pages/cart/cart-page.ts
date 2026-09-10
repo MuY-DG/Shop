@@ -1,4 +1,5 @@
 import { createBrandLogoView } from "../../config/brand-logo";
+import { bindDisplayName, getDisplayName, unbindDisplayName } from "../../services/display-config";
 import {
   buildCartCheckoutUrl,
   buildCartSummary,
@@ -91,6 +92,7 @@ export function registerCartPage(config: CartPageConfig): void {
 
   Page({
     data: {
+      displayName: getDisplayName(),
       brandLogo: createBrandLogoView(136, 120),
       navigationBack: config.navigationBack,
       loaded: false,
@@ -117,6 +119,7 @@ export function registerCartPage(config: CartPageConfig): void {
     },
 
     onShow() {
+      bindDisplayName(this);
       if (config.syncTabBar) {
         syncCustomTabBar(this, 2);
       }
@@ -144,7 +147,12 @@ export function registerCartPage(config: CartPageConfig): void {
       void this.loadCart({ suppressError: this.data.loaded });
     },
 
+    onHide() {
+      unbindDisplayName(this);
+    },
+
     onUnload() {
+      unbindDisplayName(this);
       latestCartRequest += 1;
       latestPricingRequest += 1;
     },

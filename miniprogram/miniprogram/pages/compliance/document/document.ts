@@ -9,6 +9,7 @@ import { getCurrentLegalDocument } from "../../../services/compliance";
 import type { LegalDocumentType } from "../../../types/compliance";
 import { isApiError } from "../../../utils/api-error";
 import { enableNativeShareMenu } from "../../../utils/share";
+import { getDisplayName, refreshDisplayConfig } from "../../../services/display-config";
 
 interface DocumentPageOptions {
   type?: string;
@@ -47,6 +48,10 @@ Page({
     }
     this.setData({ pageTitle: legalDocumentTitle(currentType) });
     void this.loadDocument();
+  },
+
+  onShow() {
+    void refreshDisplayConfig();
   },
 
   onUnload() {
@@ -115,17 +120,17 @@ Page({
     const type = currentType;
     return type
       ? {
-          title: `MuYbaby${legalDocumentTitle(type)}`,
+          title: `${getDisplayName()}${legalDocumentTitle(type)}`,
           path: buildLegalDocumentUrl(type)
         }
-      : { title: "MuYbaby协议与政策" };
+      : { title: `${getDisplayName()}协议与政策` };
   },
 
   onShareTimeline() {
     return {
       title: currentType
-        ? `MuYbaby${legalDocumentTitle(currentType)}`
-        : "MuYbaby协议与政策",
+        ? `${getDisplayName()}${legalDocumentTitle(currentType)}`
+        : `${getDisplayName()}协议与政策`,
       query: currentType ? `type=${currentType}` : ""
     };
   }

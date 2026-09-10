@@ -1,4 +1,6 @@
 import { createBrandLogoView } from "../../../config/brand-logo";
+import { privacyContractDisplayName } from "../../../features/display-config";
+import { bindDisplayName, getDisplayName, unbindDisplayName } from "../../../services/display-config";
 import {
   isTabRoute,
   needsPhoneAuthorization,
@@ -22,8 +24,6 @@ let pageDisposed = false;
 let latestLoginPreparation = 0;
 let preparedLogin: PreparedWechatLogin | null = null;
 
-const DEFAULT_PRIVACY_CONTRACT_NAME = "《MuYbaby隐私保护指引》";
-
 function errorMessage(error: unknown, fallback: string): string {
   return isApiError(error)
     ? error.message
@@ -41,12 +41,14 @@ function showAgreementRequired(): void {
 
 Page({
   data: {
-    brandLogo: createBrandLogoView(176, 156),
+    displayName: getDisplayName(),
+    brandLogo: createBrandLogoView(176, 176),
     agreed: false,
     loading: false,
     loginPrepared: false,
     needsPhoneAuthorization: false,
-    privacyContractName: DEFAULT_PRIVACY_CONTRACT_NAME
+    wechatPrivacyContractName: "",
+    privacyContractName: privacyContractDisplayName(getDisplayName(), "")
   },
 
   onLoad(options: LoginPageOptions) {
@@ -59,12 +61,27 @@ Page({
       loginPrepared: false,
       needsPhoneAuthorization: false,
       agreed: false,
-      privacyContractName: DEFAULT_PRIVACY_CONTRACT_NAME
+      wechatPrivacyContractName: "",
+      privacyContractName: privacyContractDisplayName(getDisplayName(), "")
     });
     this.loadPrivacyContractName();
   },
 
+  onShow() {
+    bindDisplayName(this, (displayName) => {
+      this.setData({
+        displayName,
+        privacyContractName: privacyContractDisplayName(displayName, this.data.wechatPrivacyContractName)
+      });
+    });
+  },
+
+  onHide() {
+    unbindDisplayName(this);
+  },
+
   onUnload() {
+    unbindDisplayName(this);
     pageDisposed = true;
     latestLoginPreparation += 1;
     this.discardUnfinishedLogin();
@@ -91,6 +108,7 @@ Page({
         if (!pageDisposed && privacyContractName) {
           // 名称由微信小程序平台返回，通常已包含书名号。
           this.setData({
+            wechatPrivacyContractName: privacyContractName,
             privacyContractName
           });
         }

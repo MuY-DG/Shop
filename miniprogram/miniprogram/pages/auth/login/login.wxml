@@ -1,6 +1,6 @@
 <view class="login-page">
   <navigation-bar
-    title="MuYbaby"
+    title="{{displayName}}"
     back="{{true}}"
     show-divider="{{false}}"
     color="#2E1D16"
@@ -20,11 +20,11 @@
               class="brand-block__emblem-image"
               src="{{brandLogo.src}}"
               style="{{brandLogo.style}}"
-              mode="scaleToFill"
-              aria-label="MuYbaby 品牌标志"
+              mode="aspectFit"
+              aria-label="{{displayName}} 品牌标志"
             />
           </view>
-          <view class="brand-block__name">MuYbaby</view>
+          <view class="brand-block__name">{{displayName}}</view>
         </view>
 
         <view class="login-copy">

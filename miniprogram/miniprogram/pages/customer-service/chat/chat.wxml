@@ -7,10 +7,10 @@
     <view
       slot="center"
       class="chat-navigation-title"
-      aria-label="MuYbaby，客服会话"
+      aria-label="{{displayName}}，客服会话"
     >
       <view class="chat-navigation-title__main">
-        <text>MuYbaby</text>
+        <text>{{displayName}}</text>
       </view>
       <text class="chat-navigation-title__subtitle">客服会话</text>
     </view>

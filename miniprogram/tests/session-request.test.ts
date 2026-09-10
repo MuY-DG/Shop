@@ -307,7 +307,7 @@ test("当前隐私政策匿名加载且拒绝非已发布修订", async () => {
       id: "1001",
       documentType: "PRIVACY_POLICY",
       version: "2026.08.09",
-      title: "MuYbaby个人信息保护政策",
+      title: "蜀香序个人信息保护政策",
       content: "我们依法保护个人信息。",
       contentSha256: "a".repeat(64),
       status: "PUBLISHED"

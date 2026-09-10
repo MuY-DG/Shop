@@ -1,5 +1,4 @@
 const BRAND_LOGO_SRC = "/assets/images/zaoxiangji-login-emblem18.png";
-const BRAND_LOGO_ASPECT_RATIO = 216 / 288;
 
 export interface BrandLogoView {
   src: string;
@@ -11,7 +10,7 @@ export function createBrandLogoView(
   contentSize: number
 ): BrandLogoView {
   const width = contentSize;
-  const height = contentSize * BRAND_LOGO_ASPECT_RATIO;
+  const height = contentSize;
   const left = (slotSize - width) / 2;
   const top = (slotSize - height) / 2;
 

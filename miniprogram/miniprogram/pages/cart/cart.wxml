@@ -22,8 +22,8 @@
         class="cart-login-state__emblem-image"
         src="{{brandLogo.src}}"
         style="{{brandLogo.style}}"
-        mode="scaleToFill"
-        aria-label="MuYbaby 品牌标志"
+        mode="aspectFit"
+        aria-label="{{displayName}} 品牌标志"
       />
     </view>
     <view class="cart-login-state__title">登录后查看购物车</view>

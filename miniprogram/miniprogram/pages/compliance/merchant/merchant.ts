@@ -1,3 +1,4 @@
+import { getDisplayName, refreshDisplayConfig } from "../../../services/display-config";
 import type { MerchantPublicationView } from "../../../features/compliance";
 import { normalizeContactPhone } from "../../../features/contact";
 import { getCurrentMerchantPublication } from "../../../services/compliance";
@@ -109,14 +110,18 @@ Page({
     }
   },
 
+  onShow() {
+    void refreshDisplayConfig();
+  },
+
   onShareAppMessage() {
     return {
-      title: "MuYbaby商家经营资质",
+      title: `${getDisplayName()}商家经营资质`,
       path: "/pages/compliance/merchant/merchant"
     };
   },
 
   onShareTimeline() {
-    return { title: "MuYbaby商家经营资质" };
+    return { title: `${getDisplayName()}商家经营资质` };
   }
 });

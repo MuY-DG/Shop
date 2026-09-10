@@ -178,7 +178,7 @@ class ApplicationYamlSafetyTest {
 
     @Test
     void deploymentInitializesTheLogVolumeBeforeStartingTheApplication() throws IOException {
-        String deploy = Files.readString(Path.of("../../deploy.sh"));
+        String deploy = Files.readString(Path.of("../../scripts/deploy/remote.sh"));
 
         assertThat(deploy)
                 .contains("compose run --rm --no-deps shop-server-log-init")

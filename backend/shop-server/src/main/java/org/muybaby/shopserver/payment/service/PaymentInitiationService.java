@@ -3,6 +3,7 @@ package org.muybaby.shopserver.payment.service;
 import com.wechat.pay.java.core.RSAPublicKeyConfig;
 import org.muybaby.shopserver.common.error.BusinessException;
 import org.muybaby.shopserver.common.error.ErrorCode;
+import org.muybaby.shopserver.content.DisplayNameProvider;
 import org.muybaby.shopserver.order.OrderStatus;
 import org.muybaby.shopserver.order.service.OrderPaymentDeadlinePolicy;
 import org.muybaby.shopserver.order.service.OrderStatusLogService;
@@ -39,7 +40,7 @@ public class PaymentInitiationService {
 
     private static final String CURRENCY_CNY = "CNY";
     private static final String OPERATOR_TYPE_APP = "APP";
-    private static final String PAYMENT_DESCRIPTION = "MuYbaby商城订单";
+    private final DisplayNameProvider displayNameProvider;
     private final JdbcClient jdbcClient;
     private final PaymentProperties paymentProperties;
     private final PaymentInitiationProperties initiationProperties;
@@ -63,6 +64,7 @@ public class PaymentInitiationService {
             OrderStatusLogService orderStatusLogService,
             PaymentAttemptService paymentAttemptService,
             OrderPaymentDeadlinePolicy orderPaymentDeadlinePolicy,
+            DisplayNameProvider displayNameProvider,
             Clock clock,
             PlatformTransactionManager transactionManager
     ) {
@@ -75,6 +77,7 @@ public class PaymentInitiationService {
         this.orderStatusLogService = orderStatusLogService;
         this.paymentAttemptService = paymentAttemptService;
         this.orderPaymentDeadlinePolicy = orderPaymentDeadlinePolicy;
+        this.displayNameProvider = displayNameProvider;
         this.clock = clock;
         this.requiresNewTransaction = new TransactionTemplate(transactionManager);
         this.requiresNewTransaction.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
@@ -283,6 +286,8 @@ public class PaymentInitiationService {
                 config
         );
         String paymentConfigFingerprint = paymentConfigResolver.captureForPayment(config);
+        // 每笔新支付只读取一次名称；后续重试继续使用 payment_order 中保存的描述。
+        String paymentDescription = displayNameProvider.displayName() + "商城订单";
         String claimToken = UUID.randomUUID().toString();
         KeyHolder keyHolder = new GeneratedKeyHolder();
         int insertedRows = jdbcClient.sql("""
@@ -307,7 +312,7 @@ public class PaymentInitiationService {
                 .param("payerOpenid", payerOpenid)
                 .param("amountCent", order.payableAmountCent())
                 .param("currency", CURRENCY_CNY)
-                .param("providerDescription", PAYMENT_DESCRIPTION)
+                .param("providerDescription", paymentDescription)
                 .param("requestDigest", requestDigest)
                 .param("expiresAt", expiresAt)
                 .param("claimToken", claimToken)
@@ -343,7 +348,7 @@ public class PaymentInitiationService {
         ClaimedPayment claimed = new ClaimedPayment(
                 keyHolder.getKey().longValue(),
                 order.orderId(),
-                PAYMENT_DESCRIPTION,
+                paymentDescription,
                 outTradeNo,
                 payerOpenid,
                 order.payableAmountCent(),

@@ -13,6 +13,21 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 class SchemaGenerationBaselineTest {
 
+    @Test
+    void displayConfigUpgradeSeedsOnceAndPreservesSavedNamesOnLaterStartup() {
+        String url = "jdbc:h2:mem:display_config_" + UUID.randomUUID()
+                + ";MODE=MySQL;DATABASE_TO_LOWER=TRUE;DB_CLOSE_DELAY=-1";
+        MigrationTestSupport.migrateToVersion(url, "sa", "", "21");
+        Flyway flyway = MigrationTestSupport.migrateToLatest(url, "sa", "");
+        JdbcClient jdbc = JdbcClient.create(new DriverManagerDataSource(url, "sa", ""));
+        assertThat(jdbc.sql("SELECT display_name FROM app_display_config WHERE id = 1")
+                .query(String.class).single()).isEqualTo("蜀香序");
+        jdbc.sql("UPDATE app_display_config SET display_name = '已保存名称', revision = 2 WHERE id = 1").update();
+        flyway.migrate();
+        assertThat(jdbc.sql("SELECT display_name FROM app_display_config WHERE id = 1")
+                .query(String.class).single()).isEqualTo("已保存名称");
+    }
+
     private static final String SUPER_SENTINEL_HASH =
             "$2a$10$dSCU.t56l8Z7MPya89bXnuiMIjScayWL.KeTgc92TqlfLu.woUoYm";
 
@@ -24,9 +39,11 @@ class SchemaGenerationBaselineTest {
         Flyway flyway = MigrationTestSupport.migrateToLatest(jdbcUrl, "sa", "");
         JdbcClient jdbc = JdbcClient.create(new DriverManagerDataSource(jdbcUrl, "sa", ""));
 
-        assertThat(flyway.info().current().getVersion().getVersion()).isEqualTo("21");
-        assertThat(flyway.info().applied()).hasSize(21);
-        assertThat(tableCount(jdbc)).isEqualTo(125);
+        assertThat(flyway.info().current().getVersion().getVersion()).isEqualTo("22");
+        assertThat(flyway.info().applied()).hasSize(22);
+        assertThat(tableCount(jdbc)).isEqualTo(126);
+        assertThat(jdbc.sql("select display_name from app_display_config where id = 1")
+                .query(String.class).single()).isEqualTo("蜀香序");
 
         assertThat(tableExists(jdbc, "payment_config_snapshot")).isFalse();
         assertThat(tableExists(jdbc, "payment_runtime_setting")).isFalse();

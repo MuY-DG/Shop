@@ -133,6 +133,11 @@ test("购物车页加载、修改数量和删除同步商品个数，结算仍�
     exports: module,
     require(path: string) {
       if (path.endsWith("config/brand-logo")) return { createBrandLogoView: () => ({}) };
+      if (path.endsWith("services/display-config")) return {
+        getDisplayName: () => "蜀香序",
+        bindDisplayName: () => {},
+        unbindDisplayName: () => {}
+      };
       if (path.endsWith("features/checkout")) return checkout;
       if (path.endsWith("features/cart-feedback")) return cartFeedback;
       if (path.endsWith("features/quantity")) return quantity;

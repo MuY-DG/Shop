@@ -13,6 +13,7 @@ export const API_ENDPOINTS = Object.freeze({
   },
   home: "/app/home",
   contact: "/app/contact",
+  displayConfig: "/app/display-config",
   compliance: {
     merchant: "/app/compliance/merchant",
     currentDocument: (type: string): string =>

@@ -11,6 +11,7 @@ import {
 import { handleWechatReceiptAppShow } from "./features/wechat-order-receipt";
 import { replaceWithExpiredSessionLogin } from "./utils/login-navigation";
 import { getAppLayoutMetrics } from "./utils/system";
+import { refreshDisplayConfig } from "./services/display-config";
 
 App<IAppOption>({
   globalData: {
@@ -29,6 +30,7 @@ App<IAppOption>({
     });
   },
   onShow(options) {
+    void refreshDisplayConfig(true);
     handleWechatReceiptAppShow(options);
   }
 });

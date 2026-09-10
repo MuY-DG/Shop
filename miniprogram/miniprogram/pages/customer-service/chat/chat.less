@@ -25,6 +25,8 @@ button::after {
   display: flex;
   box-sizing: border-box;
   height: 100%;
+  width: 100%;
+  min-width: 0;
   padding: 4rpx 0 2rpx;
   align-items: center;
   flex-direction: column;
@@ -36,12 +38,21 @@ button::after {
 .chat-navigation-title__main {
   position: relative;
   display: flex;
+  max-width: 100%;
+  min-width: 0;
   height: 38rpx;
   align-items: center;
   justify-content: center;
   font-size: 34rpx;
   font-weight: 500;
   line-height: 38rpx;
+}
+
+.chat-navigation-title__main text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .chat-navigation-title__chevron {

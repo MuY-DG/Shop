@@ -50,6 +50,7 @@ import type {
 } from "../../../types/customer-service";
 import { isApiError } from "../../../utils/api-error";
 import { openLoginPage } from "../../../utils/login-navigation";
+import { bindDisplayName, getDisplayName, unbindDisplayName } from "../../../services/display-config";
 
 interface ChatPageOptions {
   contextType?: string;
@@ -599,6 +600,7 @@ function orderCandidateViews(orders: CustomerServiceOrder[]): CandidateView[] {
 
 Page({
   data: {
+    displayName: getDisplayName(),
     loading: true,
     loaded: false,
     errorText: "",
@@ -683,6 +685,7 @@ Page({
   },
 
   onShow() {
+    bindDisplayName(this);
     pageActive = true;
     const session = getSessionState();
     if (!session.user || (!session.accessToken && !session.refreshToken)) {
@@ -704,6 +707,7 @@ Page({
   },
 
   onHide() {
+    unbindDisplayName(this);
     pageActive = false;
     historyLoadGeneration += 1;
     historyLoadGate.reset();
@@ -723,6 +727,7 @@ Page({
   },
 
   onUnload() {
+    unbindDisplayName(this);
     pageActive = false;
     initialized = false;
     initializeGeneration += 1;

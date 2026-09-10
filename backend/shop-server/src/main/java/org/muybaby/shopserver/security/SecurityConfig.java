@@ -62,7 +62,7 @@ public class SecurityConfig {
                                 "/app/product/categories", "/app/product/filter-facets",
                                 "/app/product/spus", "/app/product/spus/*",
                                 "/app/product/spus/*/reviews",
-                                "/app/home", "/app/home/banners", "/app/contact",
+                                "/app/home", "/app/home/banners", "/app/contact", "/app/display-config",
                                 "/app/customer-service/presence",
                                 "/app/compliance/merchant",
                                 "/app/compliance/documents/*/current").permitAll()

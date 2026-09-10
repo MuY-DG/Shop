@@ -209,7 +209,8 @@ class AppAfterSaleQueryServiceTest {
 
         assertThat(many.records()).hasSize(6);
         assertThat(singleRecordQueries).isEqualTo(6);
-        assertThat(manyRecordQueries).isEqualTo(singleRecordQueries);
+        // REQUESTED 记录增加一次自动审核状态批量查询，不随记录数量逐条查询。
+        assertThat(manyRecordQueries).isEqualTo(singleRecordQueries + 1);
         assertThat(many.records())
                 .filteredOn(record -> record.id().equals(afterSaleId))
                 .singleElement()

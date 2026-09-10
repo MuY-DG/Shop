@@ -335,15 +335,17 @@ test("购物车选择控件提供 88rpx 热区", () => {
   );
 });
 
-test("本地品牌 Logo 保持 PNG 并限制像素和包体积", () => {
+test("本地品牌 Logo 保持正方形 PNG 并限制像素和包体积", () => {
   const logo = readFileSync(
     resolve(sourceRoot, "assets/images/zaoxiangji-login-emblem18.png")
   );
 
   assert.equal(logo.subarray(1, 4).toString("ascii"), "PNG");
-  assert.equal(logo.readUInt32BE(16), 288);
-  assert.equal(logo.readUInt32BE(20), 216);
-  assert.ok(logo.byteLength < 20 * 1024);
+  const width = logo.readUInt32BE(16);
+  const height = logo.readUInt32BE(20);
+  assert.ok(width > 0 && width <= 1280);
+  assert.equal(height, width);
+  assert.ok(logo.byteLength < 128 * 1024);
 });
 
 test("分类筛选打开时隐藏自定义底部导航", () => {
