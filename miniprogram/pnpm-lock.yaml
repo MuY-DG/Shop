@@ -15,8 +15,8 @@ importers:
         specifier: ^5.2.3
         version: 5.2.3
       tsx:
-        specifier: ^4.23.12
-        version: 4.23.12
+        specifier: ^4.23.13
+        version: 4.23.13
       typescript:
         specifier: ^5.9.0
         version: 5.9.3
@@ -195,8 +195,8 @@ packages:
   miniprogram-api-typings@5.2.3:
     resolution: {integrity: sha512-KVcNSfR2VmRtz35rxkjLxE92HlsBnbT6NsKyTcDX3ebbTKAsAiTOFO1mRM82Xbe848dnEYqNGzaD48LMEvGytw==}
 
-  tsx@4.23.12:
-    resolution: {integrity: sha512-FDf4L4sYzKtzWYhU/Xm0AQFdTjdIxNo9ElTf2mxXM6k8YMHXzYUe4yODVaXP4V9uMFbVg8c0qyBccK2OOxb45Q==}
+  tsx@4.23.13:
+    resolution: {integrity: sha512-BL5MGkRln6aDYhb0xbQlEAGw743BaZYWdbWtdJOBriYJboKgUUYCadFp2/FpBBZquBC/ezNBn7wMMPx7FDZUDw==}
     engines: {node: '>=18.0.0'}
     hasBin: true
 
@@ -326,7 +326,7 @@ snapshots:
 
   miniprogram-api-typings@5.2.3: {}
 
-  tsx@4.23.12:
+  tsx@4.23.13:
     dependencies:
       esbuild: 0.28.2
     optionalDependencies:
