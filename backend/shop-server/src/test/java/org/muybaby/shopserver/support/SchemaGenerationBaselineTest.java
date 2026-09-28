@@ -39,8 +39,8 @@ class SchemaGenerationBaselineTest {
         Flyway flyway = MigrationTestSupport.migrateToLatest(jdbcUrl, "sa", "");
         JdbcClient jdbc = JdbcClient.create(new DriverManagerDataSource(jdbcUrl, "sa", ""));
 
-        assertThat(flyway.info().current().getVersion().getVersion()).isEqualTo("22");
-        assertThat(flyway.info().applied()).hasSize(22);
+        assertThat(flyway.info().current().getVersion().getVersion()).isEqualTo("23");
+        assertThat(flyway.info().applied()).hasSize(23);
         assertThat(tableCount(jdbc)).isEqualTo(126);
         assertThat(jdbc.sql("select display_name from app_display_config where id = 1")
                 .query(String.class).single()).isEqualTo("蜀香序");
