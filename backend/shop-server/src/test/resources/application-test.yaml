@@ -10,7 +10,7 @@ spring:
     redis:
       host: 127.0.0.1
       port: 6379
-      password: ''
+      password: 123456
   flyway:
     enabled: true
     locations: classpath:db/migration,classpath:db/testmigration
