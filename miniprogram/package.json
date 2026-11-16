@@ -11,9 +11,9 @@
     "check": "pnpm typecheck && pnpm test:typecheck && pnpm test"
   },
   "devDependencies": {
-    "@types/node": "^24.0.0",
-    "miniprogram-api-typings": "^5.2.3",
-    "tsx": "^4.23.12",
+    "@types/node": "^24.19.2",
+    "miniprogram-api-typings": "^5.3.1",
+    "tsx": "^4.23.15",
     "typescript": "^5.9.0"
   }
 }
